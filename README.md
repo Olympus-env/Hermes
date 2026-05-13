@@ -93,7 +93,7 @@ npm run tauri dev
 ## Avancement (plan 10 phases)
 
 - [x] **Phase 1** — Fondations (Tauri shell + FastAPI + SQLite + MNEMOSYNE)
-- [ ] **Phase 2** — ARGOS scraping basique
+- [x] **Phase 2** — ARGOS scraping basique (BOAMP via API DILA, APScheduler)
 - [ ] **Phase 3** — ARGOS authentification Playwright
 - [ ] **Phase 4** — KRINOS extraction documents
 - [ ] **Phase 5** — KRINOS IA (PYTHIA)

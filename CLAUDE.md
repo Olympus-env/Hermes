@@ -161,7 +161,7 @@ Définies dans `backend/hermes/db/models.py`.
 | # | Phase | État |
 |---|-------|------|
 | 1 | Fondations (Tauri + FastAPI + SQLite) | ✅ |
-| 2 | ARGOS scraping basique | en cours |
+| 2 | ARGOS scraping basique | ✅ |
 | 3 | ARGOS authentification Playwright | |
 | 4 | KRINOS extraction docs | |
 | 5 | KRINOS IA (PYTHIA) | |
