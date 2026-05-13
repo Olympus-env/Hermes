@@ -1,0 +1,76 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# --- Node / Frontend ---
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+.eslintcache
+# tsc -b build artefacts
+*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js
+
+# --- Tauri ---
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- HERMES données locales ---
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+hermes.db*
+logs/
+*.log
+storage/
+downloads/
+
+# --- Secrets ---
+.env
+.env.local
+.env.*.local
+secrets/
+*.key
+*.pem
+machine_key.bin
+
+# --- Modèles ML ---
+*.bin
+*.gguf
+*.onnx
+models/
+
+# --- Tests / Coverage ---
+.coverage
+htmlcov/
+coverage.xml
+
+# --- OS ---
+*.tmp
