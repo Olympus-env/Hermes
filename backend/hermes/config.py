@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     master_key: str | None = None
+    master_key_path: Path = Field(default=Path("./data/master.key"))
 
     @property
     def database_url(self) -> str:
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
         return f"sqlite:///{self.db_path.as_posix()}"
 
     def ensure_dirs(self) -> None:
-        for p in (self.db_path.parent, self.storage_path, self.log_path):
+        for p in (self.db_path.parent, self.storage_path, self.log_path, self.master_key_path.parent):
             p.mkdir(parents=True, exist_ok=True)
 
 

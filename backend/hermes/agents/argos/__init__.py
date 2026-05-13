@@ -3,6 +3,7 @@
 Architecture :
 - `base.py`      : interface `Scraper` que chaque portail implémente.
 - `boamp.py`     : premier scraper (BOAMP — boamp.fr, portail public).
+- `playwright_auth.py` : base pour les portails privés avec authentification.
 - `runner.py`    : exécution d'un scraper, persistance MNEMOSYNE, gestion logs.
 - `scheduler.py` : APScheduler — planification automatique des collectes.
 

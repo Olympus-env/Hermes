@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 
 from hermes.agents.argos.base import AOCollecte, ResultatCollecte, Scraper
 from hermes.db.models import AppelOffre, LogAgent, NiveauLog, Portail, StatutAO
+from hermes.securite.credentials import ErreurCredentials, dechiffrer_credentials
 
 
 def _utcnow() -> datetime:
@@ -28,6 +29,7 @@ async def executer_collecte(
     resultat = ResultatCollecte(portail=scraper.nom)
 
     portail = _portail_ou_creer(session, scraper)
+    _injecter_credentials(scraper, portail)
 
     try:
         items = await scraper.collecter(limite=limite)
@@ -93,6 +95,18 @@ def _portail_ou_creer(session: Session, scraper: Scraper) -> Portail:
         session.commit()
         session.refresh(portail)
     return portail
+
+
+def _injecter_credentials(scraper: Scraper, portail: Portail) -> None:
+    """Fournit les credentials déchiffrés aux scrapers qui les supportent."""
+    if not hasattr(scraper, "credentials") or portail.credentials_chiffres is None:
+        return
+    try:
+        credentials = dechiffrer_credentials(portail.credentials_chiffres)
+    except ErreurCredentials:
+        logger.exception(f"Credentials ARGOS invalides pour le portail {portail.nom}")
+        raise
+    setattr(scraper, "credentials", credentials or {})
 
 
 def _existe(session: Session, portail_id: int | None, item: AOCollecte) -> bool:

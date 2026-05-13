@@ -121,8 +121,8 @@ ollama pull nomic-embed-text                 # pour les embeddings
 ### Sécurité
 - **Credentials portails** : chiffrement AES-256 dans `portails.credentials_chiffres`
   (BLOB), jamais en clair.
-- **Clé maître** : générée au premier lancement, dérivée de la machine, stockée
-  hors VCS.
+- **Clé maître** : fournie par `HERMES_MASTER_KEY` ou générée au premier usage
+  dans `HERMES_MASTER_KEY_PATH` (`./data/master.key` par défaut), hors VCS.
 - **Checksum SHA-256** sur chaque document téléchargé (`documents.checksum_sha256`).
 - **CSP Tauri** : `connect-src` limité à `127.0.0.1:8000` et `localhost:8000`.
 
@@ -162,7 +162,7 @@ Définies dans `backend/hermes/db/models.py`.
 |---|-------|------|
 | 1 | Fondations (Tauri + FastAPI + SQLite) | ✅ |
 | 2 | ARGOS scraping basique | ✅ |
-| 3 | ARGOS authentification Playwright | |
+| 3 | ARGOS authentification Playwright | ✅ socle credentials + base Playwright |
 | 4 | KRINOS extraction docs | |
 | 5 | KRINOS IA (PYTHIA) | |
 | 6 | Interface onglet 1 « Veille » — **MVP** | |

@@ -94,7 +94,7 @@ npm run tauri dev
 
 - [x] **Phase 1** — Fondations (Tauri shell + FastAPI + SQLite + MNEMOSYNE)
 - [x] **Phase 2** — ARGOS scraping basique (BOAMP via API DILA, APScheduler)
-- [ ] **Phase 3** — ARGOS authentification Playwright
+- [x] **Phase 3** — ARGOS authentification Playwright (socle credentials chiffrés)
 - [ ] **Phase 4** — KRINOS extraction documents
 - [ ] **Phase 5** — KRINOS IA (PYTHIA)
 - [ ] **Phase 6** — Interface onglet 1 « Veille » (**MVP**)

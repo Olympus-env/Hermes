@@ -15,6 +15,7 @@ from hermes.agents.argos.base import AOCollecte, Scraper
 from hermes.agents.argos.runner import executer_collecte
 from hermes.db.models import AppelOffre, LogAgent, Portail, StatutAO
 from hermes.db.session import get_engine, init_db
+from hermes.securite.credentials import chiffrer_credentials
 
 
 class FakeScraper(Scraper):
@@ -117,3 +118,33 @@ async def test_erreur_journalisee():
             select(LogAgent).where(LogAgent.agent == "ARGOS").order_by(LogAgent.id.desc())
         ).all()
         assert logs and "boom" in logs[0].message
+
+
+@pytest.mark.asyncio
+async def test_collecte_injecte_credentials_chiffres():
+    init_db()
+
+    class ScraperPrive(FakeScraper):
+        nom = "portail-prive"
+
+        def __init__(self):
+            super().__init__(_exemple_items())
+            self.credentials: dict[str, str] = {}
+
+        async def collecter(self, limite: int = 20) -> list[AOCollecte]:
+            assert self.credentials == {"login": "demo", "password": "secret"}
+            return await super().collecter(limite)
+
+    with Session(get_engine()) as s:
+        portail = Portail(
+            nom="portail-prive",
+            url_base="https://prive.example.test",
+            credentials_chiffres=chiffrer_credentials({"login": "demo", "password": "secret"}),
+        )
+        s.add(portail)
+        s.commit()
+
+        res = await executer_collecte(ScraperPrive(), s)
+
+    assert res.succes
+    assert res.ao_nouveaux == 2
