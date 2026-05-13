@@ -15,7 +15,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from hermes import __version__
-from hermes.api import appels_offre, health
+from hermes.agents.argos.scheduler import scheduler_global
+from hermes.api import appels_offre, argos, health
 from hermes.config import settings
 from hermes.db.session import init_db
 
@@ -24,7 +25,10 @@ from hermes.db.session import init_db
 async def lifespan(_app: FastAPI):
     settings.ensure_dirs()
     init_db()
+    if not settings.debug or settings.scheduler_auto_start:
+        scheduler_global.demarrer()
     yield
+    scheduler_global.arreter()
 
 
 app = FastAPI(
@@ -47,6 +51,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(appels_offre.router)
+app.include_router(argos.router)
 
 
 @app.get("/")

@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     debug: bool = False
+    # En mode debug le scheduler ne démarre pas automatiquement
+    # (évite des collectes répétées pendant le hot-reload).
+    scheduler_auto_start: bool = False
 
     db_path: Path = Field(default=Path("./data/hermes.db"))
     storage_path: Path = Field(default=Path("./data/storage"))
