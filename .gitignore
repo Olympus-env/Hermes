@@ -55,6 +55,10 @@ logs/
 storage/
 downloads/
 
+# --- Installeur (artefacts de build) ---
+installer/staging/
+installer/dist/
+
 # --- Secrets ---
 .env
 .env.local
