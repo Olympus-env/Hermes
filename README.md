@@ -70,19 +70,36 @@ hermes/
 
 ## Lancement recommandé
 
-Sur Windows, utiliser le launcher :
+Sur Windows, le script PowerShell suivant lance tout l'écosystème et
+**tue automatiquement le backend + PYTHIA à la fermeture de la fenêtre** :
 
 ```powershell
-.\Lancer HERMES.exe
+.\scripts\start-hermes.ps1
 ```
 
-Le launcher démarre automatiquement :
+Il démarre dans l'ordre :
 
-1. **PYTHIA/Ollama** depuis `D:\HermesDeps\ollama\bin`
+1. **PYTHIA/Ollama** depuis `D:\HermesDeps\ollama\bin` (s'il n'est pas déjà actif)
 2. **Backend FastAPI** sur `127.0.0.1:8000`
 3. **Application desktop HERMES** via Tauri
 
-Vérifications utiles :
+Une fois la fenêtre HERMES fermée, le backend et PYTHIA (s'ils ont été
+démarrés par le script) sont stoppés proprement.
+
+> Le launcher `Lancer HERMES.exe` historique est conservé mais ne gère pas
+> encore la fermeture des enfants. Son code source (`tools/HermesLauncher/`)
+> a été mis à jour avec un Job Object Windows + kill final — il faudra
+> recompiler (`dotnet build -c Release`) après installation du .NET SDK 8.
+
+### En cas de processus zombies
+
+Si une ancienne instance bloque le port `:8000` ou `:11434` :
+
+```powershell
+.\scripts\kill-hermes.ps1
+```
+
+### Vérifications utiles
 
 - API : <http://127.0.0.1:8000/health>
 - AO collectés : <http://127.0.0.1:8000/appels-offre>
