@@ -86,10 +86,15 @@ Il démarre dans l'ordre :
 Une fois la fenêtre HERMES fermée, le backend et PYTHIA (s'ils ont été
 démarrés par le script) sont stoppés proprement.
 
-> Le launcher `Lancer HERMES.exe` historique est conservé mais ne gère pas
-> encore la fermeture des enfants. Son code source (`tools/HermesLauncher/`)
-> a été mis à jour avec un Job Object Windows + kill final — il faudra
-> recompiler (`dotnet build -c Release`) après installation du .NET SDK 8.
+> Une fois HERMES recompilé en release (`cd frontend && npm run tauri build`),
+> le binaire `hermes.exe` gère **lui-même** le cycle de vie : il lance Ollama
+> + backend au démarrage et les tue à la fermeture de la fenêtre. Plus besoin
+> du launcher .NET — c'est un simple double-clic sur l'icône HERMES.
+>
+> Le launcher `Lancer HERMES.exe` historique reste fonctionnel pour le moment ;
+> son code source (`tools/HermesLauncher/`) a été mis à jour avec un Job
+> Object Windows pour kill propre, recompilable via `dotnet build -c Release`
+> si tu installes le .NET SDK 8.
 
 ### En cas de processus zombies
 

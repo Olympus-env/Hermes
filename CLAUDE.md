@@ -236,7 +236,7 @@ Définies dans `backend/hermes/db/models.py`.
 | 7 | HERMION rédaction | ✅ |
 | 8 | Interface onglet 2 « Réponses » | |
 | 9 | Paramètres & configuration | |
-| 10 | Finalisation (auto-start, export PDF, mail) | |
+| 10 | Finalisation (auto-start, export PDF, mail) | 🚧 sidecar Tauri en place |
 
 L'état authoritatif est dans le README + `git log` — toujours vérifier avant
 d'annoncer une avancée.
