@@ -123,6 +123,63 @@ async def est_disponible(timeout: float = 3.0) -> bool:
         return False
 
 
+async def lister_modeles() -> list[str]:
+    """Retourne la liste des modèles installés dans Ollama."""
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/tags"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
+    except httpx.HTTPError as exc:
+        raise ErreurPythia(f"Ollama indisponible : {exc}") from exc
+
+    modeles = data.get("models", [])
+    if not isinstance(modeles, list):
+        return []
+    return [str(m.get("name") or m.get("model") or "") for m in modeles if isinstance(m, dict)]
+
+
+async def modele_installe(nom: str | None = None) -> bool:
+    """Vérifie qu'un modèle est installé localement."""
+    cible = nom or settings.pythia_modele
+    try:
+        modeles = await lister_modeles()
+    except ErreurPythia:
+        return False
+    # Ollama renvoie parfois "nom" et parfois "nom:latest" — on tolère les deux.
+    cible_court = cible.split(":")[0]
+    return any(m == cible or m.startswith(f"{cible_court}:") for m in modeles)
+
+
+async def telecharger_modele(
+    nom: str | None = None,
+):
+    """Stream le téléchargement d'un modèle via `POST /api/pull` d'Ollama.
+
+    Itère sur les lignes NDJSON renvoyées par Ollama. Chaque ligne est un dict
+    contenant typiquement {"status": "...", "completed": N, "total": M} pendant
+    le téléchargement, puis {"status": "success"} à la fin.
+    """
+    cible = nom or settings.pythia_modele
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/pull"
+    payload = {"model": cible, "stream": True}
+
+    try:
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream("POST", url, json=payload) as r:
+                r.raise_for_status()
+                async for ligne in r.aiter_lines():
+                    if not ligne.strip():
+                        continue
+                    try:
+                        yield json.loads(ligne)
+                    except json.JSONDecodeError:
+                        continue
+    except httpx.HTTPError as exc:
+        raise ErreurPythia(f"Téléchargement modèle {cible} : {exc}") from exc
+
+
 def parser_json_sortie(texte: str) -> dict[str, Any]:
     """Parse une sortie LLM censée contenir du JSON, tolérant aux entourages.
 

@@ -3,6 +3,7 @@ import { GreekFrieze } from "./components/GreekFrieze";
 import { GreekKey } from "./components/GreekKey";
 import { HermesMark } from "./components/HermesMark";
 import { Icon } from "./components/Icon";
+import { ModelDownloader } from "./components/ModelDownloader";
 import { PortalLoginModal } from "./components/PortalLoginModal";
 import { Sidebar, type ViewKey } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
@@ -26,6 +27,7 @@ export default function App() {
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [emptyState, setEmptyState] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [modeleReady, setModeleReady] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(() => loadUserProfile());
   const [agents, setAgents] = useState<Record<AgentKey, AgentState>>({
     argos: "active",
@@ -186,6 +188,8 @@ export default function App() {
           }}
         />
       )}
+
+      {!modeleReady && <ModelDownloader onReady={() => setModeleReady(true)} />}
     </div>
   );
 }

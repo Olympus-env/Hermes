@@ -75,6 +75,24 @@ export type FiltreVeille = {
   actif: boolean;
 };
 
+export type ProgressionModele = {
+  modele: string;
+  en_cours: boolean;
+  statut: string;
+  octets_telecharges: number;
+  octets_total: number;
+  pourcent: number;
+  erreur: string | null;
+  termine_le: number | null;
+};
+
+export type StatutModele = {
+  modele: string;
+  installe: boolean;
+  ollama_disponible: boolean;
+  progression: ProgressionModele;
+};
+
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -112,5 +130,11 @@ export const api = {
     fetchJson<FiltreVeille>("/argos/filtre", {
       method: "PUT",
       body: JSON.stringify(filtre),
+    }),
+  statutModele: () => fetchJson<StatutModele>("/pythia/modele/status"),
+  telechargerModele: (modele?: string) =>
+    fetchJson<ProgressionModele>("/pythia/modele/telecharger", {
+      method: "POST",
+      body: JSON.stringify(modele ? { modele } : {}),
     }),
 };
