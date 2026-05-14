@@ -138,6 +138,11 @@ npm run tauri dev
   SQLite/MNEMOSYNE.
 - **Onglet Veille connecté au backend** : les AO affichés viennent de
   `/appels-offre`, pas des données mock.
+- **Qualification AO persistée** : depuis la Veille, les actions
+  « Marquer à répondre » et « Exclure » appellent l'API et mettent à jour le
+  statut MNEMOSYNE (`a_repondre` / `rejete`).
+- **Portails lisibles** : l'API enrichit les AO avec le nom du portail
+  (`BOAMP`, etc.) au lieu d'exposer seulement l'identifiant technique.
 - **KRINOS extraction documentaire** : socle d'extraction PDF/XLSX/DOCX/HTML et
   téléchargement de documents.
 - **Desktop Tauri** : build Windows généré sous
@@ -153,6 +158,7 @@ npm run tauri dev
 - [x] **Phase 4** — KRINOS extraction documents
 - [ ] **Phase 5** — KRINOS IA (PYTHIA)
 - [x] **Phase 6** — Interface onglet 1 « Veille » (**MVP**)
+- [x] **Phase 6.1** — Actions Veille persistées (statuts AO + nom portail)
 - [ ] **Phase 7** — HERMION rédaction
 - [ ] **Phase 8** — Interface onglet 2 « Réponses »
 - [x] **Phase 9** — Paramètres & configuration utilisateur

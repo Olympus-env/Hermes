@@ -25,6 +25,7 @@ export type InfoResponse = {
 export type AppelOffre = {
   id: number;
   portail_id: number | null;
+  portail_nom: string | null;
   reference_externe: string | null;
   url_source: string;
   titre: string;
@@ -70,7 +71,11 @@ export type CycleCollecteArgos = {
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...init?.headers,
+    },
   });
   if (!r.ok) {
     throw new Error(`${r.status} ${r.statusText} sur ${path}`);
@@ -90,4 +95,9 @@ export const api = {
       `/appels-offre${statut ? `?statut=${encodeURIComponent(statut)}` : ""}`,
     ),
   detailAO: (id: number) => fetchJson<AppelOffre>(`/appels-offre/${id}`),
+  modifierStatutAO: (id: number, statut: string) =>
+    fetchJson<AppelOffre>(`/appels-offre/${id}/statut`, {
+      method: "PATCH",
+      body: JSON.stringify({ statut }),
+    }),
 };

@@ -228,6 +228,10 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
             key={selected.id}
             tender={selected}
             onClose={() => setSelectedId(null)}
+            onChanged={() => {
+              setSelectedId(null);
+              void loadTenders();
+            }}
             onToast={onToast}
           />
         )}
@@ -247,7 +251,9 @@ function mapAppelOffre(ao: AppelOffre): Tender {
     id: String(ao.id),
     title: ao.titre,
     issuer: ao.emetteur ?? "Émetteur non renseigné",
-    portal: ao.portail_id ? `Portail #${ao.portail_id}` : "Source directe",
+    portal:
+      ao.portail_nom?.toUpperCase() ??
+      (ao.portail_id ? `Portail #${ao.portail_id}` : "Source directe"),
     deadline: ao.date_limite ?? ao.cree_le,
     budget: formatBudget(ao.budget_estime, ao.devise),
     reference: ao.reference_externe ?? `AO-${ao.id}`,
@@ -305,11 +311,35 @@ function statutLabel(statut: string): string {
 type PanelProps = {
   tender: Tender;
   onClose: () => void;
+  onChanged: () => void;
   onToast: (t: ToastInput) => void;
 };
 
-function TenderPanel({ tender, onClose, onToast }: PanelProps) {
+function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
   const { formatted, urgent, days } = deadlineInfo(tender.deadline);
+
+  const updateStatus = async (status: "a_repondre" | "rejete") => {
+    try {
+      await api.modifierStatutAO(Number(tender.id), status);
+      onToast({
+        title: status === "a_repondre" ? "HERMION" : "ARGOS",
+        app: status === "a_repondre" ? "AO marqué à répondre" : "Appel d'offre exclu",
+        msg:
+          status === "a_repondre"
+            ? "Le statut a été enregistré dans MNEMOSYNE. HERMION pourra préparer un brouillon."
+            : "Le statut rejeté a été enregistré dans MNEMOSYNE.",
+        agent: status === "a_repondre" ? "hermion" : "argos",
+      });
+      onChanged();
+    } catch (error) {
+      onToast({
+        title: "HERMES",
+        app: "Action impossible",
+        msg: error instanceof Error ? error.message : "Erreur inconnue pendant la mise à jour.",
+        agent: "krinos",
+      });
+    }
+  };
 
   return (
     <aside className="tender-panel">
@@ -381,29 +411,13 @@ function TenderPanel({ tender, onClose, onToast }: PanelProps) {
       <div className="tender-panel__actions">
         <button
           className="btn btn--gold"
-          onClick={() =>
-            onToast({
-              title: "HERMION",
-              app: "Réponse en cours de génération",
-              msg: `Brouillon en préparation pour « ${tender.title.slice(0, 56)}${
-                tender.title.length > 56 ? "…" : ""
-              } »`,
-              agent: "hermion",
-            })
-          }
+          onClick={() => void updateStatus("a_repondre")}
         >
           <Icon.check size={13} /> Marquer à répondre
         </button>
         <button
           className="btn btn--ghost"
-          onClick={() =>
-            onToast({
-              title: "ARGOS",
-              app: "Appel d'offre exclu",
-              msg: "Cet AO ne sera plus proposé dans les prochains cycles.",
-              agent: "argos",
-            })
-          }
+          onClick={() => void updateStatus("rejete")}
         >
           <Icon.close size={13} /> Exclure
         </button>
