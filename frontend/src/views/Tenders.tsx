@@ -7,6 +7,7 @@ import { Icon } from "../components/Icon";
 import { Score } from "../components/Score";
 import { Tag } from "../components/Tag";
 import type { ToastInput } from "../lib/toast";
+import { loadUserProfile } from "../lib/userProfile";
 
 type Props = {
   isLoading: boolean;
@@ -317,6 +318,47 @@ type PanelProps = {
 
 function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
   const { formatted, urgent, days } = deadlineInfo(tender.deadline);
+  const [redigerEnCours, setRedigerEnCours] = useState(false);
+
+  const rediger = async () => {
+    setRedigerEnCours(true);
+    onToast({
+      title: "HERMION",
+      app: "Rédaction lancée",
+      msg: "PYTHIA prépare la réponse — comptez 30 à 90 s selon la longueur du dossier.",
+      agent: "hermion",
+    });
+    try {
+      const profile = loadUserProfile();
+      const result = await api.rediger(Number(tender.id), {
+        profil: profile
+          ? {
+              prenom: profile.firstName,
+              nom: profile.lastName,
+              email: profile.email,
+              entreprise: profile.entreprise,
+              activite: [profile.activite, profile.infosUtiles].filter(Boolean).join("\n"),
+            }
+          : undefined,
+      });
+      onChanged();
+      onToast({
+        title: "HERMION",
+        app: `Réponse v${result.reponse.version} générée`,
+        msg: `${result.reponse.longueur_mots ?? "?"} mots — disponible dans l'onglet « Réponses ».`,
+        agent: "hermion",
+      });
+    } catch (error) {
+      onToast({
+        title: "HERMION",
+        app: "Rédaction en échec",
+        msg: error instanceof Error ? error.message : "Erreur inconnue.",
+        agent: "hermion",
+      });
+    } finally {
+      setRedigerEnCours(false);
+    }
+  };
 
   const updateStatus = async (status: "a_repondre" | "rejete") => {
     try {
@@ -421,11 +463,17 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
         >
           <Icon.close size={13} /> Exclure
         </button>
-        <button className="btn">
-          <Icon.download size={13} /> Télécharger DCE
+        <button
+          className="btn"
+          onClick={() => void rediger()}
+          disabled={redigerEnCours}
+          title="Lance HERMION pour rédiger une réponse à cet AO (statut a_repondre requis)"
+        >
+          <Icon.refresh size={13} />
+          {redigerEnCours ? "Rédaction…" : "Rédiger une réponse"}
         </button>
         <button className="btn">
-          <Icon.mail size={13} /> Envoyer par mail
+          <Icon.download size={13} /> Télécharger DCE
         </button>
       </div>
     </aside>

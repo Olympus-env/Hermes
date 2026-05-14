@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { GreekFrieze } from "./components/GreekFrieze";
 import { GreekKey } from "./components/GreekKey";
 import { HermesMark } from "./components/HermesMark";
 import { Icon } from "./components/Icon";
 import { ModelDownloader } from "./components/ModelDownloader";
+import { OnboardingWizard } from "./components/OnboardingWizard";
 import { PortalLoginModal } from "./components/PortalLoginModal";
 import { Sidebar, type ViewKey } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
@@ -12,6 +13,7 @@ import { api } from "./lib/api";
 import { type AgentKey, type AgentState } from "./lib/data";
 import type { ToastInput } from "./lib/toast";
 import {
+  isOnboardingDone,
   loadUserProfile,
   saveUserProfile,
   type UserProfile,
@@ -29,6 +31,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [modeleReady, setModeleReady] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(() => loadUserProfile());
+  const [onboardingDone, setOnboardingDone] = useState(() => isOnboardingDone());
   const [agents, setAgents] = useState<Record<AgentKey, AgentState>>({
     argos: "active",
     krinos: "active",
@@ -80,7 +83,7 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  const triggerCycle = async () => {
+  const triggerCycle = useCallback(async () => {
     setIsLoading(true);
     setAgents((a) => ({ ...a, argos: "running", krinos: "running" }));
     setToast({
@@ -94,10 +97,14 @@ export default function App() {
       setTendersRefreshKey((key) => key + 1);
       setIsLoading(false);
       setAgents((a) => ({ ...a, argos: "active", krinos: "active" }));
+      setNextCycle("30:00");
+      const filtres = result.ao_filtres
+        ? ` · ${result.ao_filtres} filtrés (hors critères)`
+        : "";
       setToast({
         title: "ARGOS",
         app: "Cycle terminé",
-        msg: `${result.ao_nouveaux} nouveaux AO · ${result.ao_trouves} trouvés · ${result.ao_dedoublonnes} dédoublonnés.`,
+        msg: `${result.ao_nouveaux} nouveaux AO · ${result.ao_trouves} trouvés · ${result.ao_dedoublonnes} dédoublonnés${filtres}.`,
         agent: "argos",
       });
     } catch (error) {
@@ -110,7 +117,7 @@ export default function App() {
         agent: "argos",
       });
     }
-  };
+  }, []);
 
   return (
     <div className="app">
@@ -132,6 +139,8 @@ export default function App() {
           agents={agents}
           nextCycle={nextCycle}
           profile={profile}
+          isLoading={isLoading}
+          onLaunchArgos={triggerCycle}
         />
       )}
 
@@ -194,101 +203,22 @@ export default function App() {
         />
       )}
 
-      {!profile && (
-        <UserProfileModal
-          onSave={(nextProfile) => {
-            setProfile(saveUserProfile(nextProfile));
-            setActive("settings");
+      {(!profile || !onboardingDone) && modeleReady && (
+        <OnboardingWizard
+          onDone={(nextProfile) => {
+            setProfile(nextProfile);
+            setOnboardingDone(true);
             setToast({
-              title: "HERMION",
-              app: "Profil configuré",
-              msg: "Nom et prénom enregistrés pour personnaliser les réponses.",
-              agent: "hermion",
+              title: "HERMES",
+              app: "Onboarding terminé",
+              msg: `Bienvenue ${nextProfile.firstName}. Tu peux lancer ARGOS dès maintenant.`,
+              agent: "argos",
             });
           }}
         />
       )}
 
       {!modeleReady && <ModelDownloader onReady={() => setModeleReady(true)} />}
-    </div>
-  );
-}
-
-function UserProfileModal({ onSave }: { onSave: (profile: UserProfile) => void }) {
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
-
-  const canSave = firstName.trim().length > 0 && lastName.trim().length > 0;
-
-  return (
-    <div className="modal-backdrop">
-      <div className="modal modal--profile">
-        <div className="modal__head">
-          <div className="modal__eyebrow">
-            <HermesMark size={14} />
-            <span>HERMES · Premier lancement</span>
-          </div>
-          <h3 className="modal__title">Configurer l'utilisateur</h3>
-          <p className="modal__sub">
-            Ces informations restent locales et seront fournies à HERMION pour
-            personnaliser les réponses générées.
-          </p>
-        </div>
-
-        <div className="profile-modal__body">
-          <div className="profile-modal__avatar">
-            {lastName.trim().charAt(0).toLocaleUpperCase("fr-FR") || "?"}
-          </div>
-
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">Prénom</div>
-            </div>
-            <input
-              className="input"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              autoFocus
-            />
-          </div>
-
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">Nom</div>
-              <div className="settings-row__hint">Initiale utilisée pour l'avatar</div>
-            </div>
-            <input
-              className="input"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-            />
-          </div>
-
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">Email</div>
-              <div className="settings-row__hint">Optionnel</div>
-            </div>
-            <input
-              className="input"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="modal__foot" style={{ justifyContent: "flex-end" }}>
-          <button
-            className="btn btn--gold"
-            disabled={!canSave}
-            onClick={() => onSave({ firstName, lastName, email })}
-          >
-            Enregistrer et ouvrir HERMES
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

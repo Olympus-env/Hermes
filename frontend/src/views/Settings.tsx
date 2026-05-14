@@ -68,15 +68,26 @@ function UserProfileSection({
   const [firstName, setFirstName] = useState(profile?.firstName ?? "");
   const [lastName, setLastName] = useState(profile?.lastName ?? "");
   const [email, setEmail] = useState(profile?.email ?? "");
-  const preview: UserProfile = { firstName, lastName, email };
+  const [entreprise, setEntreprise] = useState(profile?.entreprise ?? "");
+  const [activite, setActivite] = useState(profile?.activite ?? "");
+  const [infosUtiles, setInfosUtiles] = useState(profile?.infosUtiles ?? "");
+  const preview: UserProfile = {
+    firstName,
+    lastName,
+    email,
+    entreprise,
+    activite,
+    infosUtiles,
+  };
   const canSave = firstName.trim().length > 0 && lastName.trim().length > 0;
 
   return (
     <div className="settings-section">
       <h2>Profil utilisateur</h2>
       <p className="settings-section__desc">
-        Identité locale utilisée dans l'interface et transmise à HERMION comme contexte
-        pour rédiger les réponses.
+        Identité locale et contexte métier injectés dans les prompts KRINOS
+        (scoring) et HERMION (rédaction). Plus les informations sont précises,
+        plus l'IA produit des réponses pertinentes.
       </p>
 
       <div className="settings-row">
@@ -90,7 +101,10 @@ function UserProfileSection({
             <div className="profile-preview__name">
               {canSave ? getProfileDisplayName(preview) : "Utilisateur non configuré"}
             </div>
-            <div className="profile-preview__context">
+            <div
+              className="profile-preview__context"
+              style={{ whiteSpace: "pre-line" }}
+            >
               {canSave ? getHermionUserContext(preview) : "Nom et prénom requis"}
             </div>
           </div>
@@ -98,7 +112,7 @@ function UserProfileSection({
       </div>
 
       <div className="settings-row">
-        <div className="settings-row__label">Prénom</div>
+        <div className="settings-row__label">Prénom *</div>
         <input
           className="input"
           value={firstName}
@@ -108,7 +122,7 @@ function UserProfileSection({
 
       <div className="settings-row">
         <div>
-          <div className="settings-row__label">Nom</div>
+          <div className="settings-row__label">Nom *</div>
           <div className="settings-row__hint">Sa première lettre définit l'avatar</div>
         </div>
         <input
@@ -131,11 +145,62 @@ function UserProfileSection({
         />
       </div>
 
+      <div className="settings-row">
+        <div>
+          <div className="settings-row__label">Entreprise</div>
+          <div className="settings-row__hint">Nom de la structure répondant aux AO</div>
+        </div>
+        <input
+          className="input"
+          value={entreprise}
+          onChange={(e) => setEntreprise(e.target.value)}
+          placeholder="ex : ACME Conseil"
+        />
+      </div>
+
+      <div className="settings-row">
+        <div>
+          <div className="settings-row__label">Activité principale</div>
+          <div className="settings-row__hint">En quelques mots</div>
+        </div>
+        <input
+          className="input"
+          value={activite}
+          onChange={(e) => setActivite(e.target.value)}
+          placeholder="ex : ESN Java/PostgreSQL — AMO secteur public"
+        />
+      </div>
+
+      <div className="settings-row" style={{ alignItems: "flex-start" }}>
+        <div>
+          <div className="settings-row__label">Informations utiles pour l'IA</div>
+          <div className="settings-row__hint">
+            Références, certifications, taille équipe…
+          </div>
+        </div>
+        <textarea
+          className="response-comment-input"
+          style={{ minHeight: 100 }}
+          value={infosUtiles}
+          onChange={(e) => setInfosUtiles(e.target.value)}
+          placeholder="ex : 12 ETP, certifié ISO 27001, références : Naval Group (2024), CDC (2023). Compétences PASSI 4 portées."
+        />
+      </div>
+
       <div style={{ marginTop: 18 }}>
         <button
           className="btn btn--gold"
           disabled={!canSave}
-          onClick={() => onSave({ firstName, lastName, email })}
+          onClick={() =>
+            onSave({
+              firstName,
+              lastName,
+              email,
+              entreprise,
+              activite,
+              infosUtiles,
+            })
+          }
         >
           Enregistrer le profil
         </button>

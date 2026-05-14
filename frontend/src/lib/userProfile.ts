@@ -2,9 +2,20 @@ export type UserProfile = {
   firstName: string;
   lastName: string;
   email: string;
+  /** Nom de l'entreprise / structure répondant aux AO. */
+  entreprise: string;
+  /** Activité principale : « ESN Java », « cabinet conseil AMO », « architecte »… */
+  activite: string;
+  /**
+   * Informations libres réinjectées dans les prompts IA (KRINOS + HERMION) :
+   * références clients, certifications, périmètre, taille équipe, etc.
+   * Plus c'est précis, mieux HERMION rédige.
+   */
+  infosUtiles: string;
 };
 
 const STORAGE_KEY = "hermes.userProfile";
+const ONBOARDING_DONE_KEY = "hermes.onboardingDone";
 
 export function loadUserProfile(): UserProfile | null {
   try {
@@ -18,6 +29,9 @@ export function loadUserProfile(): UserProfile | null {
       firstName: data.firstName.trim(),
       lastName: data.lastName.trim(),
       email: data.email?.trim() ?? "",
+      entreprise: data.entreprise?.trim() ?? "",
+      activite: data.activite?.trim() ?? "",
+      infosUtiles: data.infosUtiles?.trim() ?? "",
     };
   } catch {
     return null;
@@ -25,13 +39,24 @@ export function loadUserProfile(): UserProfile | null {
 }
 
 export function saveUserProfile(profile: UserProfile): UserProfile {
-  const normalized = {
+  const normalized: UserProfile = {
     firstName: profile.firstName.trim(),
     lastName: profile.lastName.trim(),
     email: profile.email.trim(),
+    entreprise: profile.entreprise.trim(),
+    activite: profile.activite.trim(),
+    infosUtiles: profile.infosUtiles.trim(),
   };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
   return normalized;
+}
+
+export function isOnboardingDone(): boolean {
+  return window.localStorage.getItem(ONBOARDING_DONE_KEY) === "1";
+}
+
+export function markOnboardingDone(): void {
+  window.localStorage.setItem(ONBOARDING_DONE_KEY, "1");
 }
 
 export function getProfileDisplayName(profile: UserProfile): string {
@@ -47,6 +72,9 @@ export function getHermionUserContext(profile: UserProfile): string {
   return [
     `Utilisateur: ${profile.firstName} ${profile.lastName}`,
     profile.email ? `Email: ${profile.email}` : "",
+    profile.entreprise ? `Entreprise: ${profile.entreprise}` : "",
+    profile.activite ? `Activité: ${profile.activite}` : "",
+    profile.infosUtiles ? `Infos: ${profile.infosUtiles}` : "",
   ]
     .filter(Boolean)
     .join("\n");

@@ -13,6 +13,8 @@ type Props = {
   agents: Record<AgentKey, AgentState>;
   nextCycle: string;
   profile: UserProfile;
+  isLoading?: boolean;
+  onLaunchArgos?: () => void;
 };
 
 const TITLES: Record<ViewKey, { main: string; sub: string }> = {
@@ -22,7 +24,14 @@ const TITLES: Record<ViewKey, { main: string; sub: string }> = {
   settings:  { main: "Paramètres",     sub: "Configuration" },
 };
 
-export function Topbar({ active, agents, nextCycle, profile }: Props) {
+export function Topbar({
+  active,
+  agents,
+  nextCycle,
+  profile,
+  isLoading,
+  onLaunchArgos,
+}: Props) {
   const t = TITLES[active];
 
   return (
@@ -44,8 +53,20 @@ export function Topbar({ active, agents, nextCycle, profile }: Props) {
         <div className="topbar__cycle">
           <Icon.clock size={12} />
           <span>
-            Prochain cycle ARGOS dans <strong>{nextCycle}</strong>
+            Prochain cycle dans <strong>{nextCycle}</strong>
           </span>
+          {onLaunchArgos && (
+            <button
+              className="btn btn--gold btn--sm"
+              style={{ marginLeft: 8 }}
+              onClick={onLaunchArgos}
+              disabled={isLoading}
+              title="Déclenche immédiatement une collecte ARGOS (sans attendre le cycle)"
+            >
+              <Icon.refresh size={11} />
+              {isLoading ? "Collecte…" : "Lancer ARGOS"}
+            </button>
+          )}
         </div>
 
         <div className="topbar__user">
