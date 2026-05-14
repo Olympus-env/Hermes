@@ -145,6 +145,9 @@ npm run tauri dev
   (`BOAMP`, etc.) au lieu d'exposer seulement l'identifiant technique.
 - **KRINOS extraction documentaire** : socle d'extraction PDF/XLSX/DOCX/HTML et
   téléchargement de documents.
+- **KRINOS analyse IA (PYTHIA)** : résumé, score 0-100, tags métier et critères
+  d'attribution générés en local par Mistral 7B via Ollama. Endpoints
+  `POST /krinos/appels-offre/{id}/analyser` et `GET …/analyse`.
 - **Desktop Tauri** : build Windows généré sous
   `D:\HermesDeps\tooling\cargo-target\release`.
 
@@ -156,7 +159,7 @@ npm run tauri dev
 - [x] **Phase 2** — ARGOS scraping basique (BOAMP via API DILA, APScheduler)
 - [x] **Phase 3** — ARGOS authentification Playwright (socle credentials chiffrés)
 - [x] **Phase 4** — KRINOS extraction documents
-- [ ] **Phase 5** — KRINOS IA (PYTHIA)
+- [x] **Phase 5** — KRINOS IA (PYTHIA — résumé + score + tags via Mistral 7B)
 - [x] **Phase 6** — Interface onglet 1 « Veille » (**MVP**)
 - [x] **Phase 6.1** — Actions Veille persistées (statuts AO + nom portail)
 - [ ] **Phase 7** — HERMION rédaction

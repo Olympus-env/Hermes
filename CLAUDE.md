@@ -230,9 +230,9 @@ Définies dans `backend/hermes/db/models.py`.
 | 1 | Fondations (Tauri + FastAPI + SQLite) | ✅ |
 | 2 | ARGOS scraping basique | ✅ |
 | 3 | ARGOS authentification Playwright | ✅ socle credentials + base Playwright |
-| 4 | KRINOS extraction docs | |
-| 5 | KRINOS IA (PYTHIA) | |
-| 6 | Interface onglet 1 « Veille » — **MVP** | |
+| 4 | KRINOS extraction docs | ✅ |
+| 5 | KRINOS IA (PYTHIA) | ✅ |
+| 6 | Interface onglet 1 « Veille » — **MVP** | ✅ |
 | 7 | HERMION rédaction | |
 | 8 | Interface onglet 2 « Réponses » | |
 | 9 | Paramètres & configuration | |

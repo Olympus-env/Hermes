@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     master_key: str | None = None
     master_key_path: Path = Field(default=Path("./data/master.key"))
 
+    # PYTHIA — LLM local via Ollama
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    pythia_modele: str = "mistral:7b-instruct-q4_K_M"
+    pythia_modele_embeddings: str = "nomic-embed-text"
+    pythia_timeout_secondes: float = 180.0
+    pythia_temperature: float = 0.2
+    # Nb max de caractères de contenu documentaire injectés dans le prompt KRINOS
+    krinos_contexte_max_caracteres: int = 12000
+
     @property
     def database_url(self) -> str:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
