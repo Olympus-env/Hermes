@@ -18,12 +18,35 @@ _engine = create_engine(
 
 
 def init_db() -> None:
-    """Crée la BDD et toutes les tables si nécessaires + active WAL."""
+    """Crée la BDD et toutes les tables si nécessaires + active WAL.
+
+    Applique aussi les mini-migrations SQLite (ALTER TABLE ADD COLUMN) pour
+    les colonnes ajoutées après la création initiale. SQLModel.create_all
+    ne touche pas aux tables existantes — c'est notre filet.
+    """
     settings.ensure_dirs()
     SQLModel.metadata.create_all(_engine)
     with _engine.connect() as conn:
         conn.exec_driver_sql("PRAGMA journal_mode=WAL")
         conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+        _migrer_colonnes(conn)
+
+
+def _migrer_colonnes(conn) -> None:
+    """ALTER TABLE ADD COLUMN pour les évolutions de schéma post-création."""
+    migrations: list[tuple[str, str, str]] = [
+        # (table, colonne, definition SQL)
+        ("analyses_krinos", "scores_dimensions", "TEXT"),
+    ]
+    for table, colonne, definition in migrations:
+        cols = {
+            row[1]
+            for row in conn.exec_driver_sql(f"PRAGMA table_info('{table}')").fetchall()
+        }
+        if colonne not in cols:
+            conn.exec_driver_sql(
+                f"ALTER TABLE {table} ADD COLUMN {colonne} {definition}"
+            )
 
 
 def get_session() -> Iterator[Session]:

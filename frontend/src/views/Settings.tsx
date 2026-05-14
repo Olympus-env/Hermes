@@ -16,12 +16,13 @@ type Props = {
   onOpenLoginModal: () => void;
 };
 
-type SectionId = "profil" | "portails" | "filtrage";
+type SectionId = "profil" | "portails" | "filtrage" | "scoring";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "profil",   label: "Profil utilisateur" },
   { id: "portails", label: "Portails" },
   { id: "filtrage", label: "Critères de filtrage" },
+  { id: "scoring",  label: "Pondération du scoring" },
 ];
 
 export function Settings({ profile, onSaveProfile, onOpenLoginModal }: Props) {
@@ -53,6 +54,7 @@ export function Settings({ profile, onSaveProfile, onOpenLoginModal }: Props) {
           )}
           {section === "portails" && <PortalsSection onOpenLogin={onOpenLoginModal} />}
           {section === "filtrage" && <FilteringSection />}
+          {section === "scoring" && <ScoringSection />}
         </div>
       </div>
     </div>
@@ -504,6 +506,248 @@ function FilteringSection() {
               Erreur : {error}
             </div>
           )}
+        </>
+      )}
+    </div>
+  );
+}
+
+const SCORING_DIMENSIONS: {
+  id: keyof Omit<import("../lib/api").PonderationKrinos, "total">;
+  label: string;
+  desc: string;
+}[] = [
+  {
+    id: "affinite_metier",
+    label: "Affinité métier",
+    desc: "Correspondance avec l'activité / le savoir-faire de l'entreprise",
+  },
+  {
+    id: "references",
+    label: "Références",
+    desc: "Capacité à appuyer sur des références similaires passées",
+  },
+  {
+    id: "adequation_budget",
+    label: "Adéquation budget",
+    desc: "Taille du marché vs capacité de l'entreprise (ni trop petit ni trop gros)",
+  },
+  {
+    id: "capacite_equipe",
+    label: "Capacité équipe",
+    desc: "Taille équipe requise / délais vs équipe disponible",
+  },
+  {
+    id: "calendrier",
+    label: "Risque calendrier",
+    desc: "Réalisme des délais de réponse et d'exécution",
+  },
+];
+
+function ScoringSection() {
+  const [values, setValues] = useState<Record<string, number>>(
+    Object.fromEntries(SCORING_DIMENSIONS.map((d) => [d.id, 0])),
+  );
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedValues, setSavedValues] = useState<Record<string, number>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+
+  const total = SCORING_DIMENSIONS.reduce((s, d) => s + (values[d.id] ?? 0), 0);
+  const dirty = SCORING_DIMENSIONS.some((d) => values[d.id] !== savedValues[d.id]);
+  const totalOk = total === 100;
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .lirePonderation()
+      .then((p) => {
+        if (cancelled) return;
+        const v: Record<string, number> = {
+          affinite_metier: p.affinite_metier,
+          references: p.references,
+          adequation_budget: p.adequation_budget,
+          capacite_equipe: p.capacite_equipe,
+          calendrier: p.calendrier,
+        };
+        setValues(v);
+        setSavedValues({ ...v });
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const reset = () => {
+    const defaults = { affinite_metier: 30, references: 20, adequation_budget: 20, capacite_equipe: 15, calendrier: 15 };
+    setValues(defaults);
+  };
+
+  const onSave = async () => {
+    setSaving(true);
+    setError(null);
+    setSavedMsg(null);
+    try {
+      const sauvegarde = await api.ecrirePonderation({
+        affinite_metier: values.affinite_metier,
+        references: values.references,
+        adequation_budget: values.adequation_budget,
+        capacite_equipe: values.capacite_equipe,
+        calendrier: values.calendrier,
+      });
+      const v = {
+        affinite_metier: sauvegarde.affinite_metier,
+        references: sauvegarde.references,
+        adequation_budget: sauvegarde.adequation_budget,
+        capacite_equipe: sauvegarde.capacite_equipe,
+        calendrier: sauvegarde.calendrier,
+      };
+      setValues(v);
+      setSavedValues({ ...v });
+      setSavedMsg(
+        sauvegarde.total === 100
+          ? "Pondération enregistrée. Elle sera utilisée dès la prochaine analyse KRINOS."
+          : `Pondération enregistrée (total ${sauvegarde.total} % — le score sera normalisé automatiquement).`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="settings-section">
+      <h2>Pondération du scoring</h2>
+      <p className="settings-section__desc">
+        KRINOS demande à PYTHIA un score 0-100 pour chacune de ces dimensions
+        puis le backend calcule le score final en somme pondérée. Total cible :
+        100 % (le score est re-normalisé si le total diffère).
+      </p>
+
+      {loading ? (
+        <div style={{ color: "var(--fg-3)", fontSize: 13 }}>Chargement…</div>
+      ) : (
+        <>
+          {SCORING_DIMENSIONS.map((d) => (
+            <div className="settings-row" key={d.id}>
+              <div>
+                <div className="settings-row__label">{d.label}</div>
+                <div className="settings-row__hint">{d.desc}</div>
+              </div>
+              <div className="slider-row">
+                <input
+                  type="range"
+                  min="0"
+                  max="60"
+                  step="1"
+                  value={values[d.id]}
+                  onChange={(e) =>
+                    setValues((v) => ({ ...v, [d.id]: +e.target.value }))
+                  }
+                />
+                <div className="slider-row__val">{values[d.id]} %</div>
+              </div>
+            </div>
+          ))}
+
+          <div
+            style={{
+              marginTop: 18,
+              padding: "12px 16px",
+              background: totalOk ? "rgba(29,158,117,0.10)" : "rgba(224,169,59,0.10)",
+              border: `1px solid ${
+                totalOk ? "rgba(29,158,117,0.30)" : "rgba(224,169,59,0.30)"
+              }`,
+              borderRadius: 6,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 12.5 }}>
+              Total :{" "}
+              <strong
+                style={{
+                  color: totalOk ? "var(--argos)" : "var(--warn)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                {total} %
+              </strong>
+              {!totalOk && (
+                <span style={{ color: "var(--fg-3)", marginLeft: 8 }}>
+                  — sera re-normalisé à 100 % à l'enregistrement
+                </span>
+              )}
+            </span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn--sm" onClick={reset}>
+                Réinitialiser
+              </button>
+              <button
+                className="btn btn--gold btn--sm"
+                disabled={saving || !dirty}
+                onClick={onSave}
+              >
+                {saving ? "Enregistrement…" : dirty ? "Enregistrer" : "Aucune modification"}
+              </button>
+            </div>
+          </div>
+
+          {savedMsg && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(29,158,117,0.10)",
+                border: "1px solid rgba(29,158,117,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+              }}
+            >
+              {savedMsg}
+            </div>
+          )}
+          {error && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(220,80,80,0.10)",
+                border: "1px solid rgba(220,80,80,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+              }}
+            >
+              Erreur : {error}
+            </div>
+          )}
+
+          <div
+            style={{
+              marginTop: 18,
+              fontSize: 11.5,
+              color: "var(--fg-4)",
+              lineHeight: 1.6,
+            }}
+          >
+            Note : les AO déjà analysés gardent leur score d'origine. Pour
+            recalculer un score avec la nouvelle pondération, relance
+            l'analyse KRINOS depuis l'AO (bouton « Rédiger une réponse »
+            relance aussi l'analyse en amont si nécessaire).
+          </div>
         </>
       )}
     </div>

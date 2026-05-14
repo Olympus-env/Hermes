@@ -161,12 +161,17 @@ class AnalyseKrinos(SQLModel, table=True):
     appel_offre_id: int = Field(foreign_key="appels_offre.id", index=True)
 
     resume: str = Field(sa_column=Column(Text))
-    score: float = Field(index=True)  # 0-100
+    score: float = Field(index=True)  # 0-100 (score pondéré final)
     justification_score: str = Field(sa_column=Column(Text))
 
     # Tags JSON-string : ["bâtiment", "rénovation", ...]
     tags: Optional[str] = Field(default=None, sa_column=Column(Text))
     criteres_extraits: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    # Scores 0-100 par dimension (JSON) — utilisés avec la pondération
+    # utilisateur pour calculer `score`. Permet de recalculer le score
+    # si l'utilisateur change la pondération sans relancer PYTHIA.
+    scores_dimensions: Optional[str] = Field(default=None, sa_column=Column(Text))
 
     duree_analyse_ms: Optional[int] = None
     modele_llm: Optional[str] = None  # ex: mistral:7b-instruct-q4_K_M

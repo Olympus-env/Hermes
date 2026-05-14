@@ -14,6 +14,11 @@ from hermes.agents.krinos.downloader import (
     telecharger_documents_ao,
 )
 from hermes.agents.krinos.extractor import ErreurExtractionDocument, extraire_document
+from hermes.agents.krinos.ponderation import (
+    Ponderation,
+    charger_ponderation,
+    enregistrer_ponderation,
+)
 from hermes.db.models import (
     AnalyseKrinos,
     AppelOffre,
@@ -82,6 +87,15 @@ class AnalyseRead(BaseModel):
 class AnalyseResponse(BaseModel):
     analyse: AnalyseRead
     nouveau: bool
+
+
+class PonderationIO(BaseModel):
+    affinite_metier: int = 30
+    references: int = 20
+    adequation_budget: int = 20
+    capacite_equipe: int = 15
+    calendrier: int = 15
+    total: int = 100
 
 
 @router.post(
@@ -229,6 +243,36 @@ async def analyser_appel_offre(
     return AnalyseResponse(
         analyse=_analyse_read(resultat.analyse),
         nouveau=resultat.nouveau,
+    )
+
+
+@router.get("/ponderation", response_model=PonderationIO)
+def lire_ponderation(session: SessionDep) -> PonderationIO:
+    p = charger_ponderation(session)
+    return _ponderation_io(p)
+
+
+@router.put("/ponderation", response_model=PonderationIO)
+def ecrire_ponderation(payload: PonderationIO, session: SessionDep) -> PonderationIO:
+    nouvelle = Ponderation(
+        affinite_metier=max(0, min(100, payload.affinite_metier)),
+        references=max(0, min(100, payload.references)),
+        adequation_budget=max(0, min(100, payload.adequation_budget)),
+        capacite_equipe=max(0, min(100, payload.capacite_equipe)),
+        calendrier=max(0, min(100, payload.calendrier)),
+    )
+    enregistrer_ponderation(session, nouvelle)
+    return _ponderation_io(nouvelle)
+
+
+def _ponderation_io(p: Ponderation) -> PonderationIO:
+    return PonderationIO(
+        affinite_metier=p.affinite_metier,
+        references=p.references,
+        adequation_budget=p.adequation_budget,
+        capacite_equipe=p.capacite_equipe,
+        calendrier=p.calendrier,
+        total=p.total,
     )
 
 

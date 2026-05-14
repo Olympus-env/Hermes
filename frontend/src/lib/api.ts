@@ -81,6 +81,15 @@ export type SuggestionMotsCles = {
   raisonnement: string;
 };
 
+export type PonderationKrinos = {
+  affinite_metier: number;
+  references: number;
+  adequation_budget: number;
+  capacite_equipe: number;
+  calendrier: number;
+  total: number;
+};
+
 export type ProgressionModele = {
   modele: string;
   en_cours: boolean;
@@ -193,6 +202,12 @@ export const api = {
     fetchJson<SuggestionMotsCles>("/argos/filtre/suggerer", {
       method: "POST",
       body: JSON.stringify(profil),
+    }),
+  lirePonderation: () => fetchJson<PonderationKrinos>("/krinos/ponderation"),
+  ecrirePonderation: (p: Omit<PonderationKrinos, "total">) =>
+    fetchJson<PonderationKrinos>("/krinos/ponderation", {
+      method: "PUT",
+      body: JSON.stringify(p),
     }),
   statutModele: () => fetchJson<StatutModele>("/pythia/modele/status"),
   telechargerModele: (modele?: string) =>

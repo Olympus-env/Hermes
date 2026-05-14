@@ -20,6 +20,11 @@ from typing import Any
 from sqlmodel import Session, select
 
 from hermes.agents import pythia
+from hermes.agents.krinos.ponderation import (
+    Ponderation,
+    calculer_score_final,
+    charger_ponderation,
+)
 from hermes.config import settings
 from hermes.db.models import (
     AnalyseKrinos,
@@ -69,8 +74,9 @@ async def analyser_ao(
     if existante is not None and not forcer:
         return ResultatAnalyse(analyse=existante, nouveau=False)
 
+    ponderation = charger_ponderation(session)
     contexte = _construire_contexte(session, appel_offre)
-    prompt = _construire_prompt(contexte)
+    prompt = _construire_prompt(contexte, ponderation)
 
     debut = time.perf_counter()
     try:
@@ -96,15 +102,26 @@ async def analyser_ao(
         raise ErreurAnalyseKrinos("Sortie PYTHIA invalide") from exc
 
     champs = _normaliser_payload(payload)
+    # Score pondéré final si on a les dimensions, sinon fallback sur le score
+    # global renvoyé par PYTHIA (rétrocompat).
+    if champs["scores_dimensions"]:
+        score_final = calculer_score_final(champs["scores_dimensions"], ponderation)
+    else:
+        score_final = champs["score"]
     duree_ms = int((time.perf_counter() - debut) * 1000)
 
     analyse = AnalyseKrinos(
         appel_offre_id=appel_offre.id,
         resume=champs["resume"],
-        score=champs["score"],
+        score=score_final,
         justification_score=champs["justification"],
         tags=json.dumps(champs["tags"], ensure_ascii=False) if champs["tags"] else None,
         criteres_extraits=champs["criteres"] or None,
+        scores_dimensions=(
+            json.dumps(champs["scores_dimensions"], ensure_ascii=False)
+            if champs["scores_dimensions"]
+            else None
+        ),
         duree_analyse_ms=duree_ms,
         modele_llm=reponse.modele,
     )
@@ -163,14 +180,32 @@ def _construire_contexte(session: Session, appel_offre: AppelOffre) -> dict[str,
     }
 
 
-def _construire_prompt(contexte: dict[str, Any]) -> str:
+def _construire_prompt(contexte: dict[str, Any], ponderation: Ponderation) -> str:
+    poids_lignes = "\n".join(
+        f"      - {Ponderation.LIBELLES[d]} ({d}) : {getattr(ponderation, d)} %"
+        for d in Ponderation.DIMENSIONS
+    )
+
     return (
         "Analyse l'appel d'offre suivant et renvoie un objet JSON avec ces champs :\n"
         '  - "resume" : string (3 à 6 phrases en français)\n'
-        '  - "score" : nombre entre 0 et 100 (qualité, clarté, faisabilité du dossier)\n'
-        '  - "justification" : string (1 à 3 phrases expliquant le score)\n'
+        '  - "scores_dimensions" : objet avec un score 0-100 par dimension :\n'
+        '      { "affinite_metier", "references", "adequation_budget",\n'
+        '        "capacite_equipe", "calendrier" }\n'
+        '  - "justification" : string (1 à 3 phrases expliquant le scoring)\n'
         '  - "tags" : tableau de 3 à 8 chaînes (mots-clés métier en français)\n'
         '  - "criteres" : string (critères d\'attribution / exigences principales)\n'
+        "\n"
+        "Définition des dimensions :\n"
+        "  - affinite_metier : correspondance entre l'AO et le savoir-faire/activité\n"
+        "  - references      : possibilité d'appuyer sur des références similaires\n"
+        "  - adequation_budget : taille du marché vs capacité (ni trop petit ni trop gros)\n"
+        "  - capacite_equipe : taille équipe requise / délais vs équipe disponible\n"
+        "  - calendrier      : réalisme des délais de réponse et d'exécution\n"
+        "\n"
+        "Pondération utilisateur (info — ne modifie PAS les scores, scores tout\n"
+        "indépendamment, le backend pondère ensuite) :\n"
+        f"{poids_lignes}\n"
         "\n"
         "Métadonnées AO :\n"
         f"  titre      : {contexte['titre']}\n"
@@ -198,11 +233,25 @@ def _normaliser_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not resume:
         raise ErreurAnalyseKrinos("Résumé manquant dans la réponse PYTHIA")
 
+    # Score global (rétrocompat : si PYTHIA renvoie l'ancien format à un seul score).
     try:
         score_brut = float(payload.get("score", 0))
-    except (TypeError, ValueError) as exc:
-        raise ErreurAnalyseKrinos(f"Score invalide : {payload.get('score')}") from exc
+    except (TypeError, ValueError):
+        score_brut = 0.0
     score = max(0.0, min(100.0, score_brut))
+
+    # Scores par dimension — nouveau format
+    scores_dimensions: dict[str, float] = {}
+    raw_dims = payload.get("scores_dimensions")
+    if isinstance(raw_dims, dict):
+        for dim in Ponderation.DIMENSIONS:
+            valeur = raw_dims.get(dim)
+            if valeur is None:
+                continue
+            try:
+                scores_dimensions[dim] = max(0.0, min(100.0, float(valeur)))
+            except (TypeError, ValueError):
+                continue
 
     justification = str(payload.get("justification") or "").strip()
 
@@ -225,6 +274,7 @@ def _normaliser_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "resume": resume,
         "score": score,
+        "scores_dimensions": scores_dimensions,
         "justification": justification,
         "tags": tags,
         "criteres": criteres_str,
