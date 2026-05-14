@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from hermes.agents.argos.filtre import FiltreVeille, charger_filtre, enregistrer_filtre
 from hermes.agents.argos.registry import creer_scraper, scrapers_disponibles
 from hermes.agents.argos.runner import executer_collecte
 from hermes.agents.argos.scheduler import scheduler_global
@@ -21,6 +22,7 @@ class CollecteResponse(BaseModel):
     ao_trouves: int
     ao_nouveaux: int
     ao_dedoublonnes: int
+    ao_filtres: int = 0
     duree_ms: int
     succes: bool
     erreurs: list[str]
@@ -31,7 +33,14 @@ class CycleCollecteResponse(BaseModel):
     ao_trouves: int
     ao_nouveaux: int
     ao_dedoublonnes: int
+    ao_filtres: int = 0
     succes: bool
+
+
+class FiltreVeilleIO(BaseModel):
+    inclus: list[str] = Field(default_factory=list)
+    exclus: list[str] = Field(default_factory=list)
+    actif: bool = False
 
 
 class PortailRead(BaseModel):
@@ -82,6 +91,7 @@ async def collecter_tous(
                 ao_trouves=resultat.ao_trouves,
                 ao_nouveaux=resultat.ao_nouveaux,
                 ao_dedoublonnes=resultat.ao_dedoublonnes,
+                ao_filtres=resultat.ao_filtres,
                 duree_ms=resultat.duree_ms,
                 succes=resultat.succes,
                 erreurs=resultat.erreurs,
@@ -93,6 +103,7 @@ async def collecter_tous(
         ao_trouves=sum(r.ao_trouves for r in resultats),
         ao_nouveaux=sum(r.ao_nouveaux for r in resultats),
         ao_dedoublonnes=sum(r.ao_dedoublonnes for r in resultats),
+        ao_filtres=sum(r.ao_filtres for r in resultats),
         succes=all(r.succes for r in resultats),
     )
 
@@ -115,9 +126,38 @@ async def collecter(
         ao_trouves=resultat.ao_trouves,
         ao_nouveaux=resultat.ao_nouveaux,
         ao_dedoublonnes=resultat.ao_dedoublonnes,
+        ao_filtres=resultat.ao_filtres,
         duree_ms=resultat.duree_ms,
         succes=resultat.succes,
         erreurs=resultat.erreurs,
+    )
+
+
+@router.get("/filtre", response_model=FiltreVeilleIO)
+def lire_filtre(session: Session = Depends(get_session)) -> FiltreVeilleIO:
+    """Retourne le filtre mots-clés appliqué aux collectes ARGOS."""
+    filtre = charger_filtre(session)
+    return FiltreVeilleIO(
+        inclus=list(filtre.inclus),
+        exclus=list(filtre.exclus),
+        actif=filtre.actif,
+    )
+
+
+@router.put("/filtre", response_model=FiltreVeilleIO)
+def ecrire_filtre(
+    payload: FiltreVeilleIO,
+    session: Session = Depends(get_session),
+) -> FiltreVeilleIO:
+    """Met à jour le filtre mots-clés. Les listes sont normalisées et dédupliquées."""
+    nettoye = enregistrer_filtre(
+        session,
+        FiltreVeille(inclus=tuple(payload.inclus), exclus=tuple(payload.exclus)),
+    )
+    return FiltreVeilleIO(
+        inclus=list(nettoye.inclus),
+        exclus=list(nettoye.exclus),
+        actif=nettoye.actif,
     )
 
 

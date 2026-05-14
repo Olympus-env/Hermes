@@ -136,6 +136,9 @@ npm run tauri dev
   réponses.
 - **ARGOS réel** : collecte BOAMP via l'API publique DILA et persistance dans
   SQLite/MNEMOSYNE.
+- **Filtrage ARGOS** : mots-clés inclus/exclus configurables dans
+  *Paramètres → Critères de filtrage*. Les AO non pertinents sont rejetés
+  avant insertion. Routes `GET/PUT /argos/filtre`.
 - **Onglet Veille connecté au backend** : les AO affichés viennent de
   `/appels-offre`, pas des données mock.
 - **Qualification AO persistée** : depuis la Veille, les actions

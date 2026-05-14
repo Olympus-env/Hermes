@@ -49,6 +49,7 @@ class ResultatCollecte:
     ao_trouves: int = 0
     ao_nouveaux: int = 0
     ao_dedoublonnes: int = 0
+    ao_filtres: int = 0
     duree_ms: int = 0
     erreurs: list[str] = field(default_factory=list)
     items: list[AOCollecte] = field(default_factory=list)

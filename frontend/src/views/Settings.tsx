@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PORTALS, type Portal } from "../lib/data";
 import {
   getHermionUserContext,
@@ -7,6 +7,7 @@ import {
   type UserProfile,
 } from "../lib/userProfile";
 import { Icon } from "../components/Icon";
+import { api } from "../lib/api";
 
 type Props = {
   profile: UserProfile | null;
@@ -208,113 +209,164 @@ function PortalsSection({ onOpenLogin }: { onOpenLogin: () => void }) {
   );
 }
 
+function parseMotsCles(value: string): string[] {
+  return value
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 function FilteringSection() {
-  const [keywords, setKeywords] = useState(
-    "SI métier, AMO, transformation numérique, audit cyber, télémédecine",
-  );
-  const [excluded, setExcluded] = useState(
-    "infrastructure physique, baies, climatisation",
-  );
-  const [minBudget, setMinBudget] = useState(150);
-  const [maxBudget, setMaxBudget] = useState(5000);
-  const [zones, setZones] = useState<Record<string, boolean>>({
-    "Île-de-France": true,
-    Occitanie: true,
-    PACA: true,
-    "Auvergne-Rhône-Alpes": true,
-    "Outre-mer": false,
-    "Hauts-de-France": true,
-  });
+  const [keywords, setKeywords] = useState("");
+  const [excluded, setExcluded] = useState("");
+  const [actif, setActif] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .lireFiltreVeille()
+      .then((f) => {
+        if (cancelled) return;
+        setKeywords(f.inclus.join(", "));
+        setExcluded(f.exclus.join(", "));
+        setActif(f.actif);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onSave = async () => {
+    setSaving(true);
+    setError(null);
+    setSavedMessage(null);
+    try {
+      const reponse = await api.ecrireFiltreVeille({
+        inclus: parseMotsCles(keywords),
+        exclus: parseMotsCles(excluded),
+      });
+      setKeywords(reponse.inclus.join(", "));
+      setExcluded(reponse.exclus.join(", "));
+      setActif(reponse.actif);
+      setSavedMessage(
+        reponse.actif
+          ? "Filtre enregistré — il sera appliqué dès la prochaine collecte ARGOS."
+          : "Filtre vidé — toutes les collectes ARGOS conservent l'intégralité des AO.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="settings-section">
       <h2>Critères de filtrage</h2>
       <p className="settings-section__desc">
-        ARGOS filtre la collecte selon ces critères. Plus ils sont précis, plus la
-        pré-sélection est pertinente.
+        ARGOS filtre les AO collectés avant insertion dans MNEMOSYNE selon ces
+        mots-clés. Un AO est conservé si au moins un mot-clé inclus apparaît dans
+        son titre, objet ou émetteur, et qu'aucun mot-clé exclus ne s'y trouve.
+        Comparaison insensible à la casse et aux accents.
       </p>
 
-      <div className="settings-row">
-        <div>
-          <div className="settings-row__label">Mots-clés inclusifs</div>
-          <div className="settings-row__hint">Séparés par des virgules</div>
-        </div>
-        <textarea
-          className="response-comment-input"
-          style={{ minHeight: 60 }}
-          value={keywords}
-          onChange={(e) => setKeywords(e.target.value)}
-        />
-      </div>
-
-      <div className="settings-row">
-        <div>
-          <div className="settings-row__label">Mots-clés exclusifs</div>
-          <div className="settings-row__hint">AO contenant ces termes sont écartés</div>
-        </div>
-        <textarea
-          className="response-comment-input"
-          style={{ minHeight: 60 }}
-          value={excluded}
-          onChange={(e) => setExcluded(e.target.value)}
-        />
-      </div>
-
-      <div className="settings-row">
-        <div>
-          <div className="settings-row__label">Budget</div>
-          <div className="settings-row__hint">En milliers d'euros</div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "var(--fg-3)", marginBottom: 4 }}>
-              Min · {minBudget} k€
+      {loading ? (
+        <div style={{ color: "var(--fg-3)", fontSize: 13 }}>Chargement…</div>
+      ) : (
+        <>
+          <div className="settings-row">
+            <div>
+              <div className="settings-row__label">Mots-clés inclus</div>
+              <div className="settings-row__hint">
+                Séparés par des virgules. Vide = aucun filtre d'inclusion.
+              </div>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="10000"
-              step="50"
-              value={minBudget}
-              onChange={(e) => setMinBudget(+e.target.value)}
-              style={{ width: "100%", accentColor: "var(--gold)" }}
+            <textarea
+              className="response-comment-input"
+              style={{ minHeight: 60 }}
+              placeholder="ex : maintenance applicative, java, postgresql, audit"
+              value={keywords}
+              onChange={(e) => setKeywords(e.target.value)}
             />
           </div>
-          <div>
-            <div style={{ fontSize: 11, color: "var(--fg-3)", marginBottom: 4 }}>
-              Max · {maxBudget} k€
+
+          <div className="settings-row">
+            <div>
+              <div className="settings-row__label">Mots-clés exclus</div>
+              <div className="settings-row__hint">
+                AO contenant ces termes (titre/objet/émetteur) sont écartés.
+              </div>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="10000"
-              step="50"
-              value={maxBudget}
-              onChange={(e) => setMaxBudget(+e.target.value)}
-              style={{ width: "100%", accentColor: "var(--gold)" }}
+            <textarea
+              className="response-comment-input"
+              style={{ minHeight: 60 }}
+              placeholder="ex : nettoyage, restauration, espaces verts"
+              value={excluded}
+              onChange={(e) => setExcluded(e.target.value)}
             />
           </div>
-        </div>
-      </div>
 
-      <div className="settings-row">
-        <div>
-          <div className="settings-row__label">Zones géographiques</div>
-          <div className="settings-row__hint">Régions surveillées</div>
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {Object.entries(zones).map(([k, v]) => (
+          <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center" }}>
             <button
-              key={k}
-              className={`btn btn--sm ${v ? "btn--gold" : "btn--ghost"}`}
-              onClick={() => setZones((z) => ({ ...z, [k]: !v }))}
+              className="btn btn--gold"
+              disabled={saving}
+              onClick={onSave}
             >
-              {v && <Icon.check size={10} />}
-              {k}
+              {saving ? "Enregistrement…" : "Enregistrer le filtre"}
             </button>
-          ))}
-        </div>
-      </div>
+            <span
+              style={{
+                fontSize: 12,
+                color: actif ? "var(--argos)" : "var(--fg-3)",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              {actif ? "● filtre actif" : "○ filtre inactif"}
+            </span>
+          </div>
+
+          {savedMessage && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(29,158,117,0.10)",
+                border: "1px solid rgba(29,158,117,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+              }}
+            >
+              {savedMessage}
+            </div>
+          )}
+          {error && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(220,80,80,0.10)",
+                border: "1px solid rgba(220,80,80,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+              }}
+            >
+              Erreur : {error}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

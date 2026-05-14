@@ -65,7 +65,14 @@ export type CycleCollecteArgos = {
   ao_trouves: number;
   ao_nouveaux: number;
   ao_dedoublonnes: number;
+  ao_filtres: number;
   succes: boolean;
+};
+
+export type FiltreVeille = {
+  inclus: string[];
+  exclus: string[];
+  actif: boolean;
 };
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -99,5 +106,11 @@ export const api = {
     fetchJson<AppelOffre>(`/appels-offre/${id}/statut`, {
       method: "PATCH",
       body: JSON.stringify({ statut }),
+    }),
+  lireFiltreVeille: () => fetchJson<FiltreVeille>("/argos/filtre"),
+  ecrireFiltreVeille: (filtre: { inclus: string[]; exclus: string[] }) =>
+    fetchJson<FiltreVeille>("/argos/filtre", {
+      method: "PUT",
+      body: JSON.stringify(filtre),
     }),
 };

@@ -9,6 +9,7 @@ from loguru import logger
 from sqlmodel import Session, select
 
 from hermes.agents.argos.base import AOCollecte, ResultatCollecte, Scraper
+from hermes.agents.argos.filtre import charger_filtre
 from hermes.db.models import AppelOffre, LogAgent, NiveauLog, Portail, StatutAO
 from hermes.securite.credentials import ErreurCredentials, dechiffrer_credentials
 
@@ -53,7 +54,12 @@ async def executer_collecte(
     resultat.items = items
     resultat.ao_trouves = len(items)
 
+    filtre = charger_filtre(session)
+
     for item in items:
+        if filtre.actif and not filtre.correspond(item):
+            resultat.ao_filtres += 1
+            continue
         if _existe(session, portail.id, item):
             resultat.ao_dedoublonnes += 1
             continue
@@ -74,7 +80,9 @@ async def executer_collecte(
         niveau=NiveauLog.INFO,
         message=(
             f"Collecte {scraper.nom} : {resultat.ao_nouveaux} nouveaux / "
-            f"{resultat.ao_trouves} trouvés (dédoublonnés : {resultat.ao_dedoublonnes}) "
+            f"{resultat.ao_trouves} trouvés "
+            f"(dédoublonnés : {resultat.ao_dedoublonnes}, "
+            f"filtrés : {resultat.ao_filtres}) "
             f"en {resultat.duree_ms} ms"
         ),
         portail_id=portail.id,
