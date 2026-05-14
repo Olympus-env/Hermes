@@ -1,50 +1,181 @@
-import { useState } from "react";
-import {
-  RESPONSES,
-  RESPONSE_STATUS,
-  type Reponse,
-  type ResponseStatus,
-} from "../lib/data";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentChip } from "../components/AgentChip";
 import { Icon } from "../components/Icon";
 import { Score } from "../components/Score";
 import { StatusPill } from "../components/StatusPill";
+import {
+  api,
+  type ReponseAvecAO,
+  type ReponseHermion,
+  type StatutReponseHermion,
+} from "../lib/api";
+import { type ResponseStatus } from "../lib/data";
 import type { ToastInput } from "../lib/toast";
+import { loadUserProfile } from "../lib/userProfile";
 
 type Props = { onToast: (t: ToastInput) => void };
 
-const STATUS_FILTERS: { id: ResponseStatus | "all"; label: string }[] = [
-  { id: "all",        label: "Toutes" },
-  { id: "en-attente", label: "En attente" },
-  { id: "a-modifier", label: "À modifier" },
-  { id: "validee",    label: "Validées" },
-  { id: "rejetee",    label: "Rejetées" },
-  { id: "exportee",   label: "Exportées" },
+const STATUS_FILTERS: { id: StatutReponseHermion | "all"; label: string }[] = [
+  { id: "all",          label: "Toutes" },
+  { id: "en_attente",   label: "En attente" },
+  { id: "a_modifier",   label: "À modifier" },
+  { id: "validee",      label: "Validées" },
+  { id: "rejetee",      label: "Rejetées" },
+  { id: "exportee",     label: "Exportées" },
 ];
 
+/** Mapping du statut backend vers le code utilisé par StatusPill (data.ts). */
+function toUiStatus(s: StatutReponseHermion): ResponseStatus {
+  if (s === "en_generation" || s === "en_attente") return "en-attente";
+  if (s === "a_modifier") return "a-modifier";
+  if (s === "validee") return "validee";
+  if (s === "rejetee") return "rejetee";
+  return "exportee";
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("fr-FR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function formatDuree(ms: number | null): string {
+  if (!ms || ms <= 0) return "—";
+  if (ms < 1000) return `${ms} ms`;
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
 export function Responses({ onToast }: Props) {
-  const data = RESPONSES;
-  const [filter, setFilter] = useState<ResponseStatus | "all">("all");
-  const [selectedId, setSelectedId] = useState<string | undefined>(data[0]?.id);
-  const [comments, setComments] = useState<Record<string, string>>(() =>
-    Object.fromEntries(data.map((r) => [r.id, r.comment || ""])),
-  );
-  const [statuses, setStatuses] = useState<Record<string, ResponseStatus>>(() =>
-    Object.fromEntries(data.map((r) => [r.id, r.status])),
+  const [filter, setFilter] = useState<StatutReponseHermion | "all">("all");
+  const [reponses, setReponses] = useState<ReponseAvecAO[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<ReponseHermion | null>(null);
+  const [loadingList, setLoadingList] = useState(true);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Charge la liste
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingList(true);
+    api
+      .listerReponsesHermion()
+      .then((data) => {
+        if (cancelled) return;
+        setReponses(data);
+        if (data.length > 0 && selectedId === null) {
+          setSelectedId(data[0].id);
+        }
+        setError(null);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingList(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
+
+  // Charge le détail de la réponse sélectionnée
+  useEffect(() => {
+    if (selectedId === null) {
+      setDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingDetail(true);
+    api
+      .lireReponseHermion(selectedId)
+      .then((r) => {
+        if (!cancelled) setDetail(r);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDetail(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
+  const filtered = useMemo(
+    () => (filter === "all" ? reponses : reponses.filter((r) => r.statut === filter)),
+    [reponses, filter],
   );
 
-  const filtered = data.filter((r) =>
-    filter === "all" ? true : statuses[r.id] === filter,
-  );
-  const selected = data.find((r) => r.id === selectedId);
+  const reload = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  const updateStatus = (
-    id: string,
-    newStatus: ResponseStatus,
-    toastMsg: ToastInput | null,
+  const selectedSummary = reponses.find((r) => r.id === selectedId);
+
+  const onStatusChange = async (
+    next: StatutReponseHermion,
+    commentaire?: string,
+    toast?: ToastInput,
   ) => {
-    setStatuses((s) => ({ ...s, [id]: newStatus }));
-    if (toastMsg) onToast(toastMsg);
+    if (selectedId === null) return;
+    try {
+      const updated = await api.modifierStatutReponse(selectedId, next, commentaire);
+      setDetail(updated);
+      // Synchronise la liste localement
+      setReponses((rs) =>
+        rs.map((r) => (r.id === selectedId ? { ...r, statut: updated.statut } : r)),
+      );
+      if (toast) onToast(toast);
+    } catch (e) {
+      onToast({
+        title: "HERMION",
+        app: "Erreur",
+        msg: e instanceof Error ? e.message : String(e),
+        agent: "hermion",
+      });
+    }
+  };
+
+  const onSaveContent = async (contenu: string, commentaire?: string) => {
+    if (selectedId === null) return;
+    try {
+      const updated = await api.modifierContenuReponse(selectedId, contenu, commentaire);
+      setDetail(updated);
+      setReponses((rs) =>
+        rs.map((r) =>
+          r.id === selectedId
+            ? {
+                ...r,
+                statut: updated.statut,
+                longueur_mots: updated.longueur_mots,
+              }
+            : r,
+        ),
+      );
+      onToast({
+        title: "HERMION",
+        app: "Réponse mise à jour",
+        msg: "Contenu enregistré, statut passé à « à modifier ».",
+        agent: "hermion",
+      });
+    } catch (e) {
+      onToast({
+        title: "HERMION",
+        app: "Erreur de sauvegarde",
+        msg: e instanceof Error ? e.message : String(e),
+        agent: "hermion",
+      });
+    }
   };
 
   return (
@@ -52,9 +183,7 @@ export function Responses({ onToast }: Props) {
       <div className="filters">
         {STATUS_FILTERS.map((s) => {
           const count =
-            s.id === "all"
-              ? data.length
-              : data.filter((r) => statuses[r.id] === s.id).length;
+            s.id === "all" ? reponses.length : reponses.filter((r) => r.statut === s.id).length;
           const active = filter === s.id;
           return (
             <button
@@ -77,65 +206,81 @@ export function Responses({ onToast }: Props) {
           );
         })}
         <div style={{ flex: 1 }} />
-        <button className="btn btn--ghost btn--sm">
-          <Icon.download size={11} /> Tout exporter
+        <button className="btn btn--ghost btn--sm" onClick={reload} disabled={loadingList}>
+          <Icon.refresh size={11} /> {loadingList ? "Chargement…" : "Rafraîchir"}
         </button>
       </div>
 
+      {error && (
+        <div
+          style={{
+            margin: "12px 0",
+            padding: "10px 14px",
+            background: "rgba(220,80,80,0.10)",
+            border: "1px solid rgba(220,80,80,0.30)",
+            borderRadius: 6,
+            fontSize: 12.5,
+            color: "var(--fg-2)",
+          }}
+        >
+          Erreur : {error}
+        </div>
+      )}
+
       <div className="responses-layout">
         <div className="responses-list">
-          {filtered.map((r) => {
-            const status = statuses[r.id];
-            const s = RESPONSE_STATUS[status];
-            const isSel = r.id === selectedId;
-            return (
-              <article
-                key={r.id}
-                className={`response-card${isSel ? " response-card--selected" : ""}`}
-                style={{ borderLeftColor: s.color }}
-                onClick={() => setSelectedId(r.id)}
-              >
-                <div className="response-card__top">
-                  <span>{r.id}</span>
-                  <StatusPill status={status} />
-                </div>
-                <h3 className="response-card__title">{r.tender}</h3>
-                <div className="response-card__bottom">
-                  <span>{r.issuer}</span>
-                  <span>
-                    {r.pages} p. · {r.generatedAt.split(" ")[1]}
-                  </span>
-                </div>
-              </article>
-            );
-          })}
-
-          {filtered.length === 0 && (
-            <div
-              style={{
-                padding: 30,
-                textAlign: "center",
-                color: "var(--fg-3)",
-                fontSize: 12.5,
-              }}
-            >
-              Aucune réponse dans ce statut.
+          {loadingList && reponses.length === 0 ? (
+            <div style={{ padding: 30, textAlign: "center", color: "var(--fg-3)", fontSize: 12.5 }}>
+              Chargement des réponses…
             </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: 30, textAlign: "center", color: "var(--fg-3)", fontSize: 12.5 }}>
+              {reponses.length === 0
+                ? "Aucune réponse HERMION rédigée pour l'instant. Va dans l'onglet Veille, choisis un AO à répondre, puis lance la rédaction."
+                : "Aucune réponse dans ce statut."}
+            </div>
+          ) : (
+            filtered.map((r) => {
+              const uiStatus = toUiStatus(r.statut);
+              const isSel = r.id === selectedId;
+              return (
+                <article
+                  key={r.id}
+                  className={`response-card${isSel ? " response-card--selected" : ""}`}
+                  onClick={() => setSelectedId(r.id)}
+                >
+                  <div className="response-card__top">
+                    <span>rep-{r.id} · v{r.version}</span>
+                    <StatusPill status={uiStatus} />
+                  </div>
+                  <h3 className="response-card__title">{r.appel_offre_titre}</h3>
+                  <div className="response-card__bottom">
+                    <span>{r.appel_offre_emetteur || "—"}</span>
+                    <span>
+                      {r.longueur_mots ? `${r.longueur_mots} mots · ` : ""}
+                      {formatDate(r.cree_le).split(" ")[1] || formatDate(r.cree_le)}
+                    </span>
+                  </div>
+                </article>
+              );
+            })
           )}
         </div>
 
-        {selected && (
+        {selectedSummary && detail && (
           <ResponseDetail
-            key={selected.id}
-            response={selected}
-            status={statuses[selected.id]}
-            comment={comments[selected.id]}
-            onComment={(v) =>
-              setComments((c) => ({ ...c, [selected.id]: v }))
-            }
-            onStatusChange={updateStatus}
-            onToast={onToast}
+            key={detail.id}
+            summary={selectedSummary}
+            detail={detail}
+            loading={loadingDetail}
+            onStatusChange={onStatusChange}
+            onSaveContent={onSaveContent}
           />
+        )}
+        {!selectedSummary && !loadingList && reponses.length > 0 && (
+          <div className="response-detail" style={{ padding: 30, color: "var(--fg-3)" }}>
+            Sélectionne une réponse à gauche.
+          </div>
         )}
       </div>
     </div>
@@ -143,29 +288,43 @@ export function Responses({ onToast }: Props) {
 }
 
 type DetailProps = {
-  response: Reponse;
-  status: ResponseStatus;
-  comment: string;
-  onComment: (v: string) => void;
+  summary: ReponseAvecAO;
+  detail: ReponseHermion;
+  loading: boolean;
   onStatusChange: (
-    id: string,
-    next: ResponseStatus,
-    toast: ToastInput | null,
+    next: StatutReponseHermion,
+    commentaire?: string,
+    toast?: ToastInput,
   ) => void;
-  onToast: (t: ToastInput) => void;
+  onSaveContent: (contenu: string, commentaire?: string) => void;
 };
 
 function ResponseDetail({
-  response,
-  status,
-  comment,
-  onComment,
+  summary,
+  detail,
+  loading,
   onStatusChange,
-  onToast,
+  onSaveContent,
 }: DetailProps) {
-  const showCommentBox = status === "a-modifier" || status === "rejetee";
-  const [page, setPage] = useState(1);
-  const totalPages = response.pages;
+  const [editing, setEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState(detail.contenu);
+  const [comment, setComment] = useState(detail.commentaire_humain ?? "");
+
+  useEffect(() => {
+    setEditedContent(detail.contenu);
+    setComment(detail.commentaire_humain ?? "");
+    setEditing(false);
+  }, [detail.id, detail.contenu, detail.commentaire_humain]);
+
+  const uiStatus = toUiStatus(detail.statut);
+  const verrouille = detail.statut === "exportee" || detail.statut === "rejetee";
+  const peutValider = detail.statut === "en_attente" || detail.statut === "a_modifier";
+  const showCommentBox = detail.statut === "a_modifier" || detail.statut === "rejetee" || editing;
+
+  const profil = loadUserProfile();
+  const profilLabel = profil
+    ? `${profil.firstName} ${profil.lastName}`.trim()
+    : "Utilisateur non configuré";
 
   return (
     <div className="response-detail">
@@ -179,7 +338,7 @@ function ResponseDetail({
             marginBottom: 8,
           }}
         >
-          Réponse · {response.id}
+          Réponse #{detail.id} · v{detail.version}
         </div>
         <h2
           style={{
@@ -190,86 +349,103 @@ function ResponseDetail({
             letterSpacing: "-0.005em",
           }}
         >
-          {response.tender}
+          {summary.appel_offre_titre}
         </h2>
         <div style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 16 }}>
-          {response.issuer}
+          {summary.appel_offre_emetteur || "Émetteur inconnu"}
         </div>
 
         <div style={{ marginBottom: 18 }}>
-          <StatusPill status={status} />
+          <StatusPill status={uiStatus} />
         </div>
 
         <dl className="kv" style={{ marginBottom: 22 }}>
-          <dt>Pages</dt>
-          <dd>{response.pages}</dd>
+          <dt>Version</dt>
+          <dd style={{ fontFamily: "var(--font-mono)" }}>v{detail.version}</dd>
+          <dt>Mots</dt>
+          <dd>{detail.longueur_mots ?? "—"}</dd>
           <dt>Généré</dt>
-          <dd style={{ fontFamily: "var(--font-mono)" }}>{response.generatedAt}</dd>
-          <dt>Score AO</dt>
-          <dd>
-            <Score value={response.score} />
+          <dd style={{ fontFamily: "var(--font-mono)", fontSize: 11.5 }}>
+            {formatDate(detail.cree_le)}
           </dd>
+          <dt>Durée</dt>
+          <dd>{formatDuree(detail.duree_generation_ms)}</dd>
+          <dt>Profil</dt>
+          <dd style={{ fontSize: 11.5 }}>{profilLabel}</dd>
           <dt>Agent</dt>
           <dd>
             <AgentChip agent="hermion" state="active" compact />
+          </dd>
+          <dt>Score AO</dt>
+          <dd>
+            <Score value={70} />
           </dd>
         </dl>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <button
             className="btn btn--ok"
+            disabled={!peutValider || loading}
             onClick={() =>
-              onStatusChange(response.id, "validee", {
-                title: "Validation",
+              onStatusChange("validee", undefined, {
+                title: "HERMION",
                 app: "Réponse validée",
-                msg: `La réponse ${response.id} a été validée et est prête à l'export.`,
-                agent: "argos",
+                msg: `La réponse v${detail.version} a été validée — l'AO passe en « répondu ».`,
+                agent: "hermion",
               })
             }
-            disabled={status === "validee" || status === "exportee"}
           >
             <Icon.check size={13} /> Valider
           </button>
           <button
             className="btn btn--warn"
-            onClick={() => onStatusChange(response.id, "a-modifier", null)}
-            disabled={status === "exportee"}
+            disabled={verrouille || loading}
+            onClick={() =>
+              onStatusChange("a_modifier", comment, {
+                title: "HERMION",
+                app: "Révision demandée",
+                msg: "La réponse est passée en « à modifier ».",
+                agent: "hermion",
+              })
+            }
           >
             <Icon.refresh size={13} /> Demander une révision
           </button>
           <button
             className="btn btn--danger"
-            onClick={() => onStatusChange(response.id, "rejetee", null)}
-            disabled={status === "exportee"}
+            disabled={verrouille || loading}
+            onClick={() =>
+              onStatusChange("rejetee", comment, {
+                title: "HERMION",
+                app: "Réponse rejetée",
+                msg: `La réponse v${detail.version} a été rejetée.`,
+                agent: "hermion",
+              })
+            }
           >
             <Icon.close size={13} /> Rejeter
           </button>
           <div className="divider" />
           <button
             className="btn"
-            onClick={() =>
-              onToast({
-                title: "Export",
-                app: "PDF téléchargé",
-                msg: `${response.id}.pdf (${response.pages} p.) prêt dans le dossier d'export.`,
-                agent: "hermion",
-              })
-            }
+            disabled={!editing}
+            onClick={() => onSaveContent(editedContent, comment)}
           >
-            <Icon.download size={13} /> Télécharger le PDF
+            <Icon.check size={13} /> Enregistrer les modifications
           </button>
           <button
-            className="btn"
-            onClick={() =>
-              onToast({
-                title: "Envoi mail",
-                app: "Mail en file d'attente",
-                msg: `Réponse envoyée à ${response.issuer}.`,
-                agent: "argos",
-              })
-            }
+            className={`btn ${editing ? "btn--ghost" : ""}`}
+            onClick={() => {
+              if (editing) {
+                setEditedContent(detail.contenu);
+                setEditing(false);
+              } else {
+                setEditing(true);
+              }
+            }}
+            disabled={verrouille}
           >
-            <Icon.mail size={13} /> Envoyer par mail
+            <Icon.refresh size={13} /> {editing ? "Annuler l'édition" : "Éditer le contenu"}
           </button>
         </div>
 
@@ -284,145 +460,119 @@ function ResponseDetail({
                 marginBottom: 8,
               }}
             >
-              Commentaire de révision
+              Commentaire humain
             </div>
             <textarea
               className="response-comment-input"
               value={comment}
-              onChange={(e) => onComment(e.target.value)}
-              placeholder="Détaillez les modifications à apporter — HERMION régénérera les sections concernées…"
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Notes internes, raisons de la révision/rejet, points à corriger…"
             />
-            <button
-              className="btn btn--ghost btn--sm"
-              style={{ marginTop: 8, width: "100%" }}
-              onClick={() =>
-                onToast({
-                  title: "HERMION",
-                  app: "Régénération demandée",
-                  msg: "Brouillon en cours de mise à jour selon vos remarques.",
-                  agent: "hermion",
-                })
-              }
-            >
-              <Icon.refresh size={11} /> Soumettre à HERMION
-            </button>
           </div>
         )}
       </aside>
 
       <div className="response-pdf">
         <div className="pdf-toolbar">
-          <button
-            className="btn btn--icon-only btn--ghost btn--sm"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            style={{ transform: "scaleX(-1)" }}
-          >
-            <Icon.chevron size={10} />
-          </button>
-          <span>
-            Page <strong style={{ color: "var(--fg)" }}>{page}</strong> / {totalPages}
+          <span style={{ fontSize: 11 }}>
+            Réponse rep-{detail.id} · <strong style={{ color: "var(--fg)" }}>v{detail.version}</strong>
           </span>
-          <button
-            className="btn btn--icon-only btn--ghost btn--sm"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-          >
-            <Icon.chevron size={10} />
-          </button>
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 10.5 }}>{response.id} · v1</span>
+          <span style={{ fontSize: 10.5 }}>
+            {detail.longueur_mots ?? "—"} mots ·{" "}
+            {Math.max(1, Math.ceil((detail.longueur_mots ?? 0) / 350))} p. approx.
+          </span>
         </div>
 
-        <div className="pdf-page">
-          <div className="pdf-watermark">HERMES · HERMION</div>
-          {page === 1 ? (
-            <>
-              <div className="pdf-meta">RÉPONSE À APPEL D'OFFRE</div>
-              <h1>{response.tender}</h1>
-              <div className="pdf-meta" style={{ marginTop: 6 }}>
-                {response.issuer} · {response.generatedAt}
-              </div>
-
-              <h2>1. Présentation du soumissionnaire</h2>
-              <p>
-                Notre cabinet, fort de quinze années d'expérience auprès des donneurs
-                d'ordre publics, propose une offre construite autour d'une équipe
-                pluridisciplinaire dédiée à la conduite des programmes de transformation
-                numérique. Nous avons mené des missions similaires pour la DGAMPA (2023),
-                Naval Group (2024) et la Caisse des Dépôts (2022, 2024).
-              </p>
-
-              <h2>2. Compréhension du besoin</h2>
-              <p>
-                Le marché vise à doter votre direction d'un système d'information
-                modernisé, interopérable avec les systèmes existants et capable d'absorber
-                la croissance du périmètre fonctionnel attendue sur les trois prochaines
-                années.
-              </p>
-
-              <h2>3. Synthèse de l'offre</h2>
-              <table>
-                <tbody>
-                  <tr>
-                    <td>Périmètre</td>
-                    <td>SI métier + RUN 3 ans + TMA</td>
-                  </tr>
-                  <tr>
-                    <td>Méthodologie</td>
-                    <td>Agile à l'échelle (SAFe niveau Essentiel)</td>
-                  </tr>
-                  <tr>
-                    <td>Équipe dédiée</td>
-                    <td>14 ETP — dont 3 architectes senior</td>
-                  </tr>
-                  <tr>
-                    <td>Démarrage</td>
-                    <td>T+15 jours après notification</td>
-                  </tr>
-                </tbody>
-              </table>
-            </>
+        <div className="pdf-page" style={{ padding: editing ? 0 : undefined }}>
+          {editing ? (
+            <textarea
+              value={editedContent}
+              onChange={(e) => setEditedContent(e.target.value)}
+              spellCheck
+              style={{
+                width: "100%",
+                height: "100%",
+                minHeight: 540,
+                resize: "vertical",
+                fontFamily: "var(--font-mono)",
+                fontSize: 12.5,
+                lineHeight: 1.6,
+                padding: 20,
+                border: "none",
+                background: "transparent",
+                color: "var(--fg)",
+                outline: "none",
+              }}
+            />
           ) : (
-            <>
-              <div className="pdf-meta">Page {page}</div>
-              <h2>Section — Méthodologie projet</h2>
-              <p>
-                Notre approche s'appuie sur un découpage en cycles de livraison itératifs
-                de trois semaines, chacun aboutissant à une démonstration en environnement
-                de recette et à une validation formelle des Product Owners désignés.
-              </p>
-              <p>
-                Les points de gouvernance hebdomadaires permettent d'arbitrer en temps
-                réel les écarts de périmètre et d'ajuster les priorités selon les besoins
-                métiers identifiés en cours de mission.
-              </p>
-              <h2>Indicateurs de pilotage</h2>
-              <table>
-                <tbody>
-                  <tr>
-                    <td>Vélocité</td>
-                    <td>Mesurée par sprint — cible 80 points</td>
-                  </tr>
-                  <tr>
-                    <td>Qualité</td>
-                    <td>Taux de défauts critiques &lt; 2 %</td>
-                  </tr>
-                  <tr>
-                    <td>Satisfaction</td>
-                    <td>Enquête trimestrielle, cible NPS ≥ 40</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p>
-                Chaque jalon contractuel fait l'objet d'un comité de validation auquel
-                participent les représentants de la maîtrise d'ouvrage, de la maîtrise
-                d'œuvre interne et de notre direction de projet.
-              </p>
-            </>
+            <ReponseMarkdown contenu={detail.contenu} />
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Rendu basique du markdown HERMION : titres, paragraphes, listes simples. */
+function ReponseMarkdown({ contenu }: { contenu: string }) {
+  const blocks = contenu.split(/\n{2,}/);
+  return (
+    <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+      {blocks.map((b, i) => {
+        const trimmed = b.trim();
+        if (!trimmed) return null;
+        if (trimmed.startsWith("# ")) {
+          return (
+            <h1 key={i} style={{ fontSize: 22, fontWeight: 700, marginTop: 0, marginBottom: 14 }}>
+              {trimmed.slice(2)}
+            </h1>
+          );
+        }
+        if (trimmed.startsWith("## ")) {
+          return (
+            <h2 key={i} style={{ fontSize: 16, fontWeight: 600, marginTop: 18, marginBottom: 8 }}>
+              {trimmed.slice(3)}
+            </h2>
+          );
+        }
+        if (trimmed.startsWith("### ")) {
+          return (
+            <h3 key={i} style={{ fontSize: 14, fontWeight: 600, marginTop: 14, marginBottom: 6 }}>
+              {trimmed.slice(4)}
+            </h3>
+          );
+        }
+        // Liste numérotée ou à puces
+        const lines = trimmed.split("\n");
+        const isList = lines.every((l) => /^(\d+\.|-|\*)\s+/.test(l.trim()));
+        if (isList) {
+          const ordered = /^\d+\./.test(lines[0].trim());
+          const Tag = ordered ? "ol" : "ul";
+          return (
+            <Tag key={i} style={{ margin: "8px 0 12px 22px" }}>
+              {lines.map((l, j) => (
+                <li key={j} style={{ marginBottom: 4 }}>
+                  {l.trim().replace(/^(\d+\.|-|\*)\s+/, "")}
+                </li>
+              ))}
+            </Tag>
+          );
+        }
+        // Paragraphe italique (commence par *…* sur toute la ligne)
+        if (/^\*[^*].+\*$/.test(trimmed)) {
+          return (
+            <p key={i} style={{ fontStyle: "italic", color: "var(--fg-3)", margin: "4px 0" }}>
+              {trimmed.slice(1, -1)}
+            </p>
+          );
+        }
+        return (
+          <p key={i} style={{ margin: "0 0 12px" }}>
+            {trimmed}
+          </p>
+        );
+      })}
     </div>
   );
 }

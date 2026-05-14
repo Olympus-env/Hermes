@@ -93,6 +93,58 @@ export type StatutModele = {
   progression: ProgressionModele;
 };
 
+export type StatutReponseHermion =
+  | "en_generation"
+  | "en_attente"
+  | "a_modifier"
+  | "validee"
+  | "rejetee"
+  | "exportee";
+
+export type ReponseHermion = {
+  id: number;
+  appel_offre_id: number;
+  version: number;
+  statut: StatutReponseHermion;
+  contenu: string;
+  longueur_mots: number | null;
+  duree_generation_ms: number | null;
+  workflow_utilise: string | null;
+  commentaire_humain: string | null;
+  chemin_export: string | null;
+  cree_le: string;
+  maj_le: string;
+};
+
+export type ReponseAvecAO = {
+  id: number;
+  appel_offre_id: number;
+  appel_offre_titre: string;
+  appel_offre_emetteur: string | null;
+  version: number;
+  statut: StatutReponseHermion;
+  longueur_mots: number | null;
+  duree_generation_ms: number | null;
+  cree_le: string;
+  maj_le: string;
+};
+
+export type RedactionRequest = {
+  profil?: {
+    prenom?: string;
+    nom?: string;
+    email?: string;
+    entreprise?: string;
+    activite?: string;
+  };
+  consignes?: string;
+};
+
+export type RedactionResponse = {
+  reponse: ReponseHermion;
+  plan: { titre: string; brief: string }[];
+};
+
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -136,5 +188,34 @@ export const api = {
     fetchJson<ProgressionModele>("/pythia/modele/telecharger", {
       method: "POST",
       body: JSON.stringify(modele ? { modele } : {}),
+    }),
+  listerReponsesHermion: (statut?: StatutReponseHermion) =>
+    fetchJson<ReponseAvecAO[]>(
+      `/hermion/reponses${statut ? `?statut=${statut}` : ""}`,
+    ),
+  lireReponseHermion: (id: number) =>
+    fetchJson<ReponseHermion>(`/hermion/reponses/${id}`),
+  rediger: (ao_id: number, payload: RedactionRequest = {}) =>
+    fetchJson<RedactionResponse>(`/hermion/appels-offre/${ao_id}/rediger`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  modifierStatutReponse: (
+    id: number,
+    statut: StatutReponseHermion,
+    commentaire?: string,
+  ) =>
+    fetchJson<ReponseHermion>(`/hermion/reponses/${id}/statut`, {
+      method: "PATCH",
+      body: JSON.stringify(
+        commentaire !== undefined ? { statut, commentaire_humain: commentaire } : { statut },
+      ),
+    }),
+  modifierContenuReponse: (id: number, contenu: string, commentaire?: string) =>
+    fetchJson<ReponseHermion>(`/hermion/reponses/${id}/contenu`, {
+      method: "PATCH",
+      body: JSON.stringify(
+        commentaire !== undefined ? { contenu, commentaire_humain: commentaire } : { contenu },
+      ),
     }),
 };

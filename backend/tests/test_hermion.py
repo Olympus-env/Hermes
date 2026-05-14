@@ -332,6 +332,42 @@ def test_endpoint_modifier_contenu_passe_en_a_modifier(monkeypatch):
     assert data["commentaire_humain"] == "edit"
 
 
+def test_endpoint_liste_toutes_reponses_joint_ao(monkeypatch):
+    from hermes.agents.hermion import writer
+    from hermes.main import app
+
+    monkeypatch.setattr(writer.pythia, "generer", _faux_generateur_complet()[0])
+
+    init_db()
+    with Session(get_engine()) as session:
+        _ao_avec_analyse(session)
+        _ao_avec_analyse(session)
+
+    with TestClient(app) as client:
+        # Une reponse pour chaque AO
+        with Session(get_engine()) as s:
+            ao_ids = sorted([r for r in s.exec(select(AppelOffre.id)).all()])
+        for ao_id in ao_ids:
+            client.post(f"/hermion/appels-offre/{ao_id}/rediger")
+
+        r = client.get("/hermion/reponses")
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 2
+        # Chaque item a bien le titre + emetteur AO joints
+        assert all(item["appel_offre_titre"] for item in data)
+        assert all(item["appel_offre_emetteur"] for item in data)
+
+        # Filtre par statut
+        r2 = client.get("/hermion/reponses?statut=en_attente")
+        assert r2.status_code == 200
+        assert len(r2.json()) == 2
+
+        r3 = client.get("/hermion/reponses?statut=validee")
+        assert r3.status_code == 200
+        assert len(r3.json()) == 0
+
+
 def test_endpoint_rediger_502_si_pythia_erreur(monkeypatch):
     from hermes.agents.hermion import writer
     from hermes.main import app

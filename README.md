@@ -237,6 +237,11 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
   (`v1`, `v2`, …), validation humaine obligatoire (statut `en_attente` jusqu'à
   approbation explicite). Endpoints `/hermion/appels-offre/{id}/rediger`,
   `/hermion/reponses/{id}`, `…/statut`, `…/contenu`.
+- **Onglet « Réponses » connecté au backend** : liste live filtrée par statut
+  (en attente, à modifier, validées, rejetées, exportées), aperçu markdown,
+  édition inline du contenu, actions valider / demander révision / rejeter
+  avec propagation au statut de l'AO (`repondu` à la validation). Endpoint
+  `GET /hermion/reponses` joint avec les métadonnées AO.
 - **Téléchargement modèle au 1er run** : si le modèle Mistral 7B n'est pas
   encore présent, un modal d'onboarding affiche une barre de progression
   `Go / Go` pendant le pull Ollama. Endpoints `/pythia/modele/status` et
@@ -260,7 +265,7 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
 - [x] **Phase 6** — Interface onglet 1 « Veille » (**MVP**)
 - [x] **Phase 6.1** — Actions Veille persistées (statuts AO + nom portail)
 - [x] **Phase 7** — HERMION rédaction (plan + sections, versionnement, validation humaine)
-- [ ] **Phase 8** — Interface onglet 2 « Réponses »
+- [x] **Phase 8** — Interface onglet 2 « Réponses » (liste live, édition markdown, transitions de statut)
 - [x] **Phase 9** — Paramètres & configuration utilisateur
 - [~] **Phase 10** — Finalisation : sidecar Tauri ✅, backend.exe ✅,
   téléchargement modèle 1er run ✅, installeur Inno Setup ✅ ; reste

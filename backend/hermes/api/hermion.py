@@ -59,6 +59,21 @@ class ReponseSummary(BaseModel):
     cree_le: datetime
 
 
+class ReponseAvecAO(BaseModel):
+    """Synthèse réponse + métadonnées AO joints — pour la liste globale."""
+
+    id: int
+    appel_offre_id: int
+    appel_offre_titre: str
+    appel_offre_emetteur: str | None
+    version: int
+    statut: StatutReponse
+    longueur_mots: int | None
+    duree_generation_ms: int | None
+    cree_le: datetime
+    maj_le: datetime
+
+
 class RedactionResponse(BaseModel):
     reponse: ReponseRead
     plan: list[dict[str, str]]
@@ -154,6 +169,42 @@ def lister_reponses(
         .order_by(ReponseHermion.version.desc())
     ).all()
     return [_reponse_summary(r) for r in rows]
+
+
+@router.get("/reponses", response_model=list[ReponseAvecAO])
+def lister_toutes_reponses(
+    session: SessionDep,
+    statut: StatutReponse | None = None,
+) -> list[ReponseAvecAO]:
+    """Liste globale des réponses HERMION (toutes AO confondues).
+
+    Joint avec AppelOffre pour fournir titre + émetteur directement
+    consommables côté frontend. Filtrable par statut.
+    """
+    stmt = (
+        select(ReponseHermion, AppelOffre)
+        .join(AppelOffre, AppelOffre.id == ReponseHermion.appel_offre_id)
+        .order_by(ReponseHermion.cree_le.desc())
+    )
+    if statut is not None:
+        stmt = stmt.where(ReponseHermion.statut == statut)
+
+    rows = session.exec(stmt).all()
+    return [
+        ReponseAvecAO(
+            id=r.id,  # type: ignore[arg-type]
+            appel_offre_id=r.appel_offre_id,
+            appel_offre_titre=ao.titre,
+            appel_offre_emetteur=ao.emetteur,
+            version=r.version,
+            statut=r.statut,
+            longueur_mots=r.longueur_mots,
+            duree_generation_ms=r.duree_generation_ms,
+            cree_le=r.cree_le,
+            maj_le=r.maj_le,
+        )
+        for r, ao in rows
+    ]
 
 
 @router.get("/reponses/{reponse_id}", response_model=ReponseRead)

@@ -9,7 +9,7 @@ import { Sidebar, type ViewKey } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
 import { Topbar } from "./components/Topbar";
 import { api } from "./lib/api";
-import { RESPONSES, type AgentKey, type AgentState } from "./lib/data";
+import { type AgentKey, type AgentState } from "./lib/data";
 import type { ToastInput } from "./lib/toast";
 import {
   loadUserProfile,
@@ -37,6 +37,31 @@ export default function App() {
   const [nextCycle, setNextCycle] = useState("04:12");
   const [tendersRefreshKey, setTendersRefreshKey] = useState(0);
   const [tenderCount, setTenderCount] = useState(0);
+  const [responseCount, setResponseCount] = useState(0);
+  const [pendingValidationCount, setPendingValidationCount] = useState(0);
+
+  // Recharge périodique des compteurs sidebar (réponses HERMION)
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const data = await api.listerReponsesHermion();
+        if (cancelled) return;
+        setResponseCount(data.length);
+        setPendingValidationCount(
+          data.filter((r) => r.statut === "en_attente" || r.statut === "a_modifier").length,
+        );
+      } catch {
+        // Pas critique — on garde les anciennes valeurs
+      }
+    };
+    refresh();
+    const id = setInterval(refresh, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   // Décompte du prochain cycle ARGOS
   useEffect(() => {
@@ -86,11 +111,6 @@ export default function App() {
       });
     }
   };
-
-  const responseCount = RESPONSES.length;
-  const pendingValidationCount = RESPONSES.filter(
-    (r) => r.status === "en-attente" || r.status === "a-modifier",
-  ).length;
 
   return (
     <div className="app">
