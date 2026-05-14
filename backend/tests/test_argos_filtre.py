@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+from hermes.agents import pythia
 from hermes.agents.argos.base import AOCollecte
 from hermes.agents.argos.filtre import (
     FiltreVeille,
@@ -197,3 +198,113 @@ def test_runner_sans_filtre_garde_tout(monkeypatch):
 def test_filtre_normalisation_accents(titre, attendu):
     filtre = FiltreVeille(inclus=("telemedecine",))
     assert filtre.correspond(_ao(titre=titre)) is attendu
+
+
+# --------------------------------------------------------------------------- #
+# Suggestion mots-clés via PYTHIA
+# --------------------------------------------------------------------------- #
+
+
+def _faux_reponse_pythia(payload: dict):
+    return pythia.ReponsePythia(
+        texte=__import__("json").dumps(payload, ensure_ascii=False),
+        modele="mistral:7b-instruct-q4_K_M",
+        duree_ms=10,
+    )
+
+
+def test_suggerer_renvoie_mots_cles_normalises(monkeypatch):
+    from hermes.agents.argos import filtre as mod
+
+    async def fake_generer(prompt, *, system=None, format_json=False, **_):
+        assert format_json is True
+        assert "ACME" in prompt
+        return _faux_reponse_pythia(
+            {
+                "inclus": ["maintenance applicative", "Java", "java", "  AMO  "],
+                "exclus": ["Nettoyage", "espaces verts"],
+                "raisonnement": "ESN logicielle Java/AMO — exclus = marchés physiques.",
+            }
+        )
+
+    monkeypatch.setattr(mod.pythia, "generer", fake_generer)
+
+    import asyncio
+
+    suggestion = asyncio.run(
+        mod.suggerer_mots_cles(entreprise="ACME", activite="ESN Java", infos="")
+    )
+    # Déduplication insensible casse + trim
+    assert suggestion.inclus == ("maintenance applicative", "Java", "AMO")
+    assert suggestion.exclus == ("Nettoyage", "espaces verts")
+    assert "ESN" in suggestion.raisonnement
+
+
+def test_suggerer_refuse_profil_vide():
+    import asyncio
+
+    from hermes.agents.argos import filtre as mod
+
+    with pytest.raises(pythia.ErreurPythia):
+        asyncio.run(mod.suggerer_mots_cles(entreprise="", activite=""))
+
+
+def test_suggerer_rejette_sortie_sans_inclus(monkeypatch):
+    from hermes.agents.argos import filtre as mod
+
+    async def fake_generer(*args, **kwargs):
+        return _faux_reponse_pythia({"inclus": [], "exclus": ["x"], "raisonnement": "rien"})
+
+    monkeypatch.setattr(mod.pythia, "generer", fake_generer)
+
+    import asyncio
+
+    with pytest.raises(pythia.ErreurPythia):
+        asyncio.run(mod.suggerer_mots_cles(entreprise="X", activite="Y"))
+
+
+def test_endpoint_suggerer_renvoie_200(monkeypatch):
+    from hermes.agents.argos import filtre as mod
+    from hermes.main import app
+
+    async def fake_generer(*args, **kwargs):
+        return _faux_reponse_pythia(
+            {
+                "inclus": ["maintenance", "java"],
+                "exclus": ["nettoyage"],
+                "raisonnement": "ok",
+            }
+        )
+
+    monkeypatch.setattr(mod.pythia, "generer", fake_generer)
+
+    init_db()
+    with TestClient(app) as client:
+        r = client.post(
+            "/argos/filtre/suggerer",
+            json={"entreprise": "ACME", "activite": "ESN Java", "infos": ""},
+        )
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["inclus"] == ["maintenance", "java"]
+    assert data["exclus"] == ["nettoyage"]
+    assert data["raisonnement"] == "ok"
+
+
+def test_endpoint_suggerer_502_si_pythia_down(monkeypatch):
+    from hermes.agents.argos import filtre as mod
+    from hermes.main import app
+
+    async def fake_generer(*args, **kwargs):
+        raise pythia.ErreurPythia("connexion refusée")
+
+    monkeypatch.setattr(mod.pythia, "generer", fake_generer)
+
+    init_db()
+    with TestClient(app) as client:
+        r = client.post(
+            "/argos/filtre/suggerer",
+            json={"entreprise": "ACME", "activite": "ESN", "infos": ""},
+        )
+    assert r.status_code == 502

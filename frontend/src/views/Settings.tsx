@@ -4,6 +4,7 @@ import {
   getHermionUserContext,
   getProfileAvatarLetter,
   getProfileDisplayName,
+  loadUserProfile,
   type UserProfile,
 } from "../lib/userProfile";
 import { Icon } from "../components/Icon";
@@ -271,6 +272,8 @@ function FilteringSection() {
   const [actif, setActif] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestionMsg, setSuggestionMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
@@ -326,6 +329,41 @@ function FilteringSection() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const onSuggest = async () => {
+    const profil = loadUserProfile();
+    if (!profil || (!profil.entreprise.trim() && !profil.activite.trim())) {
+      setError(
+        "Renseigne d'abord le nom de l'entreprise et l'activité dans la section " +
+          "« Profil utilisateur » — l'IA en a besoin pour suggérer des mots-clés.",
+      );
+      return;
+    }
+    setSuggesting(true);
+    setError(null);
+    setSavedMessage(null);
+    setSuggestionMsg(null);
+    try {
+      const suggestion = await api.suggererFiltreVeille({
+        entreprise: profil.entreprise,
+        activite: profil.activite,
+        infos: profil.infosUtiles,
+      });
+      // Pré-remplit les textareas sans écraser si l'utilisateur veut fusionner :
+      // on remplace pour rester clair (il peut éditer après).
+      setKeywords(suggestion.inclus.join(", "));
+      setExcluded(suggestion.exclus.join(", "));
+      setSuggestionMsg(
+        suggestion.raisonnement
+          ? `${suggestion.inclus.length} mots-clés inclus, ${suggestion.exclus.length} exclus proposés. ${suggestion.raisonnement} — vérifie puis enregistre.`
+          : `${suggestion.inclus.length} mots-clés inclus, ${suggestion.exclus.length} exclus proposés — vérifie puis enregistre.`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSuggesting(false);
     }
   };
 
@@ -387,6 +425,15 @@ function FilteringSection() {
                   ? "Enregistrer le filtre"
                   : "Aucune modification"}
             </button>
+            <button
+              className="btn"
+              disabled={suggesting}
+              onClick={onSuggest}
+              title="Demande à PYTHIA des mots-clés pertinents selon le profil de ton entreprise"
+            >
+              <Icon.refresh size={11} />
+              {suggesting ? "PYTHIA réfléchit…" : "Suggérer (IA)"}
+            </button>
             {dirty && (
               <span
                 style={{
@@ -409,6 +456,23 @@ function FilteringSection() {
               {actif ? "● filtre actif" : "○ filtre inactif"}
             </span>
           </div>
+
+          {suggestionMsg && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(200,169,81,0.10)",
+                border: "1px solid rgba(200,169,81,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+                lineHeight: 1.5,
+              }}
+            >
+              {suggestionMsg}
+            </div>
+          )}
 
           {savedMessage && (
             <div

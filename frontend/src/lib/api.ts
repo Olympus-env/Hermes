@@ -75,6 +75,12 @@ export type FiltreVeille = {
   actif: boolean;
 };
 
+export type SuggestionMotsCles = {
+  inclus: string[];
+  exclus: string[];
+  raisonnement: string;
+};
+
 export type ProgressionModele = {
   modele: string;
   en_cours: boolean;
@@ -182,6 +188,11 @@ export const api = {
     fetchJson<FiltreVeille>("/argos/filtre", {
       method: "PUT",
       body: JSON.stringify(filtre),
+    }),
+  suggererFiltreVeille: (profil: { entreprise: string; activite: string; infos: string }) =>
+    fetchJson<SuggestionMotsCles>("/argos/filtre/suggerer", {
+      method: "POST",
+      body: JSON.stringify(profil),
     }),
   statutModele: () => fetchJson<StatutModele>("/pythia/modele/status"),
   telechargerModele: (modele?: string) =>

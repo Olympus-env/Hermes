@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from hermes.agents.argos.filtre import FiltreVeille, charger_filtre, enregistrer_filtre
+from hermes.agents import pythia
+from hermes.agents.argos.filtre import (
+    FiltreVeille,
+    charger_filtre,
+    enregistrer_filtre,
+    suggerer_mots_cles,
+)
 from hermes.agents.argos.registry import creer_scraper, scrapers_disponibles
 from hermes.agents.argos.runner import executer_collecte
 from hermes.agents.argos.scheduler import scheduler_global
@@ -41,6 +47,18 @@ class FiltreVeilleIO(BaseModel):
     inclus: list[str] = Field(default_factory=list)
     exclus: list[str] = Field(default_factory=list)
     actif: bool = False
+
+
+class SuggestionRequest(BaseModel):
+    entreprise: str = ""
+    activite: str = ""
+    infos: str = ""
+
+
+class SuggestionResponse(BaseModel):
+    inclus: list[str]
+    exclus: list[str]
+    raisonnement: str
 
 
 class PortailRead(BaseModel):
@@ -158,6 +176,28 @@ def ecrire_filtre(
         inclus=list(nettoye.inclus),
         exclus=list(nettoye.exclus),
         actif=nettoye.actif,
+    )
+
+
+@router.post("/filtre/suggerer", response_model=SuggestionResponse)
+async def suggerer_filtre(payload: SuggestionRequest) -> SuggestionResponse:
+    """Suggère des mots-clés inclus/exclus via PYTHIA à partir du profil entreprise.
+
+    N'enregistre rien — l'utilisateur valide et soumet via PUT /argos/filtre.
+    """
+    try:
+        suggestion = await suggerer_mots_cles(
+            entreprise=payload.entreprise,
+            activite=payload.activite,
+            infos=payload.infos,
+        )
+    except pythia.ErreurPythia as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return SuggestionResponse(
+        inclus=list(suggestion.inclus),
+        exclus=list(suggestion.exclus),
+        raisonnement=suggestion.raisonnement,
     )
 
 
