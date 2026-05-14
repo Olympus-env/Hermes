@@ -31,6 +31,32 @@ def test_endpoint_collecter_portail_inconnu():
         assert r.status_code == 404
 
 
+def test_endpoint_collecter_tous(monkeypatch):
+    from hermes.agents.argos.base import AOCollecte, ResultatCollecte
+    from hermes.main import app
+
+    async def fake_collecte(scraper, session, *, limite=20):
+        return ResultatCollecte(
+            portail=scraper.nom,
+            items=[AOCollecte(titre="AO test", url_source="https://example.test/ao")],
+            ao_trouves=1,
+            ao_nouveaux=1,
+            ao_dedoublonnes=0,
+            duree_ms=12,
+        )
+
+    monkeypatch.setattr("hermes.api.argos.executer_collecte", fake_collecte)
+
+    with TestClient(app) as client:
+        r = client.post("/argos/collecter")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["succes"] is True
+        assert data["ao_trouves"] == 1
+        assert data["ao_nouveaux"] == 1
+        assert data["resultats"][0]["portail"] == "boamp"
+
+
 def test_endpoint_scheduler_etat():
     from hermes.main import app
 

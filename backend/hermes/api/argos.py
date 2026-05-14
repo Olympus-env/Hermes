@@ -26,6 +26,14 @@ class CollecteResponse(BaseModel):
     erreurs: list[str]
 
 
+class CycleCollecteResponse(BaseModel):
+    resultats: list[CollecteResponse]
+    ao_trouves: int
+    ao_nouveaux: int
+    ao_dedoublonnes: int
+    succes: bool
+
+
 class PortailRead(BaseModel):
     id: int
     nom: str
@@ -56,6 +64,37 @@ class MessageResponse(BaseModel):
 @router.get("/scrapers")
 def lister_scrapers() -> dict:
     return {"disponibles": scrapers_disponibles()}
+
+
+@router.post("/collecter", response_model=CycleCollecteResponse)
+async def collecter_tous(
+    limite: int = 20,
+    session: Session = Depends(get_session),
+) -> CycleCollecteResponse:
+    """Déclenche un cycle ARGOS sur tous les scrapers enregistrés."""
+    resultats: list[CollecteResponse] = []
+    for nom in scrapers_disponibles():
+        scraper = creer_scraper(nom)
+        resultat = await executer_collecte(scraper, session, limite=limite)
+        resultats.append(
+            CollecteResponse(
+                portail=resultat.portail,
+                ao_trouves=resultat.ao_trouves,
+                ao_nouveaux=resultat.ao_nouveaux,
+                ao_dedoublonnes=resultat.ao_dedoublonnes,
+                duree_ms=resultat.duree_ms,
+                succes=resultat.succes,
+                erreurs=resultat.erreurs,
+            )
+        )
+
+    return CycleCollecteResponse(
+        resultats=resultats,
+        ao_trouves=sum(r.ao_trouves for r in resultats),
+        ao_nouveaux=sum(r.ao_nouveaux for r in resultats),
+        ao_dedoublonnes=sum(r.ao_dedoublonnes for r in resultats),
+        succes=all(r.succes for r in resultats),
+    )
 
 
 @router.post("/collecter/{portail}", response_model=CollecteResponse)

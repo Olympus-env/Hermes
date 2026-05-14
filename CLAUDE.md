@@ -55,6 +55,34 @@ modules et les logs. C'est l'identité du projet.
 
 ---
 
+## 🗂️ Structure du dépôt
+
+```
+backend/
+  hermes/
+    main.py           ─ point d'entrée FastAPI
+    api/              ─ routes par domaine (health.py, argos.py, appels_offre.py, krinos.py…)
+    agents/           ─ implémentations ARGOS/KRINOS/HERMION (argos/, krinos/…)
+    db/               ─ models.py (SQLModel) + session
+  tests/              ─ pytest (test_*.py)
+  pyproject.toml      ─ config Ruff
+  requirements.txt
+frontend/
+  src/
+    components/       ─ PascalCase (.tsx)
+    views/            ─ PascalCase (.tsx)
+    lib/              ─ client API + helpers (api.ts, data.ts, toast.ts)
+  src-tauri/          ─ wrapper Rust/Tauri
+docs/                 ─ documents techniques
+scripts/              ─ scripts utilitaires
+```
+
+Garder chaque module d'API focalisé sur **un domaine** (un fichier par
+domaine fonctionnel). Le client API côté frontend reste dans `frontend/src/lib/`,
+jamais éparpillé dans les composants.
+
+---
+
 ## 🖥️ Spécificités environnement Joshua (Windows 11)
 
 - Le `python` du PATH est **3.7.2** (trop ancien) → toujours utiliser :
@@ -63,6 +91,11 @@ modules et les logs. C'est l'identité du projet.
 - Shell par défaut : **PowerShell 7** (utiliser syntaxe PowerShell, pas bash).
 - L'API Bash via WSL/Git Bash est dispo mais les chemins Windows se traduisent
   en `/e/Hermes/...`.
+- **Stockage des téléchargements HERMES** : à partir du 14/05/2026, tout
+  téléchargement ou cache lourd nécessaire au fonctionnement de l'app doit être
+  placé sur le disque `D:` quand l'outil le permet (installateurs, modèles
+  Ollama, navigateurs Playwright, caches npm/pip/Cargo, archives temporaires).
+  Ne pas remplir `C:` avec des dépendances volumineuses.
 
 ---
 
@@ -93,16 +126,23 @@ npm run tauri build
 
 ### LLM
 ```powershell
-ollama serve                                 # démarre le daemon
-ollama pull mistral:7b-instruct-q4_K_M       # ~4.4 Go, à faire une fois
-ollama pull nomic-embed-text                 # pour les embeddings
+.\scripts\start-pythia.ps1                   # démarre Ollama/PYTHIA depuis D:
+D:\HermesDeps\ollama\bin\ollama.exe list     # vérifie les modèles installés
 ```
+
+PYTHIA utilise l'Ollama autonome installé dans `D:\HermesDeps\ollama\bin`.
+Les modèles sont stockés dans `D:\HermesDeps\ollama\models`.
 
 ---
 
 ## 📐 Conventions de code
 
 ### Python (backend)
+- **Lint / format** : Ruff configuré dans `backend/pyproject.toml` — lignes
+  **100 caractères**, règles `E`, `F`, `W`, `I`, `B`, `UP`. Lancer `ruff check`
+  avant un commit non trivial.
+- **snake_case** pour modules, fonctions, variables. Plancher Python **3.11+**
+  (l'env Joshua tourne en 3.12).
 - **Pas de `from __future__ import annotations` dans `db/models.py`** —
   SQLModel/SQLAlchemy introspectent les annotations à l'exécution et ont besoin
   des types réels (pas des chaînes). Sinon `list["AppelOffre"]` casse au mapping.
@@ -115,8 +155,11 @@ ollama pull nomic-embed-text                 # pour les embeddings
 
 ### TypeScript (frontend)
 - Strict mode activé partout.
-- Composants nommés en **français** (`Veille`, `Reponses`, `StatusBar`).
-- Pas de dépendance UI lourde (pas de Material-UI, etc.) — Tailwind suffit.
+- Composants et fichiers de vue en **PascalCase** (`Sidebar.tsx`, `Accueil.tsx`).
+  Les noms peuvent être français quand ça reflète la langue du métier (`Accueil`,
+  `Reponses`), anglais quand c'est un terme technique générique.
+- Pas de dépendance UI lourde (pas de Material-UI, etc.) — Tailwind / CSS suffisent.
+- Le client backend vit exclusivement dans `frontend/src/lib/api.ts`.
 
 ### Sécurité
 - **Credentials portails** : chiffrement AES-256 dans `portails.credentials_chiffres`
@@ -125,11 +168,35 @@ ollama pull nomic-embed-text                 # pour les embeddings
   dans `HERMES_MASTER_KEY_PATH` (`./data/master.key` par défaut), hors VCS.
 - **Checksum SHA-256** sur chaque document téléchargé (`documents.checksum_sha256`).
 - **CSP Tauri** : `connect-src` limité à `127.0.0.1:8000` et `localhost:8000`.
+- Ne **jamais** committer secrets, credentials, BDD générées ou `.env`. Si la
+  config a besoin d'être documentée, passer par un `.env.example` sans valeurs
+  sensibles.
 
-### Git
-- Commits en français, sujet < 70 caractères.
+### Git & PR
+- Commits en français, sujet < 70 caractères. Style courant : par phase
+  (`Phase 3 — ARGOS : authentification portails privés`) ou préfixé par scope
+  (`docs:`, `fix:`). Pas de wording vague.
 - Inclure le co-author Claude dans les commits de session.
 - `.gitignore` exclut `data/`, `*.db`, `.env`, `node_modules/`, `target/`, etc.
+- **PR** : description courte, zones backend/frontend touchées, résultats de
+  tests (`pytest`, `npm run build` ou check manuel), captures pour tout
+  changement visuel, lien vers la phase / issue concernée.
+
+---
+
+## 🧪 Tests
+
+### Backend
+- Stack : **pytest + pytest-asyncio**. Tests dans `backend/tests/`, fichiers
+  nommés `test_*.py`.
+- Cibles prioritaires : routes API, comportement des agents, parsing,
+  manipulation de credentials, accès BDD.
+- Toujours lancer `pytest` depuis `backend/` avant d'ouvrir une PR.
+
+### Frontend
+- Pas de test runner configuré pour l'instant. Pour toute modification UI :
+  - lancer `npm run build` (vérifie `tsc -b` + bundling Vite),
+  - vérifier manuellement l'écran touché via `npm run dev` ou `npm run tauri dev`.
 
 ---
 

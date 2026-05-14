@@ -22,6 +22,8 @@ dist-ssr/
 .vite/
 *.local
 .eslintcache
+.install-cache/
+.tooling/
 # tsc -b build artefacts
 *.tsbuildinfo
 frontend/vite.config.d.ts
@@ -29,9 +31,10 @@ frontend/vite.config.js
 
 # --- Tauri ---
 src-tauri/target/
-src-tauri/Cargo.lock
+frontend/src-tauri/gen/
 
 # --- IDE ---
+.claude/settings.local.json
 .vscode/
 .idea/
 *.swp

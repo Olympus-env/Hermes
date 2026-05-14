@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from hermes import __version__
 from hermes.agents.argos.scheduler import scheduler_global
-from hermes.api import appels_offre, argos, health
+from hermes.api import appels_offre, argos, health, krinos
 from hermes.config import settings
 from hermes.db.session import init_db
 
@@ -38,12 +38,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Tauri sert le frontend depuis tauri://localhost ou http://localhost:5173 en dev.
+# Tauri sert le frontend depuis tauri://localhost ou http(s)://tauri.localhost
+# selon le mode WebView, et Vite depuis localhost/127.0.0.1 en dev.
 # On reste permissif uniquement sur localhost — aucun risque puisque le backend
 # n'écoute que sur 127.0.0.1.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^(http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?|tauri://localhost)$",
+    allow_origin_regex=(
+        r"^(http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?|"
+        r"tauri://localhost|https?://tauri\.localhost)$"
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,6 +56,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(appels_offre.router)
 app.include_router(argos.router)
+app.include_router(krinos.router)
 
 
 @app.get("/")

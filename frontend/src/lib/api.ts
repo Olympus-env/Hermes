@@ -24,12 +24,22 @@ export type InfoResponse = {
 
 export type AppelOffre = {
   id: number;
+  portail_id: number | null;
+  reference_externe: string | null;
+  url_source: string;
   titre: string;
   emetteur: string | null;
+  objet: string | null;
+  budget_estime: number | null;
+  devise: string;
+  date_publication: string | null;
   date_limite: string | null;
+  type_marche: string | null;
+  zone_geographique: string | null;
+  code_naf: string | null;
   statut: string;
   cree_le: string;
-  url_source: string;
+  maj_le: string;
 };
 
 export type AppelsOffrePage = {
@@ -39,8 +49,27 @@ export type AppelsOffrePage = {
   offset: number;
 };
 
-async function fetchJson<T>(path: string): Promise<T> {
+export type CollecteArgos = {
+  portail: string;
+  ao_trouves: number;
+  ao_nouveaux: number;
+  ao_dedoublonnes: number;
+  duree_ms: number;
+  succes: boolean;
+  erreurs: string[];
+};
+
+export type CycleCollecteArgos = {
+  resultats: CollecteArgos[];
+  ao_trouves: number;
+  ao_nouveaux: number;
+  ao_dedoublonnes: number;
+  succes: boolean;
+};
+
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${API_BASE}${path}`, {
+    ...init,
     headers: { Accept: "application/json" },
   });
   if (!r.ok) {
@@ -52,8 +81,13 @@ async function fetchJson<T>(path: string): Promise<T> {
 export const api = {
   health: () => fetchJson<HealthResponse>("/health"),
   info: () => fetchJson<InfoResponse>("/info"),
+  collecterArgos: (limite = 20) =>
+    fetchJson<CycleCollecteArgos>(`/argos/collecter?limite=${limite}`, {
+      method: "POST",
+    }),
   listerAO: (statut?: string) =>
     fetchJson<AppelsOffrePage>(
       `/appels-offre${statut ? `?statut=${encodeURIComponent(statut)}` : ""}`,
     ),
+  detailAO: (id: number) => fetchJson<AppelOffre>(`/appels-offre/${id}`),
 };
