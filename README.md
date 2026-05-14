@@ -148,6 +148,11 @@ npm run tauri dev
 - **KRINOS analyse IA (PYTHIA)** : résumé, score 0-100, tags métier et critères
   d'attribution générés en local par Mistral 7B via Ollama. Endpoints
   `POST /krinos/appels-offre/{id}/analyser` et `GET …/analyse`.
+- **HERMION rédaction IA** : génération d'une réponse markdown multi-sections
+  (plan puis rédaction section par section) en local via PYTHIA. Versionnement
+  (`v1`, `v2`, …), validation humaine obligatoire (statut `en_attente` jusqu'à
+  approbation explicite). Endpoints `/hermion/appels-offre/{id}/rediger`,
+  `/hermion/reponses/{id}`, `…/statut`, `…/contenu`.
 - **Desktop Tauri** : build Windows généré sous
   `D:\HermesDeps\tooling\cargo-target\release`.
 
@@ -162,7 +167,7 @@ npm run tauri dev
 - [x] **Phase 5** — KRINOS IA (PYTHIA — résumé + score + tags via Mistral 7B)
 - [x] **Phase 6** — Interface onglet 1 « Veille » (**MVP**)
 - [x] **Phase 6.1** — Actions Veille persistées (statuts AO + nom portail)
-- [ ] **Phase 7** — HERMION rédaction
+- [x] **Phase 7** — HERMION rédaction (plan + sections, versionnement, validation humaine)
 - [ ] **Phase 8** — Interface onglet 2 « Réponses »
 - [x] **Phase 9** — Paramètres & configuration utilisateur
 - [ ] **Phase 10** — Finalisation (auto-start, export, mail)

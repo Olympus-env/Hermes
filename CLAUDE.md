@@ -233,7 +233,7 @@ Définies dans `backend/hermes/db/models.py`.
 | 4 | KRINOS extraction docs | ✅ |
 | 5 | KRINOS IA (PYTHIA) | ✅ |
 | 6 | Interface onglet 1 « Veille » — **MVP** | ✅ |
-| 7 | HERMION rédaction | |
+| 7 | HERMION rédaction | ✅ |
 | 8 | Interface onglet 2 « Réponses » | |
 | 9 | Paramètres & configuration | |
 | 10 | Finalisation (auto-start, export PDF, mail) | |

@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from hermes import __version__
 from hermes.agents.argos.scheduler import scheduler_global
-from hermes.api import appels_offre, argos, health, krinos
+from hermes.api import appels_offre, argos, health, hermion, krinos
 from hermes.config import settings
 from hermes.db.session import init_db
 
@@ -57,6 +57,7 @@ app.include_router(health.router)
 app.include_router(appels_offre.router)
 app.include_router(argos.router)
 app.include_router(krinos.router)
+app.include_router(hermion.router)
 
 
 @app.get("/")
