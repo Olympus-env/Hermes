@@ -1,0 +1,6 @@
+# Override du dossier de build Rust : on garde tous les artefacts cargo
+# sur D: pour respecter l'invariant HERMES "rien de lourd sur C:/E:".
+# Le launcher .exe et les scripts PowerShell s'attendent à trouver
+# hermes.exe sous D:\HermesDeps\tooling\cargo-target\release\.
+[build]
+target-dir = "D:/HermesDeps/tooling/cargo-target"
