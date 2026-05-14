@@ -147,7 +147,19 @@ npm run tauri dev
 .\scripts\start-pythia.ps1    # démarre Ollama/PYTHIA depuis D:
 .\scripts\start-backend.ps1   # démarre FastAPI avec les chemins HERMES
 .\scripts\start-desktop.ps1   # lance Tauri dev avec caches sur D:
+.\scripts\build-backend.ps1   # compile backend.exe autonome (PyInstaller)
+.\scripts\start-hermes.ps1    # lance tout + tue à la fermeture (équivalent .exe)
+.\scripts\kill-hermes.ps1     # tue les processus HERMES zombies
 ```
+
+### Backend autonome (PyInstaller)
+
+`scripts/build-backend.ps1` produit `D:\HermesDeps\tooling\backend-build\backend\backend.exe`
+(~115 Mo, inclut Python + dépendances). Quand ce binaire existe, `hermes.exe`
+(release) le démarre **en priorité** au lieu de chercher un venv Python. Pour
+l'utilisateur final, cela signifie : pas besoin d'installer Python.
+
+Override via `HERMES_BACKEND_EXE=<chemin>` si tu veux pointer ailleurs.
 
 ---
 

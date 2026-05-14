@@ -118,55 +118,93 @@ fn start_backend(state: &mut ServiceState) -> Result<(), String> {
         return Ok(());
     }
 
-    let backend_dir = locate_backend_dir()?;
-    let python = backend_dir.join(r".venv\Scripts\python.exe");
-    if !python.exists() {
-        return Err(format!(
-            "Python venv backend introuvable : {}",
-            python.display()
-        ));
-    }
-
+    let backend_dir = locate_backend_dir().ok();
+    let data_dir = backend_dir
+        .as_ref()
+        .and_then(|d| d.parent())
+        .map(|p| p.join("data"))
+        .unwrap_or_else(|| PathBuf::from(r"E:\Hermes\data"));
     let storage = env_or(
         "HERMES_STORAGE_PATH",
-        &backend_dir
-            .parent()
-            .map(|p| p.join("data").join("storage"))
-            .unwrap_or_else(|| PathBuf::from(r"E:\Hermes\data\storage"))
-            .display()
-            .to_string(),
+        &data_dir.join("storage").display().to_string(),
     );
     let db_path = env_or(
         "HERMES_DB_PATH",
-        &backend_dir
-            .parent()
-            .map(|p| p.join("data").join("hermes.db"))
-            .unwrap_or_else(|| PathBuf::from(r"E:\Hermes\data\hermes.db"))
-            .display()
-            .to_string(),
+        &data_dir.join("hermes.db").display().to_string(),
     );
 
-    let child = hidden_command(&python)
-        .args([
-            "-m",
-            "uvicorn",
-            "hermes.main:app",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "8000",
-        ])
-        .current_dir(&backend_dir)
-        .env("HERMES_DB_PATH", db_path)
-        .env("HERMES_STORAGE_PATH", storage)
-        .spawn()
-        .map_err(|e| format!("Lancement backend : {e}"))?;
-    state.backend = Some(child);
+    // 1) Mode bundle final : backend.exe autonome (PyInstaller).
+    if let Some(backend_exe) = locate_backend_exe() {
+        let child = hidden_command(&backend_exe)
+            .env("HERMES_DB_PATH", &db_path)
+            .env("HERMES_STORAGE_PATH", &storage)
+            .spawn()
+            .map_err(|e| format!("Lancement backend.exe : {e}"))?;
+        state.backend = Some(child);
+    } else {
+        // 2) Fallback dev : python.exe du venv local.
+        let backend_dir = backend_dir
+            .ok_or_else(|| "Backend introuvable (ni backend.exe ni venv Python).".to_string())?;
+        let python = backend_dir.join(r".venv\Scripts\python.exe");
+        if !python.exists() {
+            return Err(format!(
+                "Python venv backend introuvable : {}",
+                python.display()
+            ));
+        }
+
+        let child = hidden_command(&python)
+            .args([
+                "-m",
+                "uvicorn",
+                "hermes.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+            ])
+            .current_dir(&backend_dir)
+            .env("HERMES_DB_PATH", db_path)
+            .env("HERMES_STORAGE_PATH", storage)
+            .spawn()
+            .map_err(|e| format!("Lancement backend (python) : {e}"))?;
+        state.backend = Some(child);
+    }
 
     if !wait_until_listening("127.0.0.1", 8000, Duration::from_secs(35)) {
         return Err("Backend HERMES n'a pas répondu sur 127.0.0.1:8000.".into());
     }
     Ok(())
+}
+
+fn locate_backend_exe() -> Option<PathBuf> {
+    // Priorités, du plus officiel au moins :
+    //   1. variable d'environnement HERMES_BACKEND_EXE
+    //   2. backend\backend.exe à côté de hermes.exe (cas bundle final)
+    //   3. D:\HermesDeps\tooling\backend-build\backend\backend.exe (build local)
+
+    if let Ok(p) = std::env::var("HERMES_BACKEND_EXE") {
+        let path = PathBuf::from(p);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let bundled = parent.join("backend").join("backend.exe");
+            if bundled.exists() {
+                return Some(bundled);
+            }
+        }
+    }
+
+    let build_local = PathBuf::from(r"D:\HermesDeps\tooling\backend-build\backend\backend.exe");
+    if build_local.exists() {
+        return Some(build_local);
+    }
+
+    None
 }
 
 fn locate_backend_dir() -> Result<PathBuf, String> {
