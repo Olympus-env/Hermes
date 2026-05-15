@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { PORTALS, type Portal } from "../lib/data";
 import {
   getHermionUserContext,
   getProfileAvatarLetter,
@@ -8,12 +7,11 @@ import {
   type UserProfile,
 } from "../lib/userProfile";
 import { Icon } from "../components/Icon";
-import { api } from "../lib/api";
+import { api, type PortailArgos } from "../lib/api";
 
 type Props = {
   profile: UserProfile | null;
   onSaveProfile: (profile: UserProfile) => void;
-  onOpenLoginModal: () => void;
 };
 
 type SectionId = "profil" | "portails" | "filtrage" | "scoring";
@@ -25,7 +23,7 @@ const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "scoring",  label: "Pondération du scoring" },
 ];
 
-export function Settings({ profile, onSaveProfile, onOpenLoginModal }: Props) {
+export function Settings({ profile, onSaveProfile }: Props) {
   const [section, setSection] = useState<SectionId>("profil");
 
   return (
@@ -52,7 +50,7 @@ export function Settings({ profile, onSaveProfile, onOpenLoginModal }: Props) {
           {section === "profil" && (
             <UserProfileSection profile={profile} onSave={onSaveProfile} />
           )}
-          {section === "portails" && <PortalsSection onOpenLogin={onOpenLoginModal} />}
+          {section === "portails" && <PortalsSection />}
           {section === "filtrage" && <FilteringSection />}
           {section === "scoring" && <ScoringSection />}
         </div>
@@ -212,49 +210,153 @@ function UserProfileSection({
   );
 }
 
-function PortalsSection({ onOpenLogin }: { onOpenLogin: () => void }) {
-  const [portals, setPortals] = useState<Portal[]>(PORTALS);
+const SCRAPER_URLS: Record<string, string> = {
+  boamp: "https://www.boamp.fr",
+};
 
-  const toggle = (i: number) => {
-    setPortals((p) =>
-      p.map((portal, idx) => (idx === i ? { ...portal, active: !portal.active } : portal)),
-    );
+function PortalsSection() {
+  const [scrapers, setScrapers] = useState<string[]>([]);
+  const [portails, setPortails] = useState<PortailArgos[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [scrapersData, portailsData] = await Promise.all([
+        api.listerScrapersArgos(),
+        api.listerPortailsArgos(),
+      ]);
+      setScrapers(scrapersData.disponibles);
+      setPortails(portailsData);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const toggle = async (nom: string, actif: boolean) => {
+    const existant = portails.find((p) => p.nom === nom);
+    setSaving(nom);
+    setError(null);
+    try {
+      const updated = await api.enregistrerPortailArgos(nom, {
+        url_base: existant?.url_base ?? SCRAPER_URLS[nom] ?? "",
+        type: existant?.type ?? "public",
+        actif,
+        frequence_minutes: existant?.frequence_minutes ?? 360,
+      });
+      setPortails((rows) => {
+        const others = rows.filter((p) => p.nom !== nom);
+        return [...others, updated].sort((a, b) => a.nom.localeCompare(b.nom));
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(null);
+    }
   };
 
   return (
     <div className="settings-section">
       <h2>Portails de veille</h2>
       <p className="settings-section__desc">
-        Liste des portails surveillés par ARGOS. La connexion via Playwright permet de
-        récupérer les AO derrière des comptes.
+        ARGOS ne collecte que les portails dont un scraper backend est enregistré.
+        Ajouter une ligne de configuration ne suffit pas : chaque portail privé
+        doit avoir son implémentation dédiée.
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 16 }}>
-        {portals.map((p, i) => (
-          <div className="portal-row" key={p.name}>
-            <div>
-              <div className="portal-row__name">{p.name}</div>
-              <div className="portal-row__url">{p.url}</div>
+      {loading ? (
+        <div style={{ color: "var(--fg-3)", fontSize: 13 }}>Chargement…</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 16 }}>
+          {scrapers.map((nom) => {
+            const portail = portails.find((p) => p.nom === nom);
+            const actif = portail?.actif ?? true;
+            return (
+              <div className="portal-row" key={nom}>
+                <div>
+                  <div className="portal-row__name">{nom.toUpperCase()}</div>
+                  <div className="portal-row__url">
+                    {portail?.url_base ?? SCRAPER_URLS[nom] ?? "URL non configurée"}
+                  </div>
+                </div>
+                <span className="portal-row__count">
+                  {portail ? (actif ? "Actif" : "Inactif") : "Disponible"}
+                </span>
+                <span className="portal-row__sync">
+                  {portail?.derniere_collecte
+                    ? new Date(portail.derniere_collecte).toLocaleString("fr-FR")
+                    : "Jamais collecté"}
+                </span>
+                <button
+                  className={`toggle${actif ? " toggle--on" : ""}`}
+                  onClick={() => void toggle(nom, !actif)}
+                  role="switch"
+                  aria-checked={actif}
+                  disabled={saving === nom}
+                  title={
+                    actif
+                      ? "Désactive ce portail dans la configuration ARGOS"
+                      : "Active ce portail dans la configuration ARGOS"
+                  }
+                >
+                  <div className="toggle__thumb" />
+                </button>
+              </div>
+            );
+          })}
+          {scrapers.length === 0 && (
+            <div style={{ color: "var(--fg-3)", fontSize: 13 }}>
+              Aucun scraper ARGOS enregistré côté backend.
             </div>
-            <span className="portal-row__count">
-              {p.count.toLocaleString("fr-FR")} AO
-            </span>
-            <span className="portal-row__sync">{p.lastSync}</span>
+          )}
+          {error && (
             <div
-              className={`toggle${p.active ? " toggle--on" : ""}`}
-              onClick={() => toggle(i)}
-              role="switch"
-              aria-checked={p.active}
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(220,80,80,0.10)",
+                border: "1px solid rgba(220,80,80,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+              }}
             >
-              <div className="toggle__thumb" />
+              Erreur : {error}
             </div>
-          </div>
-        ))}
+          )}
+        </div>
+      )}
+
+      <div
+        style={{
+          marginTop: 14,
+          padding: "10px 14px",
+          background: "rgba(200,169,81,0.08)",
+          border: "1px solid rgba(200,169,81,0.30)",
+          borderRadius: 6,
+          fontSize: 12,
+          color: "var(--fg-2)",
+          lineHeight: 1.5,
+        }}
+      >
+        Portails privés : le socle Playwright et le stockage chiffré existent,
+        mais chaque portail doit encore être codé puis ajouté au registre ARGOS.
       </div>
 
-      <button className="btn btn--gold" onClick={onOpenLogin}>
-        <Icon.plus size={13} /> Ajouter un portail
-      </button>
+      <div style={{ marginTop: 16 }}>
+        <button className="btn btn--ghost" disabled title="Nécessite un scraper backend dédié">
+          <Icon.plus size={13} /> Ajouter un portail privé
+        </button>
+      </div>
     </div>
   );
 }

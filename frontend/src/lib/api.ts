@@ -69,6 +69,21 @@ export type CycleCollecteArgos = {
   succes: boolean;
 };
 
+export type ScrapersArgos = {
+  disponibles: string[];
+};
+
+export type PortailArgos = {
+  id: number;
+  nom: string;
+  url_base: string;
+  type: "public" | "prive";
+  actif: boolean;
+  frequence_minutes: number;
+  derniere_collecte: string | null;
+  credentials_configures: boolean;
+};
+
 export type FiltreVeille = {
   inclus: string[];
   exclus: string[];
@@ -195,6 +210,22 @@ export const api = {
   collecterArgos: (limite = 20) =>
     fetchJson<CycleCollecteArgos>(`/argos/collecter?limite=${limite}`, {
       method: "POST",
+    }),
+  listerScrapersArgos: () => fetchJson<ScrapersArgos>("/argos/scrapers"),
+  listerPortailsArgos: () => fetchJson<PortailArgos[]>("/argos/portails"),
+  enregistrerPortailArgos: (
+    nom: string,
+    portail: {
+      url_base: string;
+      type?: "public" | "prive";
+      actif?: boolean;
+      frequence_minutes?: number;
+      config_scraping?: string | null;
+    },
+  ) =>
+    fetchJson<PortailArgos>(`/argos/portails/${encodeURIComponent(nom)}`, {
+      method: "PUT",
+      body: JSON.stringify(portail),
     }),
   listerAO: (statut?: string) =>
     fetchJson<AppelsOffrePage>(

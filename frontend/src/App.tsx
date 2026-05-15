@@ -5,7 +5,6 @@ import { HermesMark } from "./components/HermesMark";
 import { Icon } from "./components/Icon";
 import { ModelDownloader } from "./components/ModelDownloader";
 import { OnboardingWizard } from "./components/OnboardingWizard";
-import { PortalLoginModal } from "./components/PortalLoginModal";
 import { Sidebar, type ViewKey } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
 import { Topbar } from "./components/Topbar";
@@ -26,7 +25,6 @@ import { Tenders } from "./views/Tenders";
 export default function App() {
   const [active, setActive] = useState<ViewKey>("tenders");
   const [toast, setToast] = useState<ToastInput | null>(null);
-  const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [emptyState, setEmptyState] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [modeleReady, setModeleReady] = useState(false);
@@ -89,7 +87,7 @@ export default function App() {
     setToast({
       title: "ARGOS",
       app: "Cycle de collecte lancé",
-      msg: "Collecte réelle des portails configurés — résultats dans quelques instants.",
+      msg: "Collecte réelle des scrapers ARGOS enregistrés — résultats dans quelques instants.",
       agent: "argos",
     });
     try {
@@ -187,7 +185,6 @@ export default function App() {
                     agent: "hermion",
                   });
                 }}
-                onOpenLoginModal={() => setLoginModalOpen(true)}
               />
             )}
           </>
@@ -195,13 +192,6 @@ export default function App() {
       </main>
 
       <Toast toast={toast} onClose={() => setToast(null)} />
-
-      {loginModalOpen && (
-        <PortalLoginModal
-          onClose={() => setLoginModalOpen(false)}
-          onToast={setToast}
-        />
-      )}
 
       {(!profile || !onboardingDone) && modeleReady && (
         <OnboardingWizard

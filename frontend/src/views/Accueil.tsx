@@ -22,11 +22,11 @@ const PIPELINE: PipelineSeg[] = [
 ];
 
 const ACTIVITY: { time: string; agent: AgentKey; msg: string }[] = [
-  { time: "09:42", agent: "argos",   msg: "Cycle terminé — 14 nouveaux AO collectés depuis BOAMP, PLACE, AWS Achat" },
+  { time: "09:42", agent: "argos",   msg: "Cycle terminé — nouveaux AO collectés depuis BOAMP" },
   { time: "09:43", agent: "krinos",  msg: "Scoring de 14 AO — 3 marqués pertinents (≥ 70), 6 à arbitrer" },
   { time: "09:51", agent: "krinos",  msg: "AO 26S0067412 — score 87 / forte affinité avec références Naval Group" },
   { time: "10:08", agent: "hermion", msg: "Brouillon de réponse généré pour « Marché-cadre AMO transformation »" },
-  { time: "10:15", agent: "argos",   msg: "Échec connexion TED Europa — credentials invalides, voir paramètres" },
+  { time: "10:15", agent: "argos",   msg: "Portails privés en attente d'un scraper backend dédié" },
   { time: "10:21", agent: "hermion", msg: "PDF généré — Refonte SI direction des affaires maritimes (84 p.)" },
 ];
 
@@ -60,7 +60,7 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
               fontSize: 11,
             }}
           >
-            3 / 4 portails
+            scrapers ARGOS
           </span>
         </div>
       )}

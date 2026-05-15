@@ -225,11 +225,10 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
   collecte avant d'insérer les AO. Le scraper ne filtre pas lui-même ; le
   filtrage est centralisé dans le runner.
 - **Limite ARGOS multi-portails** : le seul scraper réel actuellement
-  enregistré est `boamp`. Les écrans frontend listent encore des portails
-  statiques (PLACE, AWS Achat, TED Europa, Achat Solutions, Maximilien) et des
-  messages de collecte multi-portails, mais ces portails ne sont pas collectés
-  tant qu'un scraper backend dédié n'est pas implémenté et ajouté au registre
-  ARGOS.
+  enregistré est `boamp`. L'interface Paramètres affiche désormais les scrapers
+  réellement exposés par le backend au lieu de portails statiques. PLACE, TED,
+  AWS Achat, Achat Solutions ou Maximilien ne seront collectés qu'après ajout
+  d'un scraper backend dédié dans le registre ARGOS.
 - **Onglet Veille connecté au backend** : les AO affichés viennent de
   `/appels-offre`, pas des données mock.
 - **Qualification AO persistée** : depuis la Veille, les actions

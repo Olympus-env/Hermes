@@ -85,7 +85,7 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
           </span>
           <div className="loading-banner__bar" />
           <span style={{ color: "var(--fg-3)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-            3 / 4 portails
+            scrapers ARGOS
           </span>
         </div>
       )}
