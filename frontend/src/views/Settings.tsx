@@ -646,7 +646,7 @@ function ScoringSection() {
                 <input
                   type="range"
                   min="0"
-                  max="60"
+                  max="100"
                   step="1"
                   value={values[d.id]}
                   onChange={(e) =>
@@ -744,9 +744,9 @@ function ScoringSection() {
             }}
           >
             Note : les AO déjà analysés gardent leur score d'origine. Pour
-            recalculer un score avec la nouvelle pondération, relance
-            l'analyse KRINOS depuis l'AO (bouton « Rédiger une réponse »
-            relance aussi l'analyse en amont si nécessaire).
+            recalculer un score avec la nouvelle pondération sans relancer
+            PYTHIA, ouvre l'AO dans la Veille puis utilise l'action
+            « Recalculer score » si l'analyse contient les scores par dimension.
           </div>
         </>
       )}

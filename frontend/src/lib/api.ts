@@ -90,6 +90,20 @@ export type PonderationKrinos = {
   total: number;
 };
 
+export type AnalyseKrinos = {
+  id: number;
+  appel_offre_id: number;
+  resume: string;
+  score: number;
+  justification_score: string;
+  scores_dimensions: Partial<Record<keyof Omit<PonderationKrinos, "total">, number>>;
+  tags: string[];
+  criteres_extraits: string | null;
+  duree_analyse_ms: number | null;
+  modele_llm: string | null;
+  cree_le: string;
+};
+
 export type ProgressionModele = {
   modele: string;
   en_cours: boolean;
@@ -208,6 +222,12 @@ export const api = {
     fetchJson<PonderationKrinos>("/krinos/ponderation", {
       method: "PUT",
       body: JSON.stringify(p),
+    }),
+  lireAnalyseKrinos: (aoId: number) =>
+    fetchJson<AnalyseKrinos>(`/krinos/appels-offre/${aoId}/analyse`),
+  recalculerScoreKrinos: (aoId: number) =>
+    fetchJson<AnalyseKrinos>(`/krinos/appels-offre/${aoId}/recalculer-score`, {
+      method: "POST",
     }),
   statutModele: () => fetchJson<StatutModele>("/pythia/modele/status"),
   telechargerModele: (modele?: string) =>

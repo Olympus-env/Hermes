@@ -127,6 +127,81 @@ def test_endpoint_get_put_ponderation():
         assert r.json()["affinite_metier"] == 50
 
 
+def test_endpoint_analyse_expose_scores_dimensions():
+    from hermes.db.models import AnalyseKrinos, AppelOffre
+    from hermes.main import app
+
+    init_db()
+    with Session(get_engine()) as session:
+        ao = AppelOffre(titre="AO scores", url_source="https://example.test/scores")
+        session.add(ao)
+        session.commit()
+        session.refresh(ao)
+        session.add(
+            AnalyseKrinos(
+                appel_offre_id=ao.id,
+                resume="Analyse",
+                score=75,
+                justification_score="OK",
+                scores_dimensions=json.dumps({"affinite_metier": 90, "references": 60}),
+            )
+        )
+        session.commit()
+        ao_id = ao.id
+
+    with TestClient(app) as client:
+        r = client.get(f"/krinos/appels-offre/{ao_id}/analyse")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["scores_dimensions"]["affinite_metier"] == 90.0
+        assert data["scores_dimensions"]["references"] == 60.0
+
+
+def test_endpoint_recalcule_score_depuis_scores_dimensions():
+    from hermes.db.models import AnalyseKrinos, AppelOffre
+    from hermes.main import app
+
+    init_db()
+    with Session(get_engine()) as session:
+        ao = AppelOffre(titre="AO recalcul", url_source="https://example.test/recalc")
+        session.add(ao)
+        session.commit()
+        session.refresh(ao)
+        session.add(
+            AnalyseKrinos(
+                appel_offre_id=ao.id,
+                resume="Analyse",
+                score=10,
+                justification_score="Ancien score",
+                scores_dimensions=json.dumps(
+                    {
+                        "affinite_metier": 80,
+                        "references": 20,
+                        "adequation_budget": 20,
+                        "capacite_equipe": 20,
+                        "calendrier": 20,
+                    }
+                ),
+            )
+        )
+        enregistrer_ponderation(
+            session,
+            Ponderation(
+                affinite_metier=100,
+                references=0,
+                adequation_budget=0,
+                capacite_equipe=0,
+                calendrier=0,
+            ),
+        )
+        ao_id = ao.id
+
+    with TestClient(app) as client:
+        r = client.post(f"/krinos/appels-offre/{ao_id}/recalculer-score")
+        assert r.status_code == 200
+        assert r.json()["score"] == 80.0
+
+
 def test_analyseur_utilise_scores_dimensions(monkeypatch):
     """Si le LLM renvoie scores_dimensions, l'analyseur calcule score pondéré."""
     from hermes.agents import pythia

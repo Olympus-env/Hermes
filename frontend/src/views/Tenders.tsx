@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type AppelOffre } from "../lib/api";
+import { api, type AnalyseKrinos, type AppelOffre, type PonderationKrinos } from "../lib/api";
 import { deadlineInfo, type Tender, type TenderTag } from "../lib/data";
 import { AgentChip } from "../components/AgentChip";
 import { Deadline } from "../components/Deadline";
@@ -319,6 +319,31 @@ type PanelProps = {
 function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
   const { formatted, urgent, days } = deadlineInfo(tender.deadline);
   const [redigerEnCours, setRedigerEnCours] = useState(false);
+  const [analyse, setAnalyse] = useState<AnalyseKrinos | null>(null);
+  const [ponderation, setPonderation] = useState<PonderationKrinos | null>(null);
+  const [analyseLoading, setAnalyseLoading] = useState(true);
+  const [recalculEnCours, setRecalculEnCours] = useState(false);
+  const scoreAffiche = analyse?.score ?? tender.score;
+
+  useEffect(() => {
+    let cancelled = false;
+    setAnalyseLoading(true);
+    Promise.all([
+      api.lireAnalyseKrinos(Number(tender.id)).catch(() => null),
+      api.lirePonderation().catch(() => null),
+    ])
+      .then(([analyseData, ponderationData]) => {
+        if (cancelled) return;
+        setAnalyse(analyseData);
+        setPonderation(ponderationData);
+      })
+      .finally(() => {
+        if (!cancelled) setAnalyseLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tender.id]);
 
   const rediger = async () => {
     setRedigerEnCours(true);
@@ -383,6 +408,29 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
     }
   };
 
+  const recalculerScore = async () => {
+    setRecalculEnCours(true);
+    try {
+      const next = await api.recalculerScoreKrinos(Number(tender.id));
+      setAnalyse(next);
+      onToast({
+        title: "KRINOS",
+        app: "Score recalculé",
+        msg: `Nouveau score pondéré : ${Math.round(next.score)}/100.`,
+        agent: "krinos",
+      });
+    } catch (error) {
+      onToast({
+        title: "KRINOS",
+        app: "Recalcul impossible",
+        msg: error instanceof Error ? error.message : "Erreur inconnue pendant le recalcul.",
+        agent: "krinos",
+      });
+    } finally {
+      setRecalculEnCours(false);
+    }
+  };
+
   return (
     <aside className="tender-panel">
       <div className="tender-panel__head">
@@ -398,7 +446,7 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
         </div>
         <h2 className="tender-panel__title">{tender.title}</h2>
         <div className="tender-panel__meta">
-          <Score value={tender.score} />
+          <Score value={Math.round(scoreAffiche)} />
           <span style={{ color: "var(--fg-4)" }}>·</span>
           <Deadline date={tender.deadline} />
           <span style={{ color: "var(--fg-4)" }}>·</span>
@@ -411,7 +459,7 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
           <div className="tender-panel__section-title">
             <AgentChip agent="krinos" state="active" compact /> Résumé d'analyse
           </div>
-          <p className="tender-panel__summary">{tender.summary}</p>
+          <p className="tender-panel__summary">{analyse?.resume ?? tender.summary}</p>
         </div>
 
         <div className="tender-panel__section">
@@ -446,7 +494,11 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
 
         <div className="tender-panel__section">
           <div className="tender-panel__section-title">Pondération du score</div>
-          <ScoreBreakdown total={tender.score} />
+          <ScoreBreakdown
+            loading={analyseLoading}
+            scores={analyse?.scores_dimensions ?? null}
+            ponderation={ponderation}
+          />
         </div>
       </div>
 
@@ -472,6 +524,15 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
           <Icon.refresh size={13} />
           {redigerEnCours ? "Rédaction…" : "Rédiger une réponse"}
         </button>
+        <button
+          className="btn"
+          onClick={() => void recalculerScore()}
+          disabled={recalculEnCours || !analyse || Object.keys(analyse.scores_dimensions).length === 0}
+          title="Recalcule le score avec la pondération KRINOS actuelle, sans relancer PYTHIA"
+        >
+          <Icon.refresh size={13} />
+          {recalculEnCours ? "Recalcul…" : "Recalculer score"}
+        </button>
         <button className="btn">
           <Icon.download size={13} /> Télécharger DCE
         </button>
@@ -480,18 +541,43 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
   );
 }
 
-function ScoreBreakdown({ total }: { total: number }) {
-  const dims = [
-    { label: "Affinité métier",   value: Math.min(25, Math.round(total * 0.3)),  max: 25 },
-    { label: "Références",        value: Math.min(20, Math.round(total * 0.24)), max: 20 },
-    { label: "Adéquation budget", value: Math.min(20, Math.round(total * 0.22)), max: 20 },
-    { label: "Capacité équipe",   value: Math.min(15, Math.round(total * 0.16)), max: 15 },
-    { label: "Risque calendrier", value: Math.min(20, Math.round(total * 0.2)),  max: 20 },
-  ];
+type DimensionScore = keyof Omit<PonderationKrinos, "total">;
+
+const SCORE_DIMENSIONS: { id: DimensionScore; label: string }[] = [
+  { id: "affinite_metier", label: "Affinité métier" },
+  { id: "references", label: "Références" },
+  { id: "adequation_budget", label: "Adéquation budget" },
+  { id: "capacite_equipe", label: "Capacité équipe" },
+  { id: "calendrier", label: "Risque calendrier" },
+];
+
+function ScoreBreakdown({
+  loading,
+  scores,
+  ponderation,
+}: {
+  loading: boolean;
+  scores: AnalyseKrinos["scores_dimensions"] | null;
+  ponderation: PonderationKrinos | null;
+}) {
+  if (loading) {
+    return <div style={{ color: "var(--fg-3)", fontSize: 12 }}>Chargement KRINOS…</div>;
+  }
+  if (!scores || Object.keys(scores).length === 0) {
+    return (
+      <div style={{ color: "var(--fg-3)", fontSize: 12, lineHeight: 1.5 }}>
+        Aucune ventilation disponible. Relance l'analyse KRINOS pour produire les scores
+        par dimension.
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {dims.map((d) => {
-        const ratio = d.value / d.max;
+      {SCORE_DIMENSIONS.map((d) => {
+        const value = scores[d.id];
+        const weight = ponderation ? ponderation[d.id] : null;
+        const ratio = (value ?? 0) / 100;
         const color =
           ratio > 0.7 ? "var(--argos)" : ratio > 0.4 ? "var(--warn)" : "var(--err)";
         return (
@@ -499,7 +585,7 @@ function ScoreBreakdown({ total }: { total: number }) {
             key={d.label}
             style={{
               display: "grid",
-              gridTemplateColumns: "140px 1fr 36px",
+              gridTemplateColumns: "140px 1fr 64px",
               alignItems: "center",
               gap: 12,
               fontSize: 12,
@@ -531,7 +617,8 @@ function ScoreBreakdown({ total }: { total: number }) {
                 color: "var(--fg-2)",
               }}
             >
-              {d.value}/{d.max}
+              {value === undefined ? "—" : `${Math.round(value)}`}
+              {weight !== null ? ` · ${weight}%` : ""}
             </span>
           </div>
         );

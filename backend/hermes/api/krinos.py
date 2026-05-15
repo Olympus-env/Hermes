@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from hermes.agents.krinos.analyzer import ErreurAnalyseKrinos, analyser_ao
@@ -16,6 +17,7 @@ from hermes.agents.krinos.downloader import (
 from hermes.agents.krinos.extractor import ErreurExtractionDocument, extraire_document
 from hermes.agents.krinos.ponderation import (
     Ponderation,
+    calculer_score_final,
     charger_ponderation,
     enregistrer_ponderation,
 )
@@ -77,6 +79,7 @@ class AnalyseRead(BaseModel):
     resume: str
     score: float
     justification_score: str
+    scores_dimensions: dict[str, float] = Field(default_factory=dict)
     tags: list[str]
     criteres_extraits: str | None
     duree_analyse_ms: int | None
@@ -295,16 +298,45 @@ def lire_analyse_ao(
     return _analyse_read(analyse)
 
 
-def _analyse_read(analyse: AnalyseKrinos) -> AnalyseRead:
-    import json as _json
+@router.post("/appels-offre/{ao_id}/recalculer-score", response_model=AnalyseRead)
+def recalculer_score_ao(
+    ao_id: int,
+    session: SessionDep,
+) -> AnalyseRead:
+    ao = session.get(AppelOffre, ao_id)
+    if ao is None:
+        raise HTTPException(status_code=404, detail="Appel d'offre introuvable")
 
+    analyse = session.exec(
+        select(AnalyseKrinos)
+        .where(AnalyseKrinos.appel_offre_id == ao_id)
+        .order_by(AnalyseKrinos.cree_le.desc())
+    ).first()
+    if analyse is None:
+        raise HTTPException(status_code=404, detail="Aucune analyse pour cet appel d'offre")
+
+    scores = _scores_dimensions(analyse)
+    if not scores:
+        raise HTTPException(
+            status_code=409,
+            detail="Cette analyse ne contient pas de scores par dimension",
+        )
+
+    analyse.score = calculer_score_final(scores, charger_ponderation(session))
+    session.add(analyse)
+    session.commit()
+    session.refresh(analyse)
+    return _analyse_read(analyse)
+
+
+def _analyse_read(analyse: AnalyseKrinos) -> AnalyseRead:
     tags: list[str] = []
     if analyse.tags:
         try:
-            valeurs = _json.loads(analyse.tags)
+            valeurs = json.loads(analyse.tags)
             if isinstance(valeurs, list):
                 tags = [str(v) for v in valeurs]
-        except _json.JSONDecodeError:
+        except json.JSONDecodeError:
             tags = []
 
     return AnalyseRead(
@@ -313,12 +345,33 @@ def _analyse_read(analyse: AnalyseKrinos) -> AnalyseRead:
         resume=analyse.resume,
         score=analyse.score,
         justification_score=analyse.justification_score,
+        scores_dimensions=_scores_dimensions(analyse),
         tags=tags,
         criteres_extraits=analyse.criteres_extraits,
         duree_analyse_ms=analyse.duree_analyse_ms,
         modele_llm=analyse.modele_llm,
         cree_le=analyse.cree_le.isoformat(),
     )
+
+
+def _scores_dimensions(analyse: AnalyseKrinos) -> dict[str, float]:
+    if not analyse.scores_dimensions:
+        return {}
+    try:
+        valeurs = json.loads(analyse.scores_dimensions)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(valeurs, dict):
+        return {}
+
+    scores: dict[str, float] = {}
+    for dim in Ponderation.DIMENSIONS:
+        valeur = valeurs.get(dim)
+        try:
+            scores[dim] = max(0.0, min(100.0, float(valeur)))
+        except (TypeError, ValueError):
+            continue
+    return scores
 
 
 def _journaliser(

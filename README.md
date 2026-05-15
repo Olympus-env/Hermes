@@ -243,11 +243,10 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
   d'attribution générés en local par Mistral 7B via Ollama. Endpoints
   `POST /krinos/appels-offre/{id}/analyser` et `GET …/analyse`.
 - **Pondération KRINOS configurable** : les poids par dimension de scoring sont
-  persistés et utilisés au prochain calcul de score. Points à finaliser :
-  sliders UI limités à 60 % par dimension alors que le backend accepte 0-100,
-  ventilation affichée dans la fiche AO encore approximative, et absence de
-  recalcul explicite des anciennes analyses malgré le stockage des scores par
-  dimension.
+  persistés et utilisés au prochain calcul de score. Les analyses stockent les
+  scores par dimension, la fiche AO affiche cette ventilation avec les poids
+  courants, et l'action « Recalculer score » permet d'appliquer une nouvelle
+  pondération sans relancer PYTHIA quand ces scores sont disponibles.
 - **HERMION rédaction IA** : génération d'une réponse markdown multi-sections
   (plan puis rédaction section par section) en local via PYTHIA. Versionnement
   (`v1`, `v2`, …), validation humaine obligatoire (statut `en_attente` jusqu'à
