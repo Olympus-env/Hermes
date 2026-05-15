@@ -220,6 +220,16 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
 - **Filtrage ARGOS** : mots-clés inclus/exclus configurables dans
   *Paramètres → Critères de filtrage*. Les AO non pertinents sont rejetés
   avant insertion. Routes `GET/PUT /argos/filtre`.
+  Le filtre est bien partagé entre frontend et backend : l'UI enregistre les
+  critères dans MNEMOSYNE via l'API, et le runner ARGOS les recharge à chaque
+  collecte avant d'insérer les AO. Le scraper ne filtre pas lui-même ; le
+  filtrage est centralisé dans le runner.
+- **Limite ARGOS multi-portails** : le seul scraper réel actuellement
+  enregistré est `boamp`. Les écrans frontend listent encore des portails
+  statiques (PLACE, AWS Achat, TED Europa, Achat Solutions, Maximilien) et des
+  messages de collecte multi-portails, mais ces portails ne sont pas collectés
+  tant qu'un scraper backend dédié n'est pas implémenté et ajouté au registre
+  ARGOS.
 - **Onglet Veille connecté au backend** : les AO affichés viennent de
   `/appels-offre`, pas des données mock.
 - **Qualification AO persistée** : depuis la Veille, les actions
@@ -232,6 +242,12 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
 - **KRINOS analyse IA (PYTHIA)** : résumé, score 0-100, tags métier et critères
   d'attribution générés en local par Mistral 7B via Ollama. Endpoints
   `POST /krinos/appels-offre/{id}/analyser` et `GET …/analyse`.
+- **Pondération KRINOS configurable** : les poids par dimension de scoring sont
+  persistés et utilisés au prochain calcul de score. Points à finaliser :
+  sliders UI limités à 60 % par dimension alors que le backend accepte 0-100,
+  ventilation affichée dans la fiche AO encore approximative, et absence de
+  recalcul explicite des anciennes analyses malgré le stockage des scores par
+  dimension.
 - **HERMION rédaction IA** : génération d'une réponse markdown multi-sections
   (plan puis rédaction section par section) en local via PYTHIA. Versionnement
   (`v1`, `v2`, …), validation humaine obligatoire (statut `en_attente` jusqu'à

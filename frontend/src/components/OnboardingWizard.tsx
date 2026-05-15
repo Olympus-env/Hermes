@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { HermesMark } from "./HermesMark";
+import { Icon } from "./Icon";
 import { api } from "../lib/api";
 import { saveUserProfile, markOnboardingDone, type UserProfile } from "../lib/userProfile";
 
@@ -46,6 +47,8 @@ export function OnboardingWizard({ onDone }: Props) {
   const [exclus, setExclus] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestionMsg, setSuggestionMsg] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
   const step1Ok = firstName.trim().length > 0 && lastName.trim().length > 0;
@@ -74,6 +77,30 @@ export function OnboardingWizard({ onDone }: Props) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const suggestFilters = async () => {
+    setSuggesting(true);
+    setErreur(null);
+    setSuggestionMsg(null);
+    try {
+      const suggestion = await api.suggererFiltreVeille({
+        entreprise,
+        activite,
+        infos: infosUtiles,
+      });
+      setInclus(suggestion.inclus.join(", "));
+      setExclus(suggestion.exclus.join(", "));
+      setSuggestionMsg(
+        suggestion.raisonnement
+          ? `${suggestion.inclus.length} mots-clés inclus, ${suggestion.exclus.length} exclus proposés. ${suggestion.raisonnement}`
+          : `${suggestion.inclus.length} mots-clés inclus et ${suggestion.exclus.length} exclus proposés.`,
+      );
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSuggesting(false);
     }
   };
 
@@ -114,6 +141,10 @@ export function OnboardingWizard({ onDone }: Props) {
             exclus={exclus}
             onInclus={setInclus}
             onExclus={setExclus}
+            canSuggest={step2Ok}
+            suggesting={suggesting}
+            suggestionMsg={suggestionMsg}
+            onSuggest={() => void suggestFilters()}
           />
         )}
 
@@ -326,11 +357,19 @@ function StepFiltres({
   exclus,
   onInclus,
   onExclus,
+  canSuggest,
+  suggesting,
+  suggestionMsg,
+  onSuggest,
 }: {
   inclus: string;
   exclus: string;
   onInclus: (v: string) => void;
   onExclus: (v: string) => void;
+  canSuggest: boolean;
+  suggesting: boolean;
+  suggestionMsg: string | null;
+  onSuggest: () => void;
 }) {
   return (
     <div className="profile-modal__body">
@@ -342,6 +381,18 @@ function StepFiltres({
         selon ces mots-clés. Tu pourras les modifier à tout moment dans
         <em> Paramètres → Critères de filtrage</em>.
       </p>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <button
+          className="btn"
+          disabled={!canSuggest || suggesting}
+          onClick={onSuggest}
+          title="Demande à PYTHIA des mots-clés pertinents selon le profil renseigné"
+        >
+          <Icon.refresh size={11} />
+          {suggesting ? "PYTHIA réfléchit…" : "Suggérer (IA)"}
+        </button>
+      </div>
 
       <div className="settings-row" style={{ alignItems: "flex-start" }}>
         <div>
@@ -390,6 +441,23 @@ function StepFiltres({
         tous les AO BOAMP (plus de 1 000 par jour). Avec quelques mots-clés
         métier précis, tu n'auras à examiner que ceux qui te concernent.
       </div>
+
+      {suggestionMsg && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "10px 14px",
+            background: "rgba(29,158,117,0.10)",
+            border: "1px solid rgba(29,158,117,0.30)",
+            borderRadius: 6,
+            fontSize: 12,
+            color: "var(--fg-2)",
+            lineHeight: 1.5,
+          }}
+        >
+          {suggestionMsg}
+        </div>
+      )}
     </div>
   );
 }
