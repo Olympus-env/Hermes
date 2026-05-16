@@ -21,6 +21,7 @@ const TITLES: Record<ViewKey, { main: string; sub: string }> = {
   accueil:   { main: "Accueil",        sub: "Vue d'ensemble" },
   tenders:   { main: "Appels d'offre", sub: "Veille active" },
   responses: { main: "Réponses",       sub: "File de validation" },
+  journal:   { main: "Journal",        sub: "Activité des agents" },
   settings:  { main: "Paramètres",     sub: "Configuration" },
 };
 

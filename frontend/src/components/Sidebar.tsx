@@ -4,7 +4,12 @@ import { GreekFrieze } from "./GreekFrieze";
 import { HermesMark } from "./HermesMark";
 import { Icon } from "./Icon";
 
-export type ViewKey = "accueil" | "tenders" | "responses" | "settings";
+export type ViewKey =
+  | "accueil"
+  | "tenders"
+  | "responses"
+  | "journal"
+  | "settings";
 
 type Item = {
   id: ViewKey;
@@ -33,6 +38,7 @@ export function Sidebar({
     { id: "accueil",   label: "Accueil",        icon: Icon.home,     count: null },
     { id: "tenders",   label: "Appels d'offre", icon: Icon.document, count: tenderCount },
     { id: "responses", label: "Réponses",       icon: Icon.reply,    count: pendingValidationCount },
+    { id: "journal",   label: "Journal",        icon: Icon.inbox,    count: null },
     { id: "settings",  label: "Paramètres",     icon: Icon.settings, count: null },
   ];
 

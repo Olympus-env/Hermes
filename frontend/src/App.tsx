@@ -18,6 +18,7 @@ import {
   type UserProfile,
 } from "./lib/userProfile";
 import { Accueil } from "./views/Accueil";
+import { Journal } from "./views/Journal";
 import { Responses } from "./views/Responses";
 import { Settings } from "./views/Settings";
 import { Tenders } from "./views/Tenders";
@@ -173,6 +174,7 @@ export default function App() {
               />
             )}
             {active === "responses" && <Responses onToast={setToast} />}
+            {active === "journal" && <Journal />}
             {active === "settings" && (
               <Settings
                 profile={profile}

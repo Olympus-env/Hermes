@@ -22,6 +22,7 @@ from hermes.api import (
     health,
     hermion,
     krinos,
+    logs,
     orchestration,
     pythia,
 )
@@ -67,6 +68,7 @@ app.include_router(argos.router)
 app.include_router(krinos.router)
 app.include_router(hermion.router)
 app.include_router(orchestration.router)
+app.include_router(logs.router)
 app.include_router(pythia.router)
 
 

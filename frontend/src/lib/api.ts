@@ -173,6 +173,26 @@ export type ReponseAvecAO = {
   maj_le: string;
 };
 
+export type NiveauLog = "debug" | "info" | "warning" | "error";
+
+export type LogAgentEntry = {
+  id: number;
+  agent: string;
+  niveau: NiveauLog;
+  message: string;
+  contexte: string | null;
+  appel_offre_id: number | null;
+  portail_id: number | null;
+  cree_le: string;
+};
+
+export type LogsPage = {
+  total: number;
+  items: LogAgentEntry[];
+  limit: number;
+  offset: number;
+};
+
 export type ConfigOrchestration = {
   actif: boolean;
   seuil_score: number;
@@ -295,6 +315,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify(modele ? { modele } : {}),
     }),
+  listerLogs: (params: {
+    agent?: string;
+    niveau?: NiveauLog;
+    limit?: number;
+    offset?: number;
+  } = {}) => {
+    const q = new URLSearchParams();
+    if (params.agent) q.set("agent", params.agent);
+    if (params.niveau) q.set("niveau", params.niveau);
+    q.set("limit", String(params.limit ?? 100));
+    q.set("offset", String(params.offset ?? 0));
+    return fetchJson<LogsPage>(`/logs?${q.toString()}`);
+  },
   lireConfigOrchestration: () =>
     fetchJson<ConfigOrchestration>("/orchestration/config"),
   ecrireConfigOrchestration: (c: ConfigOrchestration) =>
