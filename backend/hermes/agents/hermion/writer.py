@@ -1,8 +1,10 @@
 """HERMION — rédaction multi-étapes via PYTHIA.
 
-Workflow par défaut :
-    1. Génération d'un plan structuré (3 à 6 sections) à partir du contexte AO
-       + analyse KRINOS + extraits documentaires.
+Workflow :
+    1. Plan des sections. Si un workflow utilisateur est configuré en
+       MNEMOSYNE (`hermion.workflow`), ses sections sont utilisées telles
+       quelles ; sinon PYTHIA génère un plan dynamique (3 à 6 sections) à
+       partir du contexte AO + analyse KRINOS + extraits documentaires.
     2. Rédaction de chaque section en markdown, en réinjectant le plan global.
     3. Assemblage final en un document markdown unique.
 
@@ -20,6 +22,7 @@ from typing import Any
 from sqlmodel import Session, func, select
 
 from hermes.agents import pythia
+from hermes.agents.hermion.workflow import WorkflowReponse, charger_workflow
 from hermes.config import settings
 from hermes.db.models import (
     AnalyseKrinos,
@@ -108,12 +111,17 @@ async def rediger_reponse(
             "Aucune analyse KRINOS pour cet AO — lancer /krinos/.../analyser d'abord"
         )
 
-    contexte = _construire_contexte(
-        session, appel_offre, analyse, profil, consignes_supplementaires
-    )
+    workflow_cfg = charger_workflow(session)
+    consignes = _combiner_consignes(workflow_cfg, consignes_supplementaires)
+    contexte = _construire_contexte(session, appel_offre, analyse, profil, consignes)
 
     debut = time.perf_counter()
-    plan = await _generer_plan(contexte)
+    if workflow_cfg is not None and workflow_cfg.sections:
+        plan = _plan_depuis_workflow(workflow_cfg)
+        origine = f"workflow_utilisateur ({workflow_cfg.source})"
+    else:
+        plan = await _generer_plan(contexte)
+        origine = "plan_dynamique"
     sections = await _rediger_sections(plan, contexte)
     contenu = _assembler_document(appel_offre, plan, sections)
     duree_ms = int((time.perf_counter() - debut) * 1000)
@@ -121,6 +129,7 @@ async def rediger_reponse(
     version = _prochaine_version(session, appel_offre.id)
     workflow = {
         "nom": "plan_puis_sections",
+        "origine": origine,
         "modele": settings.pythia_modele,
         "sections": [s["titre"] for s in plan],
     }
@@ -262,6 +271,35 @@ def _assembler_document(
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
+
+def _plan_depuis_workflow(workflow_cfg: WorkflowReponse) -> list[dict[str, str]]:
+    """Convertit le workflow utilisateur en plan consommable par le writer.
+
+    La longueur cible éventuelle est repliée dans le brief : le prompt section
+    la reçoit ainsi sans changer le contrat `plan: list[dict[str, str]]`.
+    """
+    plan: list[dict[str, str]] = []
+    for section in workflow_cfg.sections:
+        brief = section.brief
+        if section.longueur_cible:
+            indice = f"Longueur visée : environ {section.longueur_cible} mots."
+            brief = f"{brief}\n{indice}" if brief else indice
+        plan.append({"titre": section.titre, "brief": brief})
+    return plan
+
+
+def _combiner_consignes(
+    workflow_cfg: WorkflowReponse | None,
+    consignes_supplementaires: str | None,
+) -> str | None:
+    """Fusionne les consignes globales du workflow et celles ad hoc de l'appel."""
+    parts = [
+        workflow_cfg.consignes_globales if workflow_cfg else "",
+        consignes_supplementaires or "",
+    ]
+    fusion = "\n\n".join(p.strip() for p in parts if p and p.strip())
+    return fusion or None
 
 
 def _construire_contexte(

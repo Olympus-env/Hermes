@@ -7,6 +7,7 @@ import {
   type UserProfile,
 } from "../lib/userProfile";
 import { Icon } from "../components/Icon";
+import { WorkflowEditor, type WorkflowDraft } from "../components/WorkflowEditor";
 import { api, type PortailArgos } from "../lib/api";
 
 type Props = {
@@ -14,13 +15,14 @@ type Props = {
   onSaveProfile: (profile: UserProfile) => void;
 };
 
-type SectionId = "profil" | "portails" | "filtrage" | "scoring";
+type SectionId = "profil" | "portails" | "filtrage" | "scoring" | "redaction";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
-  { id: "profil",   label: "Profil utilisateur" },
-  { id: "portails", label: "Portails" },
-  { id: "filtrage", label: "Critères de filtrage" },
-  { id: "scoring",  label: "Pondération du scoring" },
+  { id: "profil",    label: "Profil utilisateur" },
+  { id: "portails",  label: "Portails" },
+  { id: "filtrage",  label: "Critères de filtrage" },
+  { id: "scoring",   label: "Pondération du scoring" },
+  { id: "redaction", label: "Rédaction HERMION" },
 ];
 
 export function Settings({ profile, onSaveProfile }: Props) {
@@ -53,6 +55,7 @@ export function Settings({ profile, onSaveProfile }: Props) {
           {section === "portails" && <PortalsSection />}
           {section === "filtrage" && <FilteringSection />}
           {section === "scoring" && <ScoringSection />}
+          {section === "redaction" && <RedactionSection />}
         </div>
       </div>
     </div>
@@ -850,6 +853,137 @@ function ScoringSection() {
             PYTHIA, ouvre l'AO dans la Veille puis utilise l'action
             « Recalculer score » si l'analyse contient les scores par dimension.
           </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function RedactionSection() {
+  const [draft, setDraft] = useState<WorkflowDraft>({
+    consignes_globales: "",
+    sections: [],
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [source, setSource] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .lireWorkflowHermion()
+      .then((wf) => {
+        if (cancelled) return;
+        setDraft({
+          consignes_globales: wf.consignes_globales,
+          sections: wf.sections,
+        });
+        setSource(wf.configure ? wf.source : "");
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onSave = async () => {
+    setSaving(true);
+    setError(null);
+    setSavedMsg(null);
+    try {
+      const wf = await api.ecrireWorkflowHermion({
+        consignes_globales: draft.consignes_globales,
+        sections: draft.sections,
+      });
+      setDraft({ consignes_globales: wf.consignes_globales, sections: wf.sections });
+      setSource(wf.configure ? wf.source : "");
+      setSavedMsg(
+        wf.configure
+          ? `Workflow enregistré (${wf.sections.length} sections) — HERMION l'utilisera dès la prochaine rédaction.`
+          : "Workflow vidé — HERMION construira un plan dynamique au cas par cas.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="settings-section">
+      <h2>Rédaction HERMION</h2>
+      <p className="settings-section__desc">
+        Trame de réponse imposée à HERMION : une liste ordonnée de sections plus
+        des consignes globales. Tu peux la dériver d'une description ou de
+        réponses passées via l'IA, puis la corriger. Sans workflow, HERMION
+        construit un plan dynamique pour chaque AO.
+      </p>
+
+      {loading ? (
+        <div style={{ color: "var(--fg-3)", fontSize: 13 }}>Chargement…</div>
+      ) : (
+        <>
+          {source && (
+            <div
+              style={{
+                marginBottom: 12,
+                fontSize: 12,
+                color: "var(--fg-3)",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              ● workflow actif — origine : {source}
+            </div>
+          )}
+
+          <WorkflowEditor value={draft} onChange={setDraft} />
+
+          <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center" }}>
+            <button className="btn btn--gold" disabled={saving} onClick={onSave}>
+              {saving ? "Enregistrement…" : "Enregistrer le workflow"}
+            </button>
+            <span style={{ fontSize: 11.5, color: "var(--fg-4)" }}>
+              Enregistrer avec zéro section désactive le workflow.
+            </span>
+          </div>
+
+          {savedMsg && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(29,158,117,0.10)",
+                border: "1px solid rgba(29,158,117,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+              }}
+            >
+              {savedMsg}
+            </div>
+          )}
+          {error && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(220,80,80,0.10)",
+                border: "1px solid rgba(220,80,80,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+              }}
+            >
+              Erreur : {error}
+            </div>
+          )}
         </>
       )}
     </div>

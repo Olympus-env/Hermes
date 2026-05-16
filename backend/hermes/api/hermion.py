@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from hermes.agents import pythia
 from hermes.agents.hermion import (
     ErreurRedactionHermion,
     ProfilUtilisateur,
+    SectionWorkflow,
+    WorkflowReponse,
+    charger_workflow,
+    deriver_workflow,
+    enregistrer_workflow,
     rediger_reponse,
 )
 from hermes.db.models import AppelOffre, ReponseHermion, StatutAO, StatutReponse
@@ -89,6 +95,30 @@ class ContenuUpdate(BaseModel):
     commentaire_humain: str | None = None
 
 
+class SectionWorkflowModel(BaseModel):
+    titre: str
+    brief: str = ""
+    longueur_cible: int | None = None
+
+
+class WorkflowRead(BaseModel):
+    configure: bool
+    source: str
+    consignes_globales: str
+    sections: list[SectionWorkflowModel]
+
+
+class WorkflowUpdate(BaseModel):
+    consignes_globales: str = ""
+    sections: list[SectionWorkflowModel] = []
+    source: str = "manuel"
+
+
+class WorkflowDeriverRequest(BaseModel):
+    mode: Literal["workflow", "exemples"]
+    contenu: str
+
+
 _TRANSITIONS_AUTORISEES: dict[StatutReponse, set[StatutReponse]] = {
     StatutReponse.EN_GENERATION: {StatutReponse.EN_ATTENTE, StatutReponse.REJETEE},
     StatutReponse.EN_ATTENTE: {
@@ -154,6 +184,41 @@ async def rediger(
         reponse=_reponse_read(resultat.reponse),
         plan=resultat.plan,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Workflow de rédaction (configuré à l'onboarding, corrigeable dans Paramètres)
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/workflow", response_model=WorkflowRead)
+def lire_workflow(session: SessionDep) -> WorkflowRead:
+    """Workflow HERMION courant. `configure=false` → plan dynamique par défaut."""
+    workflow = charger_workflow(session)
+    if workflow is None:
+        return WorkflowRead(
+            configure=False, source="", consignes_globales="", sections=[]
+        )
+    return _workflow_read(workflow)
+
+
+@router.put("/workflow", response_model=WorkflowRead)
+def ecrire_workflow(payload: WorkflowUpdate, session: SessionDep) -> WorkflowRead:
+    """Enregistre / corrige manuellement le workflow (persisté en MNEMOSYNE)."""
+    workflow = enregistrer_workflow(session, _workflow_depuis_payload(payload))
+    return _workflow_read(workflow)
+
+
+@router.post("/workflow/deriver", response_model=WorkflowRead)
+async def deriver(payload: WorkflowDeriverRequest) -> WorkflowRead:
+    """Dérive un workflow via PYTHIA (non persisté — à éditer puis PUT)."""
+    try:
+        workflow = await deriver_workflow(
+            mode=payload.mode, contenu=payload.contenu
+        )
+    except pythia.ErreurPythia as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return _workflow_read(workflow)
 
 
 @router.get("/appels-offre/{ao_id}/reponses", response_model=list[ReponseSummary])
@@ -313,6 +378,35 @@ def _reponse_read(reponse: ReponseHermion) -> ReponseRead:
         chemin_export=reponse.chemin_export,
         cree_le=reponse.cree_le,
         maj_le=reponse.maj_le,
+    )
+
+
+def _workflow_read(workflow: WorkflowReponse) -> WorkflowRead:
+    return WorkflowRead(
+        configure=workflow.configure,
+        source=workflow.source,
+        consignes_globales=workflow.consignes_globales,
+        sections=[
+            SectionWorkflowModel(
+                titre=s.titre, brief=s.brief, longueur_cible=s.longueur_cible
+            )
+            for s in workflow.sections
+        ],
+    )
+
+
+def _workflow_depuis_payload(payload: WorkflowUpdate) -> WorkflowReponse:
+    return WorkflowReponse(
+        sections=tuple(
+            SectionWorkflow(
+                titre=s.titre,
+                brief=s.brief,
+                longueur_cible=s.longueur_cible,
+            )
+            for s in payload.sections
+        ),
+        consignes_globales=payload.consignes_globales,
+        source=payload.source or "manuel",
     )
 
 

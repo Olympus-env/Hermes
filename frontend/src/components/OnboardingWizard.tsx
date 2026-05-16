@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { HermesMark } from "./HermesMark";
 import { Icon } from "./Icon";
+import { WorkflowEditor, type WorkflowDraft } from "./WorkflowEditor";
 import { api } from "../lib/api";
 import { saveUserProfile, markOnboardingDone, type UserProfile } from "../lib/userProfile";
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 type Props = {
   onDone: (profile: UserProfile) => void;
@@ -20,14 +21,16 @@ function parseMotsCles(value: string): string[] {
 /**
  * Wizard d'onboarding au tout premier lancement de HERMES.
  *
- * 3 étapes obligatoires avant que l'utilisateur puisse utiliser l'app :
+ * 4 étapes avant que l'utilisateur puisse utiliser l'app :
  *   1. Identité (prénom, nom, email)
  *   2. Entreprise (nom, activité, infos utiles pour l'IA)
  *   3. Critères de veille initiaux (mots-clés inclus/exclus)
+ *   4. Workflow de rédaction HERMION (dérivé par l'IA puis corrigé) —
+ *      facultatif, modifiable ensuite dans Paramètres.
  *
- * À la fin, on persiste le profil en localStorage et les mots-clés via
- * PUT /argos/filtre. Ainsi le premier cycle ARGOS ne ramènera que des
- * AO pertinents.
+ * À la fin, on persiste le profil en localStorage, les mots-clés via
+ * PUT /argos/filtre, et le workflow (s'il y en a un) via
+ * PUT /hermion/workflow. Ainsi MNEMOSYNE est alimentée dès le départ.
  */
 export function OnboardingWizard({ onDone }: Props) {
   const [step, setStep] = useState<Step>(1);
@@ -45,6 +48,12 @@ export function OnboardingWizard({ onDone }: Props) {
   // Étape 3
   const [inclus, setInclus] = useState("");
   const [exclus, setExclus] = useState("");
+
+  // Étape 4
+  const [workflow, setWorkflow] = useState<WorkflowDraft>({
+    consignes_globales: "",
+    sections: [],
+  });
 
   const [submitting, setSubmitting] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
@@ -71,6 +80,12 @@ export function OnboardingWizard({ onDone }: Props) {
         inclus: parseMotsCles(inclus),
         exclus: parseMotsCles(exclus),
       });
+      if (workflow.sections.length > 0) {
+        await api.ecrireWorkflowHermion({
+          consignes_globales: workflow.consignes_globales,
+          sections: workflow.sections,
+        });
+      }
       markOnboardingDone();
       onDone(profile);
     } catch (e) {
@@ -110,7 +125,7 @@ export function OnboardingWizard({ onDone }: Props) {
         <div className="modal__head">
           <div className="modal__eyebrow">
             <HermesMark size={14} />
-            <span>HERMES · Premier lancement — étape {step}/3</span>
+            <span>HERMES · Premier lancement — étape {step}/4</span>
           </div>
           <ProgressDots step={step} />
         </div>
@@ -147,6 +162,9 @@ export function OnboardingWizard({ onDone }: Props) {
             onSuggest={() => void suggestFilters()}
           />
         )}
+        {step === 4 && (
+          <StepWorkflow value={workflow} onChange={setWorkflow} />
+        )}
 
         {erreur && (
           <div
@@ -171,7 +189,7 @@ export function OnboardingWizard({ onDone }: Props) {
           {step > 1 ? (
             <button
               className="btn btn--ghost"
-              onClick={() => setStep((s) => (s === 3 ? 2 : 1) as Step)}
+              onClick={() => setStep((s) => (s - 1) as Step)}
               disabled={submitting}
             >
               ← Retour
@@ -182,19 +200,23 @@ export function OnboardingWizard({ onDone }: Props) {
             </span>
           )}
 
-          {step < 3 && (
+          {step < 4 && (
             <button
               className="btn btn--gold"
-              disabled={(step === 1 && !step1Ok) || (step === 2 && !step2Ok)}
+              disabled={
+                (step === 1 && !step1Ok) ||
+                (step === 2 && !step2Ok) ||
+                (step === 3 && !step3Ok)
+              }
               onClick={() => setStep((s) => (s + 1) as Step)}
             >
               Continuer →
             </button>
           )}
-          {step === 3 && (
+          {step === 4 && (
             <button
               className="btn btn--gold"
-              disabled={!step3Ok || submitting}
+              disabled={submitting}
               onClick={finish}
             >
               {submitting ? "Enregistrement…" : "Terminer et ouvrir HERMES"}
@@ -213,7 +235,7 @@ export function OnboardingWizard({ onDone }: Props) {
 function ProgressDots({ step }: { step: Step }) {
   return (
     <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-      {[1, 2, 3].map((i) => (
+      {[1, 2, 3, 4].map((i) => (
         <div
           key={i}
           style={{
@@ -458,6 +480,46 @@ function StepFiltres({
           {suggestionMsg}
         </div>
       )}
+    </div>
+  );
+}
+
+function StepWorkflow({
+  value,
+  onChange,
+}: {
+  value: WorkflowDraft;
+  onChange: (v: WorkflowDraft) => void;
+}) {
+  return (
+    <div className="profile-modal__body">
+      <h3 className="modal__title" style={{ marginTop: 0 }}>
+        Cadre de rédaction HERMION
+      </h3>
+      <p className="modal__sub" style={{ marginBottom: 18 }}>
+        Alimente MNEMOSYNE avec ta façon de répondre : décris ton processus ou
+        colle des réponses passées, l'IA en dérive un workflow réutilisable que
+        tu peux corriger. HERMION s'en servira pour toutes ses rédactions.
+      </p>
+
+      <WorkflowEditor value={value} onChange={onChange} />
+
+      <div
+        style={{
+          marginTop: 14,
+          padding: "10px 14px",
+          background: "rgba(200,169,81,0.08)",
+          border: "1px solid rgba(200,169,81,0.30)",
+          borderRadius: 6,
+          fontSize: 12,
+          color: "var(--fg-2)",
+          lineHeight: 1.5,
+        }}
+      >
+        Facultatif : tu peux terminer sans workflow — HERMION construira alors
+        un plan au cas par cas. Tu pourras le définir ou le corriger à tout
+        moment dans <em>Paramètres → Rédaction HERMION</em>.
+      </div>
     </div>
   );
 }

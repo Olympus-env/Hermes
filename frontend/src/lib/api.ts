@@ -173,6 +173,19 @@ export type ReponseAvecAO = {
   maj_le: string;
 };
 
+export type SectionWorkflow = {
+  titre: string;
+  brief: string;
+  longueur_cible: number | null;
+};
+
+export type WorkflowHermion = {
+  configure: boolean;
+  source: string;
+  consignes_globales: string;
+  sections: SectionWorkflow[];
+};
+
 export type RedactionRequest = {
   profil?: {
     prenom?: string;
@@ -265,6 +278,21 @@ export const api = {
     fetchJson<ProgressionModele>("/pythia/modele/telecharger", {
       method: "POST",
       body: JSON.stringify(modele ? { modele } : {}),
+    }),
+  lireWorkflowHermion: () => fetchJson<WorkflowHermion>("/hermion/workflow"),
+  ecrireWorkflowHermion: (wf: {
+    consignes_globales: string;
+    sections: SectionWorkflow[];
+    source?: string;
+  }) =>
+    fetchJson<WorkflowHermion>("/hermion/workflow", {
+      method: "PUT",
+      body: JSON.stringify({ source: "manuel", ...wf }),
+    }),
+  deriverWorkflowHermion: (p: { mode: "workflow" | "exemples"; contenu: string }) =>
+    fetchJson<WorkflowHermion>("/hermion/workflow/deriver", {
+      method: "POST",
+      body: JSON.stringify(p),
     }),
   listerReponsesHermion: (statut?: StatutReponseHermion) =>
     fetchJson<ReponseAvecAO[]>(
