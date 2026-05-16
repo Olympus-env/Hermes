@@ -18,19 +18,28 @@ Backend FastAPI sur `127.0.0.1:8000` uniquement — aucun port exposé à l'ext�
 
 ---
 
-## Pour l'utilisateur final
+## Installation (utilisateur final)
 
-Un installeur Windows tout-en-un est produit par `scripts/build-installer.ps1`
-(voir [`installer/README.md`](installer/README.md)) :
+> Windows 10/11 64 bits. Aucun prérequis : ni Python, ni Node, ni Rust, ni
+> Ollama à installer — l'installeur s'occupe de tout.
 
-```
-HERMES-Setup-<version>.exe  (~2 Go, Ollama inclus)
-```
+1. **Télécharger** le dernier installeur depuis la page des releases :
+   <https://github.com/Olympus-env/Hermes/releases/latest> →
+   fichier `HERMES-Setup-<version>.exe` (**~800 Mo**, Ollama embarqué).
+2. **Double-cliquer** sur le fichier téléchargé → installation guidée →
+   raccourci Bureau + entrée menu Démarrer créés.
+3. **Lancer HERMES.** Au tout premier démarrage, l'application télécharge
+   automatiquement le modèle de langage Mistral 7B (**~4,4 Go**, barre de
+   progression). Cette étape nécessite une connexion internet **une seule
+   fois** ; ensuite HERMES fonctionne 100 % hors-ligne.
 
-Double-clic → installation guidée → raccourci bureau créé → utilisable.
-Au premier lancement, HERMES télécharge automatiquement le modèle de langage
-Mistral 7B (~4,4 Go) avec une barre de progression. Aucune installation
-manuelle de Python, Ollama ou autre prérequis n'est nécessaire.
+> Une variante allégée d'installeur (~120 Mo, sans Ollama embarqué) peut être
+> publiée : dans ce cas Ollama doit être installé séparément. Le nom du
+> fichier sur la release précise le contenu.
+
+Pas de page Releases / pas encore de version publiée ? Voir
+[« Installeur Windows (Inno Setup) »](#installeur-windows-inno-setup) pour
+construire l'installeur depuis les sources (chaîne développeur).
 
 À la fermeture de la fenêtre, le backend et Ollama sont arrêtés
 automatiquement. À la désinstallation, l'utilisateur peut conserver ou
@@ -45,7 +54,7 @@ des chemins de développement `E:\Hermes` ou `D:\HermesDeps`.
 
 ## Prérequis (développement)
 
-> Pour utiliser HERMES en production, voir « Pour l'utilisateur final »
+> Pour simplement utiliser HERMES, voir « Installation (utilisateur final) »
 > ci-dessus — l'installeur s'occupe de tout. Cette section concerne
 > le développement sur le projet.
 
@@ -292,8 +301,8 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
   comme sidecars et les tue à la fermeture — aucun processus zombie.
 - **Backend autonome (`backend.exe`)** : 115 Mo via PyInstaller, sans
   dépendance Python externe.
-- **Installeur Windows** : `HERMES-Setup-<version>.exe` (~2 Go, Ollama inclus)
-  pour distribution à un utilisateur final.
+- **Installeur Windows** : `HERMES-Setup-<version>.exe` (~800 Mo, Ollama
+  embarqué) publié sur GitHub Releases pour l'utilisateur final.
 
 ---
 
