@@ -282,8 +282,9 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
 - [x] **Phase 8** — Interface onglet 2 « Réponses » (liste live, édition markdown, transitions de statut)
 - [x] **Phase 9** — Paramètres & configuration utilisateur
 - [~] **Phase 10** — Finalisation : sidecar Tauri ✅, backend.exe ✅,
-  téléchargement modèle 1er run ✅, installeur Inno Setup ✅ ; reste
-  export PDF et envoi mail
+  téléchargement modèle 1er run ✅, installeur Inno Setup ✅. Le reste est
+  désormais réorganisé dans le **Périmètre V1** ci-dessous (export PDF,
+  pipeline autonome, multi-portails publics… ; email repoussé en V2).
 
 ---
 
@@ -362,79 +363,56 @@ d'un usage commercial réel.
 
 ---
 
-## Phases suivantes proposées
+## Périmètre V1 (verrouillé le 2026-05-16)
 
-### Phase 10 — Finalisation CDC courte
+La V1 vise un **pipeline 100 % autonome** : ARGOS collecte → filtre →
+KRINOS note/tague/résume → **sans intervention humaine**, les AO les mieux
+notés passent en queue HERMION → réponses générées via MNEMOSYNE + workflow →
+l'utilisateur critique et exporte. L'**email/SMTP est repoussé en V2**, ainsi
+que toutes les fonctionnalités « vraiment avancées ».
 
-Objectif : finir les éléments explicitement promis dans le plan CDC v1.0.
+### V1 — ce qui reste à faire
 
-- Export PDF des réponses validées, avec `chemin_export` renseigné.
-- Envoi mail manuel d'une réponse validée, après validation humaine.
-- Configuration SMTP locale dans Paramètres.
-- Notifications OS : réponse prête, cycle ARGOS terminé/échoué, session
-  portail expirée.
-- Démarrage automatique optionnel au login Windows.
-- Journal agents consultable depuis l'interface.
+1. **ARGOS multi-portails publics** — ajouter des scrapers publics non
+   authentifiés (TED Europa, Achat Public, Marches.fr, PLACE…), intégration
+   au registre + tests offline sur snapshots. *Aucun portail authentifié en V1.*
+2. **Orchestration autonome** — service qui, après chaque cycle ARGOS :
+   applique le filtre, déclenche KRINOS (téléchargement docs → extraction →
+   analyse → score/tags/résumé), puis bascule automatiquement les AO au-dessus
+   d'un **seuil de score configurable** vers HERMION en créant la réponse en
+   queue, sans clic humain.
+3. **Onboarding étendu + workflow IA** — au premier lancement, en plus du
+   profil, demander à l'utilisateur d'alimenter MNEMOSYNE : soit un workflow,
+   soit des AO déjà remplis (réponses exemples). PYTHIA en **dérive un
+   workflow**, que l'utilisateur peut **corriger manuellement**. HERMION
+   consomme ce workflow + les données AO/analyse de MNEMOSYNE.
+4. **Export PDF** des réponses validées (`chemin_export` renseigné).
+5. **Journal des agents dans l'UI** — consultation de `logs_agents`
+   (indispensable pour diagnostiquer un pipeline autonome).
+6. **Notifications OS** — réponse prête, cycle ARGOS terminé/échoué.
+7. **Démarrage automatique** optionnel au login Windows.
 
-### Phase 11 — ARGOS multi-portails fiable
+Déjà acquis et réutilisé tel quel en V1 : collecte BOAMP, filtre mots-clés
+inclus/exclus, KRINOS (extraction + analyse IA + score/tags/résumé), HERMION
+(rédaction multi-sections + versionnement + validation humaine), onglets
+Veille/Réponses, édition inline + valider/réviser/rejeter, installeur Windows.
 
-Objectif : transformer ARGOS d'un collecteur BOAMP en vrai moteur de veille.
+## V2 — repoussé (« vraiment avancé »)
 
-- Ajouter scrapers publics : TED Europa, Achat Public, Marches.fr ou autre
-  portail prioritaire.
-- Ajouter une interface de configuration par portail réellement branchée au
-  registre backend.
-- Implémenter capture Playwright réelle pour un portail authentifié pilote.
-- Ajouter retry/backoff, rattrapage après échec et statut détaillé par portail.
-- Ajouter tests offline par portail à partir de snapshots HTML/JSON.
-
-### Phase 12 — Filtres commerciaux avancés
-
-Objectif : permettre à un commercial de réduire fortement le bruit.
-
-- Étendre le modèle de filtre : mots-clés ET/OU, exclus, codes NAF/tags,
-  zone, budget min/max, délai minimum, type marché, émetteurs favoris/exclus.
-- Prévisualiser l'impact d'un filtre sur les AO déjà en base.
-- Ajouter profils de filtre sauvegardables par marché ou offre commerciale.
-- Ajouter scoring séparé "fit commercial" vs "risque opérationnel".
-
-### Phase 13 — KRINOS automatique et plus robuste
-
-Objectif : rendre l'analyse moins manuelle et plus fiable.
-
-- Pipeline automatique après collecte : documents → extraction → analyse.
-- OCR pour PDF scannés.
-- Vérification checksum avant lecture et alerte si document modifié.
-- Extraction structurée des critères d'attribution prix/technique, budget,
-  allotissement, pièces attendues, clauses éliminatoires.
-- Historique des analyses et comparaison entre versions.
-
-### Phase 14 — HERMION workflow et base de connaissances
-
-Objectif : passer d'un rédacteur générique à un assistant commercial cadré.
-
-- Import workflow JSON/Markdown depuis Paramètres.
-- Variables dynamiques `{{emetteur}}`, `{{objet}}`, `{{budget}}`,
-  `{{date_limite}}`, `{{score}}`, etc.
-- Import docs de référence : plaquette, CV, certifications, références clients,
-  mémoires techniques passés.
-- Embeddings locaux via `nomic-embed-text`, stockage MNEMOSYNE et recherche
-  sémantique.
-- Génération de révisions à partir d'un commentaire utilisateur avec création
-  d'une nouvelle version.
-
-### Phase 15 — Pilotage commercial
-
-Objectif : adapter HERMES au quotidien de commerciaux qui doivent arbitrer vite.
-
-- Pipeline commercial : nouveau → qualifié → go/no-go → réponse en cours →
-  déposée manuellement → gagné/perdu.
-- Motifs de rejet et de perte standardisés.
-- Tableau de bord : deadlines, valeur estimée du pipe, taux de réponse, taux
-  de transformation, marchés à risque.
-- Vue calendrier des échéances et rappels J-14/J-7/J-2.
-- Fiches compte/acheteur : historique AO, contacts, décisions passées,
-  préférences et niveau d'appétence.
+- **Email/SMTP** : envoi mail des réponses, mail récap ARGOS, config SMTP.
+- **Portails authentifiés** : capture de session Playwright réelle, détection
+  d'expiration, reconnexion, alertes UI.
+- **Filtres avancés** : codes NAF, budget min/max, zone, délai minimum, type
+  de marché, émetteurs liste blanche/noire, profils de filtre.
+- **Base de connaissances** : import docs de référence, embeddings
+  `nomic-embed-text`, recherche sémantique (au-delà du workflow seed V1).
+- **KRINOS robuste** : OCR PDF scannés, vérification checksum à chaque lecture,
+  extraction structurée fine, historique/comparaison d'analyses.
+- **HERMION avancé** : import workflow JSON/MD, variables `{{champ}}`,
+  révisions guidées par commentaire utilisateur.
+- **Pilotage commercial** : pipeline go/no-go, motifs de perte, tableau de
+  bord, calendrier d'échéances, fiches acheteur, exports CSV.
+- Reste des « besoins extrapolés » et suggestions UI/UX ci-dessous.
 
 ---
 
