@@ -8,7 +8,7 @@
 ; Le résultat est `installer/dist/HERMES-Setup-<version>.exe`.
 
 #define MyAppName "HERMES"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "HERMES"
 #define MyAppURL "https://hermes.local"
 #define MyAppExeName "hermes.exe"
