@@ -228,6 +228,7 @@ function UserProfileSection({
 
 const SCRAPER_URLS: Record<string, string> = {
   boamp: "https://www.boamp.fr",
+  ted: "https://ted.europa.eu",
 };
 
 function PortalsSection() {

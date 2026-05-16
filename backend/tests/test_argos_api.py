@@ -47,14 +47,21 @@ def test_endpoint_collecter_tous(monkeypatch):
 
     monkeypatch.setattr("hermes.api.argos.executer_collecte", fake_collecte)
 
+    from hermes.agents.argos.registry import scrapers_disponibles
+
+    nb = len(scrapers_disponibles())
+
     with TestClient(app) as client:
         r = client.post("/argos/collecter")
         assert r.status_code == 200
         data = r.json()
         assert data["succes"] is True
-        assert data["ao_trouves"] == 1
-        assert data["ao_nouveaux"] == 1
-        assert data["resultats"][0]["portail"] == "boamp"
+        # Un cycle collecte tous les scrapers enregistrés (1 AO simulé chacun).
+        assert data["ao_trouves"] == nb
+        assert data["ao_nouveaux"] == nb
+        assert {res["portail"] for res in data["resultats"]} == set(
+            scrapers_disponibles()
+        )
 
 
 def test_endpoint_scheduler_etat():

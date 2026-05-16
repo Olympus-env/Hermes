@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from hermes.agents.argos.base import Scraper
 from hermes.agents.argos.boamp import BoampScraper
+from hermes.agents.argos.ted import TedScraper
 
 # Pour ajouter un portail : implémenter `Scraper` dans un nouveau fichier
 # puis l'enregistrer ici. Aucun import dynamique → exigence sécurité (pas de
 # chargement de code basé sur des données BDD).
 _REGISTRE: dict[str, type[Scraper]] = {
     BoampScraper.nom: BoampScraper,
+    TedScraper.nom: TedScraper,
 }
 
 
