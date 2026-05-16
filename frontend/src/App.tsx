@@ -140,6 +140,7 @@ export default function App() {
           profile={profile}
           isLoading={isLoading}
           onLaunchArgos={triggerCycle}
+          onOpenJournal={() => setActive("journal")}
         />
       )}
 

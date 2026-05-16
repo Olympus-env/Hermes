@@ -181,4 +181,13 @@ export const Icon = {
         <path d="M2 9 L4 3 L12 3 L14 9 L14 13 L2 13 Z" />
       </>,
     ),
+
+  bell: ({ size = 14 }: IconProps) =>
+    wrap(
+      size,
+      <>
+        <path d="M4 7 A 4 4 0 0 1 12 7 C 12 10, 13 11, 13.5 12 L2.5 12 C 3 11, 4 10, 4 7 Z" />
+        <path d="M6.5 12 A 1.5 1.5 0 0 0 9.5 12" />
+      </>,
+    ),
 };

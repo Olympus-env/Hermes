@@ -6,6 +6,7 @@ import {
 } from "../lib/userProfile";
 import { AgentChip } from "./AgentChip";
 import { Icon } from "./Icon";
+import { NotificationCenter } from "./NotificationCenter";
 import type { ViewKey } from "./Sidebar";
 
 type Props = {
@@ -15,6 +16,7 @@ type Props = {
   profile: UserProfile;
   isLoading?: boolean;
   onLaunchArgos?: () => void;
+  onOpenJournal?: () => void;
 };
 
 const TITLES: Record<ViewKey, { main: string; sub: string }> = {
@@ -32,6 +34,7 @@ export function Topbar({
   profile,
   isLoading,
   onLaunchArgos,
+  onOpenJournal,
 }: Props) {
   const t = TITLES[active];
 
@@ -68,6 +71,10 @@ export function Topbar({
               {isLoading ? "Collecte…" : "Lancer ARGOS"}
             </button>
           )}
+        </div>
+
+        <div style={{ marginLeft: 12 }}>
+          <NotificationCenter onOpenJournal={onOpenJournal} />
         </div>
 
         <div className="topbar__user">
