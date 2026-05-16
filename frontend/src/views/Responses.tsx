@@ -146,6 +146,31 @@ export function Responses({ onToast }: Props) {
     }
   };
 
+  const onExport = async () => {
+    if (selectedId === null) return;
+    try {
+      const updated = await api.exporterReponse(selectedId);
+      setDetail(updated);
+      setReponses((rs) =>
+        rs.map((r) => (r.id === selectedId ? { ...r, statut: updated.statut } : r)),
+      );
+      onToast({
+        title: "HERMION",
+        app: "Réponse exportée",
+        msg: `PDF généré pour la réponse v${updated.version}.`,
+        agent: "hermion",
+      });
+      window.open(api.urlExportReponse(selectedId), "_blank");
+    } catch (e) {
+      onToast({
+        title: "HERMION",
+        app: "Erreur d'export",
+        msg: e instanceof Error ? e.message : String(e),
+        agent: "hermion",
+      });
+    }
+  };
+
   const onSaveContent = async (contenu: string, commentaire?: string) => {
     if (selectedId === null) return;
     try {
@@ -275,6 +300,7 @@ export function Responses({ onToast }: Props) {
             loading={loadingDetail}
             onStatusChange={onStatusChange}
             onSaveContent={onSaveContent}
+            onExport={onExport}
           />
         )}
         {!selectedSummary && !loadingList && reponses.length > 0 && (
@@ -297,6 +323,7 @@ type DetailProps = {
     toast?: ToastInput,
   ) => void;
   onSaveContent: (contenu: string, commentaire?: string) => void;
+  onExport: () => void;
 };
 
 function ResponseDetail({
@@ -305,6 +332,7 @@ function ResponseDetail({
   loading,
   onStatusChange,
   onSaveContent,
+  onExport,
 }: DetailProps) {
   const [editing, setEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(detail.contenu);
@@ -425,6 +453,27 @@ function ResponseDetail({
           >
             <Icon.close size={13} /> Rejeter
           </button>
+          {detail.statut === "exportee" ? (
+            <button
+              className="btn btn--ok"
+              onClick={() => window.open(api.urlExportReponse(detail.id), "_blank")}
+            >
+              <Icon.download size={13} /> Télécharger le PDF
+            </button>
+          ) : (
+            <button
+              className="btn btn--ok"
+              disabled={detail.statut !== "validee" || loading}
+              onClick={onExport}
+              title={
+                detail.statut !== "validee"
+                  ? "La réponse doit d'abord être validée"
+                  : "Génère le PDF et le télécharge"
+              }
+            >
+              <Icon.download size={13} /> Exporter en PDF
+            </button>
+          )}
           <div className="divider" />
           <button
             className="btn"

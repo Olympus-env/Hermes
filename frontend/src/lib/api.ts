@@ -343,6 +343,12 @@ export const api = {
         commentaire !== undefined ? { statut, commentaire_humain: commentaire } : { statut },
       ),
     }),
+  exporterReponse: (id: number) =>
+    fetchJson<ReponseHermion>(`/hermion/reponses/${id}/exporter`, {
+      method: "POST",
+    }),
+  urlExportReponse: (id: number) =>
+    `${API_BASE}/hermion/reponses/${id}/export`,
   modifierContenuReponse: (id: number, contenu: string, commentaire?: string) =>
     fetchJson<ReponseHermion>(`/hermion/reponses/${id}/contenu`, {
       method: "PATCH",

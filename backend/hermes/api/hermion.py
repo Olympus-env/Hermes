@@ -6,11 +6,13 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from hermes.agents import pythia
 from hermes.agents.hermion import (
+    ErreurExportPdf,
     ErreurRedactionHermion,
     ProfilUtilisateur,
     SectionWorkflow,
@@ -18,8 +20,10 @@ from hermes.agents.hermion import (
     charger_workflow,
     deriver_workflow,
     enregistrer_workflow,
+    exporter_reponse_pdf,
     rediger_reponse,
 )
+from hermes.config import settings
 from hermes.db.models import AppelOffre, ReponseHermion, StatutAO, StatutReponse
 from hermes.db.session import get_session
 
@@ -362,6 +366,43 @@ def modifier_contenu(
     session.commit()
     session.refresh(reponse)
     return _reponse_read(reponse)
+
+
+@router.post("/reponses/{reponse_id}/exporter", response_model=ReponseRead)
+def exporter_reponse(reponse_id: int, session: SessionDep) -> ReponseRead:
+    """Génère le PDF d'une réponse validée (statut → exportée)."""
+    reponse = session.get(ReponseHermion, reponse_id)
+    if reponse is None:
+        raise HTTPException(status_code=404, detail="Réponse introuvable")
+    try:
+        exporter_reponse_pdf(session, reponse)
+    except ErreurExportPdf as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _reponse_read(reponse)
+
+
+@router.get("/reponses/{reponse_id}/export")
+def telecharger_export(reponse_id: int, session: SessionDep) -> FileResponse:
+    """Télécharge le PDF déjà généré pour une réponse."""
+    reponse = session.get(ReponseHermion, reponse_id)
+    if reponse is None:
+        raise HTTPException(status_code=404, detail="Réponse introuvable")
+    if not reponse.chemin_export:
+        raise HTTPException(
+            status_code=404, detail="Réponse non encore exportée en PDF"
+        )
+
+    chemin = (settings.storage_path / reponse.chemin_export).resolve()
+    racine = settings.storage_path.resolve()
+    # Garde-fou anti-traversée : le fichier doit rester sous storage/.
+    if racine not in chemin.parents or not chemin.is_file():
+        raise HTTPException(status_code=404, detail="Fichier d'export introuvable")
+
+    return FileResponse(
+        path=str(chemin),
+        media_type="application/pdf",
+        filename=f"reponse_{reponse.id}_v{reponse.version}.pdf",
+    )
 
 
 def _reponse_read(reponse: ReponseHermion) -> ReponseRead:

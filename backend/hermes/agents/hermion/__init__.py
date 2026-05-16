@@ -6,6 +6,7 @@ sortie est toujours soumise à validation humaine (StatutReponse.EN_ATTENTE) —
 HERMION ne valide ni ne soumet jamais une réponse.
 """
 
+from hermes.agents.hermion.export_pdf import ErreurExportPdf, exporter_reponse_pdf
 from hermes.agents.hermion.workflow import (
     SectionWorkflow,
     WorkflowReponse,
@@ -21,6 +22,7 @@ from hermes.agents.hermion.writer import (
 )
 
 __all__ = [
+    "ErreurExportPdf",
     "ErreurRedactionHermion",
     "ProfilUtilisateur",
     "ResultatRedaction",
@@ -29,5 +31,6 @@ __all__ = [
     "charger_workflow",
     "deriver_workflow",
     "enregistrer_workflow",
+    "exporter_reponse_pdf",
     "rediger_reponse",
 ]
