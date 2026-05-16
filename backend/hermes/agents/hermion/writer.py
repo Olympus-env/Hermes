@@ -186,7 +186,10 @@ async def _generer_plan(contexte: dict[str, Any]) -> list[dict[str, str]]:
     )
     try:
         reponse = await pythia.generer(
-            prompt, system=SYSTEM_PROMPT_PLAN, format_json=True
+            prompt,
+            system=SYSTEM_PROMPT_PLAN,
+            format_json=True,
+            timeout=settings.hermion_plan_timeout_secondes,
         )
         payload = pythia.parser_json_sortie(reponse.texte)
     except pythia.ErreurPythia as exc:
@@ -218,6 +221,8 @@ async def _rediger_sections(
     titres = [s["titre"] for s in plan]
     sections_textes: list[str] = []
     for index, section in enumerate(plan, start=1):
+        longueur_cible = _longueur_cible(section)
+        contrainte_longueur = _contrainte_longueur_section(longueur_cible)
         prompt = (
             f"Rédige la section {index}/{len(plan)} d'une réponse à appel d'offre.\n"
             f"Titre de la section    : {section['titre']}\n"
@@ -228,13 +233,17 @@ async def _rediger_sections(
             "Contraintes :\n"
             "  - Rédige en français professionnel, factuel, sans superlatifs vides.\n"
             "  - Markdown : un seul titre de niveau 2 (## ) pour la section.\n"
-            "  - 150 à 400 mots, paragraphes courts.\n"
+            f"  - {contrainte_longueur}\n"
             "  - N'invente aucune référence client, certification ou chiffre.\n"
             "\n"
             f"{_bloc_contexte(contexte)}"
         )
         try:
-            reponse = await pythia.generer(prompt, system=SYSTEM_PROMPT_SECTION)
+            reponse = await pythia.generer(
+                prompt,
+                system=SYSTEM_PROMPT_SECTION,
+                timeout=_timeout_section(longueur_cible),
+            )
         except pythia.ErreurPythia as exc:
             raise ErreurRedactionHermion(
                 f"PYTHIA — section '{section['titre']}' : {exc}"
@@ -285,8 +294,40 @@ def _plan_depuis_workflow(workflow_cfg: WorkflowReponse) -> list[dict[str, str]]
         if section.longueur_cible:
             indice = f"Longueur visée : environ {section.longueur_cible} mots."
             brief = f"{brief}\n{indice}" if brief else indice
-        plan.append({"titre": section.titre, "brief": brief})
+        item = {"titre": section.titre, "brief": brief}
+        if section.longueur_cible:
+            item["longueur_cible"] = str(section.longueur_cible)
+        plan.append(item)
     return plan
+
+
+def _longueur_cible(section: dict[str, str]) -> int | None:
+    valeur = section.get("longueur_cible")
+    if valeur is None:
+        return None
+    try:
+        n = int(valeur)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def _contrainte_longueur_section(longueur_cible: int | None) -> str:
+    if longueur_cible is None:
+        return "150 à 400 mots, paragraphes courts."
+    bas = max(80, int(longueur_cible * 0.8))
+    haut = max(bas + 20, int(longueur_cible * 1.2))
+    return (
+        f"Vise {longueur_cible} mots environ "
+        f"({bas} à {haut} mots), paragraphes courts."
+    )
+
+
+def _timeout_section(longueur_cible: int | None) -> float:
+    timeout = settings.hermion_section_timeout_secondes
+    if longueur_cible:
+        timeout += (longueur_cible / 100.0) * settings.hermion_section_timeout_par_100_mots_secondes
+    return timeout
 
 
 def _combiner_consignes(

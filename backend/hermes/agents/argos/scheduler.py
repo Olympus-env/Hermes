@@ -52,6 +52,7 @@ class ArgosScheduler:
         disponibles = set(scrapers_disponibles())
 
         with Session(get_engine()) as session:
+            _creer_portails_publics_manquants(session)
             portails = session.exec(select(Portail).where(Portail.actif)).all()
 
         ids_a_garder: set[str] = set()
@@ -114,3 +115,19 @@ async def _executer_job(nom_portail: str) -> None:
 
 
 scheduler_global = ArgosScheduler()
+
+
+def _creer_portails_publics_manquants(session: Session) -> None:
+    """Assure que les scrapers publics V1 ont une ligne active en base.
+
+    Sans cette initialisation, une installation neuve démarre le scheduler sans
+    aucun job ARGOS jusqu'au premier cycle manuel. La V1 attend au contraire
+    que BOAMP/TED soient collectés automatiquement dès le premier lancement.
+    """
+    for nom in scrapers_disponibles():
+        existe = session.exec(select(Portail.id).where(Portail.nom == nom)).first()
+        if existe is not None:
+            continue
+        scraper = creer_scraper(nom)
+        session.add(Portail(nom=scraper.nom, url_base=scraper.url_base, actif=True))
+    session.commit()

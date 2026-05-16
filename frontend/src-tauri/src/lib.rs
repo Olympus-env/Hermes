@@ -9,8 +9,9 @@
 //! En **debug** (`cargo tauri dev`), on ne lance rien — le développeur garde
 //! la main via `scripts/start-backend.ps1` etc.
 
+use std::fs;
 use std::net::TcpStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -74,6 +75,24 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
+fn existing_path_from_env(key: &str) -> Option<PathBuf> {
+    std::env::var(key)
+        .ok()
+        .map(PathBuf::from)
+        .filter(|p| p.exists())
+}
+
+fn local_app_data_dir() -> PathBuf {
+    if let Ok(base) = std::env::var("LOCALAPPDATA") {
+        return PathBuf::from(base).join("HERMES");
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("data")
+}
+
 #[cfg(target_os = "windows")]
 fn hidden_command(exe: &PathBuf) -> Command {
     let mut cmd = Command::new(exe);
@@ -92,13 +111,19 @@ fn start_ollama(state: &mut ServiceState) -> Result<(), String> {
         return Ok(());
     }
 
-    let exe_path = env_or("HERMES_OLLAMA_EXE", r"D:\HermesDeps\ollama\bin\ollama.exe");
-    let exe = PathBuf::from(&exe_path);
-    if !exe.exists() {
-        return Err(format!("PYTHIA/Ollama introuvable : {exe_path}"));
-    }
+    let exe = locate_ollama_exe()
+        .ok_or_else(|| "PYTHIA/Ollama introuvable sur cette machine.".to_string())?;
 
-    let models_dir = env_or("OLLAMA_MODELS", r"D:\HermesDeps\ollama\models");
+    let models_dir = env_or(
+        "OLLAMA_MODELS",
+        &local_app_data_dir()
+            .join("ollama")
+            .join("models")
+            .display()
+            .to_string(),
+    );
+    fs::create_dir_all(&models_dir)
+        .map_err(|e| format!("Création dossier modèles Ollama : {e}"))?;
 
     let child = hidden_command(&exe)
         .arg("serve")
@@ -119,11 +144,11 @@ fn start_backend(state: &mut ServiceState) -> Result<(), String> {
     }
 
     let backend_dir = locate_backend_dir().ok();
-    let data_dir = backend_dir
-        .as_ref()
-        .and_then(|d| d.parent())
-        .map(|p| p.join("data"))
-        .unwrap_or_else(|| PathBuf::from(r"E:\Hermes\data"));
+    let data_dir = env_or(
+        "HERMES_DATA_DIR",
+        &local_app_data_dir().display().to_string(),
+    );
+    let data_dir = PathBuf::from(data_dir);
     let storage = env_or(
         "HERMES_STORAGE_PATH",
         &data_dir.join("storage").display().to_string(),
@@ -132,12 +157,22 @@ fn start_backend(state: &mut ServiceState) -> Result<(), String> {
         "HERMES_DB_PATH",
         &data_dir.join("hermes.db").display().to_string(),
     );
+    let log_path = env_or(
+        "HERMES_LOG_PATH",
+        &data_dir.join("logs").display().to_string(),
+    );
+    let master_key_path = env_or(
+        "HERMES_MASTER_KEY_PATH",
+        &data_dir.join("master.key").display().to_string(),
+    );
 
     // 1) Mode bundle final : backend.exe autonome (PyInstaller).
     if let Some(backend_exe) = locate_backend_exe() {
         let child = hidden_command(&backend_exe)
             .env("HERMES_DB_PATH", &db_path)
             .env("HERMES_STORAGE_PATH", &storage)
+            .env("HERMES_LOG_PATH", &log_path)
+            .env("HERMES_MASTER_KEY_PATH", &master_key_path)
             .spawn()
             .map_err(|e| format!("Lancement backend.exe : {e}"))?;
         state.backend = Some(child);
@@ -166,6 +201,8 @@ fn start_backend(state: &mut ServiceState) -> Result<(), String> {
             .current_dir(&backend_dir)
             .env("HERMES_DB_PATH", db_path)
             .env("HERMES_STORAGE_PATH", storage)
+            .env("HERMES_LOG_PATH", log_path)
+            .env("HERMES_MASTER_KEY_PATH", master_key_path)
             .spawn()
             .map_err(|e| format!("Lancement backend (python) : {e}"))?;
         state.backend = Some(child);
@@ -177,17 +214,54 @@ fn start_backend(state: &mut ServiceState) -> Result<(), String> {
     Ok(())
 }
 
+fn locate_ollama_exe() -> Option<PathBuf> {
+    if let Some(path) = existing_path_from_env("HERMES_OLLAMA_EXE") {
+        return Some(path);
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let bundled = parent.join("ollama").join("ollama.exe");
+            if bundled.exists() {
+                return Some(bundled);
+            }
+        }
+    }
+
+    let mut candidates = Vec::new();
+    if let Ok(program_files) = std::env::var("ProgramFiles") {
+        candidates.push(
+            PathBuf::from(&program_files)
+                .join("Ollama")
+                .join("ollama.exe"),
+        );
+    }
+    if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
+        candidates.push(
+            PathBuf::from(&program_files_x86)
+                .join("Ollama")
+                .join("ollama.exe"),
+        );
+    }
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        candidates.push(
+            PathBuf::from(local_app_data)
+                .join("Programs")
+                .join("Ollama")
+                .join("ollama.exe"),
+        );
+    }
+    candidates.into_iter().find(|p| p.exists())
+}
+
 fn locate_backend_exe() -> Option<PathBuf> {
     // Priorités, du plus officiel au moins :
     //   1. variable d'environnement HERMES_BACKEND_EXE
     //   2. backend\backend.exe à côté de hermes.exe (cas bundle final)
-    //   3. D:\HermesDeps\tooling\backend-build\backend\backend.exe (build local)
+    //   3. backend\backend.exe découvert depuis le dossier courant.
 
-    if let Ok(p) = std::env::var("HERMES_BACKEND_EXE") {
-        let path = PathBuf::from(p);
-        if path.exists() {
-            return Some(path);
-        }
+    if let Some(path) = existing_path_from_env("HERMES_BACKEND_EXE") {
+        return Some(path);
     }
 
     if let Ok(exe) = std::env::current_exe() {
@@ -197,11 +271,6 @@ fn locate_backend_exe() -> Option<PathBuf> {
                 return Some(bundled);
             }
         }
-    }
-
-    let build_local = PathBuf::from(r"D:\HermesDeps\tooling\backend-build\backend\backend.exe");
-    if build_local.exists() {
-        return Some(build_local);
     }
 
     None
@@ -226,11 +295,6 @@ fn locate_backend_dir() -> Result<PathBuf, String> {
         }
     }
 
-    // Fallback codé en dur (env de développement Joshua).
-    let fallback = PathBuf::from(r"E:\Hermes\backend");
-    if fallback.join("hermes").join("main.py").exists() {
-        return Ok(fallback);
-    }
     Err("Dossier backend/ introuvable depuis l'exécutable HERMES.".into())
 }
 

@@ -36,6 +36,11 @@ manuelle de Python, Ollama ou autre prérequis n'est nécessaire.
 automatiquement. À la désinstallation, l'utilisateur peut conserver ou
 supprimer ses données locales (BDD, documents).
 
+Sur une machine utilisateur, les données HERMES sont stockées dans
+`%LocalAppData%\HERMES` : base SQLite, documents, logs, clé maître locale et
+modèles Ollama téléchargés par HERMES. L'application installée ne dépend pas
+des chemins de développement `E:\Hermes` ou `D:\HermesDeps`.
+
 ---
 
 ## Prérequis (développement)
@@ -68,6 +73,8 @@ supprimer ses données locales (BDD, documents).
 
 Les téléchargements lourds liés à HERMES doivent rester sur `D:` quand l'outil le
 permet (`D:\HermesDeps`) : modèles Ollama, navigateurs Playwright, caches npm/pip/Cargo.
+Les scripts de build acceptent aussi `-DepsRoot <chemin>` ou la variable
+`HERMES_DEPS_DIR` pour utiliser un autre disque de travail.
 
 ---
 
@@ -143,6 +150,19 @@ Si une ancienne instance bloque le port `:8000` ou `:11434` :
 - AO collectés : <http://127.0.0.1:8000/appels-offre>
 - Modèles Ollama : `D:\HermesDeps\ollama\bin\ollama.exe list`
 
+### Ports locaux
+
+En développement, trois services locaux peuvent être ouverts :
+
+| Port | Service | Rôle |
+|------|---------|------|
+| `8000` | Backend FastAPI HERMES | API locale (`/health`, `/appels-offre`, `/hermion`, etc.) |
+| `5173` | Frontend Vite React | Interface web de développement |
+| `11434` | Ollama / PYTHIA | LLM local utilisé par KRINOS et HERMION |
+
+Ces ports doivent rester liés à `127.0.0.1`. Ils servent au développement local
+et ne doivent pas être exposés sur le réseau.
+
 ---
 
 ## Démarrage rapide (mode dev)
@@ -166,7 +186,7 @@ cd frontend
 npm install
 npm run dev
 ```
-→ <http://localhost:5173>
+→ <http://127.0.0.1:5173>
 
 ### Frontend (desktop Tauri — nécessite Rust)
 ```powershell
@@ -188,12 +208,15 @@ npm run tauri dev
 
 ### Backend autonome (PyInstaller)
 
-`scripts/build-backend.ps1` produit `D:\HermesDeps\tooling\backend-build\backend\backend.exe`
-(~115 Mo, inclut Python + dépendances). Quand ce binaire existe, `hermes.exe`
+`scripts/build-backend.ps1` produit par défaut
+`D:\HermesDeps\tooling\backend-build\backend\backend.exe` (~115 Mo, inclut
+Python + dépendances). Le dossier peut être changé via `-DepsRoot` ou
+`HERMES_DEPS_DIR`. Quand ce binaire est copié dans l'installeur, `hermes.exe`
 (release) le démarre **en priorité** au lieu de chercher un venv Python. Pour
 l'utilisateur final, cela signifie : pas besoin d'installer Python.
 
-Override via `HERMES_BACKEND_EXE=<chemin>` si tu veux pointer ailleurs.
+Overrides dev/debug disponibles : `HERMES_BACKEND_EXE=<chemin>`,
+`HERMES_OLLAMA_EXE=<chemin>`, `HERMES_DATA_DIR=<chemin>`.
 
 ### Installeur Windows (Inno Setup)
 
@@ -215,8 +238,8 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
 - **Profil utilisateur configurable** au premier lancement et dans Paramètres.
   HERMION pourra utiliser le nom, prénom et email localement pour rédiger les
   réponses.
-- **ARGOS réel** : collecte BOAMP via l'API publique DILA et persistance dans
-  SQLite/MNEMOSYNE.
+- **ARGOS réel** : collecte BOAMP via l'API publique DILA et TED Europa via
+  l'API publique v3, puis persistance dans SQLite/MNEMOSYNE.
 - **Filtrage ARGOS** : mots-clés inclus/exclus configurables dans
   *Paramètres → Critères de filtrage*. Les AO non pertinents sont rejetés
   avant insertion. Routes `GET/PUT /argos/filtre`.
@@ -224,11 +247,11 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
   critères dans MNEMOSYNE via l'API, et le runner ARGOS les recharge à chaque
   collecte avant d'insérer les AO. Le scraper ne filtre pas lui-même ; le
   filtrage est centralisé dans le runner.
-- **Limite ARGOS multi-portails** : le seul scraper réel actuellement
-  enregistré est `boamp`. L'interface Paramètres affiche désormais les scrapers
-  réellement exposés par le backend au lieu de portails statiques. PLACE, TED,
-  AWS Achat, Achat Solutions ou Maximilien ne seront collectés qu'après ajout
-  d'un scraper backend dédié dans le registre ARGOS.
+- **Limite ARGOS multi-portails** : les scrapers réels actuellement enregistrés
+  sont `boamp` et `ted`. L'interface Paramètres affiche les scrapers réellement
+  exposés par le backend au lieu de portails statiques. PLACE, Achat Public,
+  Marches.fr, AWS Achat, Achat Solutions ou Maximilien ne seront collectés
+  qu'après ajout d'un scraper backend dédié dans le registre ARGOS.
 - **Onglet Veille connecté au backend** : les AO affichés viennent de
   `/appels-offre`, pas des données mock.
 - **Qualification AO persistée** : depuis la Veille, les actions
@@ -251,6 +274,11 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
   (`v1`, `v2`, …), validation humaine obligatoire (statut `en_attente` jusqu'à
   approbation explicite). Endpoints `/hermion/appels-offre/{id}/rediger`,
   `/hermion/reponses/{id}`, `…/statut`, `…/contenu`.
+  Les timeouts HERMION sont séparés de KRINOS : plan `180 s`, section `420 s`
+  par défaut, avec bonus configurable par longueur cible. Une réponse longue
+  est possible, mais sa qualité dépend du workflow MNEMOSYNE, du profil et des
+  documents disponibles ; sans contexte métier, HERMION peut produire une
+  réponse longue mais générique.
 - **Onglet « Réponses » connecté au backend** : liste live filtrée par statut
   (en attente, à modifier, validées, rejetées, exportées), aperçu markdown,
   édition inline du contenu, actions valider / demander révision / rejeter
@@ -301,9 +329,10 @@ d'un usage commercial réel.
   dépendance cloud.
 - **Cycle de vie desktop** : `hermes.exe` peut démarrer Ollama + backend et les
   arrêter à la fermeture ; scripts PowerShell de secours disponibles.
-- **ARGOS MVP** : collecte BOAMP réelle via API publique DILA, dédoublonnage,
-  journalisation, stockage MNEMOSYNE, scheduler APScheduler, configuration des
-  portails côté API, socle credentials chiffrés.
+- **ARGOS MVP** : collecte BOAMP réelle via API publique DILA et TED Europa
+  via API publique v3, dédoublonnage, journalisation, stockage MNEMOSYNE,
+  scheduler APScheduler, configuration des portails côté API, socle
+  credentials chiffrés.
 - **Filtrage ARGOS MVP** : mots-clés inclus/exclus persistés, suggestion IA via
   PYTHIA, application avant insertion par le runner.
 - **KRINOS MVP+** : téléchargement/référencement de documents, extraction
@@ -320,9 +349,9 @@ d'un usage commercial réel.
 
 ### Écarts CDC encore ouverts
 
-- **ARGOS multi-portails** : le CDC demande plusieurs portails publics et
-  authentifiés ; le code ne collecte réellement que BOAMP. TED, Achat Public,
-  Marches.fr, AWS Marketplace ou portails clients nécessitent chacun un scraper
+- **ARGOS multi-portails** : BOAMP et TED Europa sont opérationnels. Les autres
+  portails publics ou authentifiés demandés par le CDC (Achat Public,
+  Marches.fr, AWS Marketplace, portails clients…) nécessitent chacun un scraper
   dédié, des tests parser et une intégration registre.
 - **Portails authentifiés complets** : le socle Playwright/chiffrement existe,
   mais il manque le vrai flux de capture de session, la détection d'expiration,
@@ -341,9 +370,10 @@ d'un usage commercial réel.
   dimensions métier diffèrent de la grille CDC initiale
   (mots-clés/secteur/budget/délai/zone). Il faut choisir entre conserver la
   grille actuelle ou migrer vers la grille CDC.
-- **HERMION workflow utilisateur** : pas encore d'import de workflow JSON/MD,
-  de sections obligatoires paramétrables, de variables `{{champ}}`, de longueur
-  cible par section ni de ton/style configurable en paramètres.
+- **HERMION workflow utilisateur avancé** : le workflow onboarding/paramètres
+  existe avec sections, briefs, consignes globales et longueurs cibles. Il
+  manque encore l'import direct JSON/MD, les variables `{{champ}}`, les
+  révisions guidées par commentaire et une gestion plus fine du ton/style.
 - **Base de connaissances HERMION** : les tables existent, mais il manque
   l'import de documents de référence, l'indexation embeddings, la recherche
   sémantique locale et l'injection des 3 à 5 sources pertinentes sans citation.
@@ -390,9 +420,16 @@ que toutes les fonctionnalités « vraiment avancées ».
 - [→ V2] **Démarrage automatique au login Windows** — repoussé : exige un
   plugin Tauri/Rust non compilable dans l'environnement actuel.
 
-Validation : 131 tests backend verts, build frontend vert. Réutilisé tel quel :
-filtre mots-clés, KRINOS, versionnement HERMION, onglets Veille/Réponses,
-installeur Windows.
+Validation : 131 tests backend verts, build frontend vert. Validation locale
+complémentaire le 2026-05-16 : `pip install -r requirements.txt` OK avec
+`fpdf2`, services locaux `8000`/`5173`/`11434` OK, collecte réelle BOAMP+TED OK,
+KRINOS avec Ollama réel OK, HERMION réel OK sur une réponse de 1 705 mots.
+Validation release complémentaire : `backend.exe` PyInstaller construit et
+démarré sans Python externe sur port temporaire, `cargo check --release` Tauri
+vert, runtime Tauri aligné sur `%LocalAppData%\HERMES` et chemins Ollama
+standards.
+Réutilisé tel quel : filtre mots-clés, KRINOS, versionnement HERMION, onglets
+Veille/Réponses, installeur Windows.
 
 ## V2 — repoussé (« vraiment avancé »)
 
@@ -409,7 +446,9 @@ installeur Windows.
 - **KRINOS robuste** : OCR PDF scannés, vérification checksum à chaque lecture,
   extraction structurée fine, historique/comparaison d'analyses.
 - **HERMION avancé** : import workflow JSON/MD, variables `{{champ}}`,
-  révisions guidées par commentaire utilisateur.
+  révisions guidées par commentaire utilisateur, meilleure injection de
+  contexte MNEMOSYNE/base de connaissances pour éviter les réponses longues
+  mais trop génériques.
 - **Pilotage commercial** : pipeline go/no-go, motifs de perte, tableau de
   bord, calendrier d'échéances, fiches acheteur, exports CSV.
 - Reste des « besoins extrapolés » et suggestions UI/UX ci-dessous.

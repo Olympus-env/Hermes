@@ -1,6 +1,6 @@
 # Compile le backend HERMES en backend.exe autonome (PyInstaller).
 #
-# Sortie : D:\HermesDeps\tooling\backend-build\backend\backend.exe
+# Sortie par défaut : D:\HermesDeps\tooling\backend-build\backend\backend.exe
 # (mode onedir — un dossier contenant l'exe et ses .dll).
 #
 # Le script :
@@ -10,6 +10,10 @@
 #   4. Copie le dossier de sortie sous D: pour respecter l'invariant
 #      "rien de lourd sur E:".
 
+param(
+    [string]$DepsRoot = $(if ($env:HERMES_DEPS_DIR) { $env:HERMES_DEPS_DIR } else { "D:\HermesDeps" })
+)
+
 $ErrorActionPreference = "Stop"
 
 $Root         = Resolve-Path "$PSScriptRoot\.."
@@ -17,7 +21,7 @@ $Backend      = Join-Path $Root "backend"
 $Venv         = Join-Path $Backend ".venv\Scripts\Activate.ps1"
 $DistDir      = Join-Path $Backend "dist"
 $WorkDir      = Join-Path $Backend "build"
-$TargetParent = "D:\HermesDeps\tooling\backend-build"
+$TargetParent = Join-Path $DepsRoot "tooling\backend-build"
 
 if (-not (Test-Path $Venv)) {
     Write-Host "[FATAL] venv backend introuvable : $Venv" -ForegroundColor Red

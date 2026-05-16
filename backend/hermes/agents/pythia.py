@@ -40,6 +40,10 @@ def _options() -> dict[str, Any]:
     }
 
 
+def _timeout_effectif(timeout: float | None) -> float:
+    return timeout or settings.pythia_timeout_secondes
+
+
 async def generer(
     prompt: str,
     *,
@@ -66,13 +70,19 @@ async def generer(
         payload["format"] = "json"
 
     url = f"{settings.ollama_base_url.rstrip('/')}/api/generate"
+    timeout_effectif = _timeout_effectif(timeout)
     try:
-        async with httpx.AsyncClient(timeout=timeout or settings.pythia_timeout_secondes) as client:
+        async with httpx.AsyncClient(timeout=timeout_effectif) as client:
             r = await client.post(url, json=payload)
             r.raise_for_status()
             data = r.json()
+    except httpx.TimeoutException as exc:
+        raise ErreurPythia(
+            f"Timeout Ollama après {timeout_effectif:.0f}s ({type(exc).__name__})"
+        ) from exc
     except httpx.HTTPError as exc:
-        raise ErreurPythia(f"Appel PYTHIA impossible : {exc}") from exc
+        detail = str(exc).strip() or type(exc).__name__
+        raise ErreurPythia(f"Appel PYTHIA impossible : {detail}") from exc
     except ValueError as exc:
         raise ErreurPythia(f"Réponse PYTHIA non-JSON : {exc}") from exc
 
@@ -98,13 +108,19 @@ async def embeddings(
     modele_utilise = modele or settings.pythia_modele_embeddings
     url = f"{settings.ollama_base_url.rstrip('/')}/api/embeddings"
     payload = {"model": modele_utilise, "prompt": texte}
+    timeout_effectif = _timeout_effectif(timeout)
     try:
-        async with httpx.AsyncClient(timeout=timeout or settings.pythia_timeout_secondes) as client:
+        async with httpx.AsyncClient(timeout=timeout_effectif) as client:
             r = await client.post(url, json=payload)
             r.raise_for_status()
             data = r.json()
+    except httpx.TimeoutException as exc:
+        raise ErreurPythia(
+            f"Timeout embeddings Ollama après {timeout_effectif:.0f}s ({type(exc).__name__})"
+        ) from exc
     except httpx.HTTPError as exc:
-        raise ErreurPythia(f"Appel embeddings PYTHIA impossible : {exc}") from exc
+        detail = str(exc).strip() or type(exc).__name__
+        raise ErreurPythia(f"Appel embeddings PYTHIA impossible : {detail}") from exc
 
     vecteur = data.get("embedding")
     if not isinstance(vecteur, list) or not vecteur:

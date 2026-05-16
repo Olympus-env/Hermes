@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     pythia_modele_embeddings: str = "nomic-embed-text"
     pythia_timeout_secondes: float = 180.0
     pythia_temperature: float = 0.2
+    # HERMION peut générer des réponses nettement plus longues que KRINOS.
+    # Les timeouts sont donc séparés pour éviter de pénaliser les appels courts.
+    hermion_plan_timeout_secondes: float = 180.0
+    hermion_section_timeout_secondes: float = 420.0
+    hermion_section_timeout_par_100_mots_secondes: float = 45.0
     # Nb max de caractères de contenu documentaire injectés dans le prompt KRINOS
     krinos_contexte_max_caracteres: int = 12000
 
@@ -46,7 +51,12 @@ class Settings(BaseSettings):
         return f"sqlite:///{self.db_path.as_posix()}"
 
     def ensure_dirs(self) -> None:
-        for p in (self.db_path.parent, self.storage_path, self.log_path, self.master_key_path.parent):
+        for p in (
+            self.db_path.parent,
+            self.storage_path,
+            self.log_path,
+            self.master_key_path.parent,
+        ):
             p.mkdir(parents=True, exist_ok=True)
 
 

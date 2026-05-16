@@ -93,6 +93,7 @@ export default function App() {
     });
     try {
       const result = await api.collecterArgos(30);
+      const pipeline = await api.lancerPipeline();
       setTendersRefreshKey((key) => key + 1);
       setIsLoading(false);
       setAgents((a) => ({ ...a, argos: "active", krinos: "active" }));
@@ -100,10 +101,14 @@ export default function App() {
       const filtres = result.ao_filtres
         ? ` · ${result.ao_filtres} filtrés (hors critères)`
         : "";
+      const pipelineMsg = pipeline.actif
+        ? ` · ${pipeline.ao_analyses} analysés · ${pipeline.ao_rediges} réponses générées`
+        : " · pipeline autonome désactivé";
+      const echecs = pipeline.ao_echecs ? ` · ${pipeline.ao_echecs} échecs pipeline` : "";
       setToast({
         title: "ARGOS",
         app: "Cycle terminé",
-        msg: `${result.ao_nouveaux} nouveaux AO · ${result.ao_trouves} trouvés · ${result.ao_dedoublonnes} dédoublonnés${filtres}.`,
+        msg: `${result.ao_nouveaux} nouveaux AO · ${result.ao_trouves} trouvés · ${result.ao_dedoublonnes} dédoublonnés${filtres}${pipelineMsg}${echecs}.`,
         agent: "argos",
       });
     } catch (error) {

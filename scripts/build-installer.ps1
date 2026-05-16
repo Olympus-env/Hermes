@@ -14,6 +14,7 @@ param(
     [switch]$SkipFrontend,
     [switch]$SkipBackend,
     [switch]$SkipOllama,
+    [string]$DepsRoot = $(if ($env:HERMES_DEPS_DIR) { $env:HERMES_DEPS_DIR } else { "D:\HermesDeps" }),
     [string]$OllamaUrl = "https://ollama.com/download/OllamaSetup.exe"
 )
 
@@ -41,7 +42,6 @@ if (-not $Iscc) {
 Write-Host "==> Inno Setup : $Iscc" -ForegroundColor DarkGray
 
 # 2. (Re)compile hermes.exe
-$HermesExe = "D:\HermesDeps\tooling\cargo-target\release\hermes.exe"
 if (-not $SkipFrontend) {
     Write-Host "==> Compilation hermes.exe (Tauri release, peut prendre 5-10 min)..." -ForegroundColor Cyan
     Push-Location $Frontend
@@ -51,17 +51,24 @@ if (-not $SkipFrontend) {
         Pop-Location
     }
 }
-if (-not (Test-Path $HermesExe)) {
-    Write-Host "[FATAL] hermes.exe absent : $HermesExe" -ForegroundColor Red
+$HermesCandidates = @(
+    (Join-Path $DepsRoot "tooling\cargo-target\release\hermes.exe"),
+    (Join-Path $Frontend "src-tauri\target\release\hermes.exe")
+)
+$HermesExe = $HermesCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $HermesExe -or -not (Test-Path $HermesExe)) {
+    Write-Host "[FATAL] hermes.exe absent." -ForegroundColor Red
+    Write-Host "  Chemins testés :" -ForegroundColor Yellow
+    $HermesCandidates | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
     Write-Host "  Relance sans -SkipFrontend." -ForegroundColor Yellow
     exit 1
 }
 
 # 3. (Re)compile backend.exe
-$BackendDir = "D:\HermesDeps\tooling\backend-build\backend"
+$BackendDir = Join-Path $DepsRoot "tooling\backend-build\backend"
 if (-not $SkipBackend) {
     Write-Host "==> Compilation backend.exe (PyInstaller)..." -ForegroundColor Cyan
-    & "$PSScriptRoot\build-backend.ps1" | Out-Host
+    & "$PSScriptRoot\build-backend.ps1" -DepsRoot $DepsRoot | Out-Host
 }
 if (-not (Test-Path (Join-Path $BackendDir "backend.exe"))) {
     Write-Host "[FATAL] backend.exe absent : $BackendDir\backend.exe" -ForegroundColor Red
