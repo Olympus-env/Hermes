@@ -371,35 +371,35 @@ notés passent en queue HERMION → réponses générées via MNEMOSYNE + workfl
 l'utilisateur critique et exporte. L'**email/SMTP est repoussé en V2**, ainsi
 que toutes les fonctionnalités « vraiment avancées ».
 
-### V1 — ce qui reste à faire
+### V1 — livré (2026-05-16)
 
-1. **ARGOS multi-portails publics** — ajouter des scrapers publics non
-   authentifiés (TED Europa, Achat Public, Marches.fr, PLACE…), intégration
-   au registre + tests offline sur snapshots. *Aucun portail authentifié en V1.*
-2. **Orchestration autonome** — service qui, après chaque cycle ARGOS :
-   applique le filtre, déclenche KRINOS (téléchargement docs → extraction →
-   analyse → score/tags/résumé), puis bascule automatiquement les AO au-dessus
-   d'un **seuil de score configurable** vers HERMION en créant la réponse en
-   queue, sans clic humain.
-3. **Onboarding étendu + workflow IA** — au premier lancement, en plus du
-   profil, demander à l'utilisateur d'alimenter MNEMOSYNE : soit un workflow,
-   soit des AO déjà remplis (réponses exemples). PYTHIA en **dérive un
-   workflow**, que l'utilisateur peut **corriger manuellement**. HERMION
-   consomme ce workflow + les données AO/analyse de MNEMOSYNE.
-4. **Export PDF** des réponses validées (`chemin_export` renseigné).
-5. **Journal des agents dans l'UI** — consultation de `logs_agents`
-   (indispensable pour diagnostiquer un pipeline autonome).
-6. **Notifications OS** — réponse prête, cycle ARGOS terminé/échoué.
-7. **Démarrage automatique** optionnel au login Windows.
+- [x] **ARGOS multi-portails publics** — BOAMP (DILA) + **TED Europa** (API v3
+  publique sans auth). Décision : ce sont les 2 sources officielles libres ;
+  Achat Public/Marches.fr/PLACE (pas d'API libre) → V2. `fd8b3c4`
+- [x] **Orchestration autonome** — après chaque cycle ARGOS : filtre → KRINOS
+  (docs → extraction → analyse → score/tags/résumé) → bascule des AO au-dessus
+  d'un **seuil configurable** vers HERMION, sans clic humain. `798d100`
+- [x] **Onboarding étendu + workflow IA** — l'utilisateur fournit un workflow
+  ou des réponses exemples ; PYTHIA en dérive un workflow corrigeable
+  (onboarding étape 4 + Paramètres → Rédaction HERMION). `429e9bb`
+- [x] **Export PDF** des réponses validées (`chemin_export`, 100 % local
+  via fpdf2). `e82dfc9`
+- [x] **Journal des agents dans l'UI** — onglet Journal filtrable. `e28b644`
+- [x] **Notifications in-app** — centre alimenté par le journal (pastille +
+  panneau Topbar). Les **vraies notifications OS** sont repoussées en V2. `eeebcda`
+- [→ V2] **Démarrage automatique au login Windows** — repoussé : exige un
+  plugin Tauri/Rust non compilable dans l'environnement actuel.
 
-Déjà acquis et réutilisé tel quel en V1 : collecte BOAMP, filtre mots-clés
-inclus/exclus, KRINOS (extraction + analyse IA + score/tags/résumé), HERMION
-(rédaction multi-sections + versionnement + validation humaine), onglets
-Veille/Réponses, édition inline + valider/réviser/rejeter, installeur Windows.
+Validation : 131 tests backend verts, build frontend vert. Réutilisé tel quel :
+filtre mots-clés, KRINOS, versionnement HERMION, onglets Veille/Réponses,
+installeur Windows.
 
 ## V2 — repoussé (« vraiment avancé »)
 
 - **Email/SMTP** : envoi mail des réponses, mail récap ARGOS, config SMTP.
+- **Intégration OS native (Tauri/Rust)** : vraies notifications système
+  (plugin `tauri-plugin-notification`) et démarrage automatique au login
+  Windows (`tauri-plugin-autostart`). En V1, notifications in-app à la place.
 - **Portails authentifiés** : capture de session Playwright réelle, détection
   d'expiration, reconnexion, alertes UI.
 - **Filtres avancés** : codes NAF, budget min/max, zone, délai minimum, type
