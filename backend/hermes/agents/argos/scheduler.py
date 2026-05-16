@@ -6,7 +6,7 @@ Le scheduler tourne en arrière-plan dans le process FastAPI.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -66,7 +66,7 @@ class ArgosScheduler:
                 trigger=IntervalTrigger(minutes=max(5, portail.frequence_minutes)),
                 id=job_id,
                 replace_existing=True,
-                next_run_time=datetime.now(timezone.utc),
+                next_run_time=datetime.now(UTC),
             )
 
         for job in self._sched.get_jobs():
@@ -91,13 +91,26 @@ class ArgosScheduler:
 
 
 async def _executer_job(nom_portail: str) -> None:
-    """Job APScheduler : ouvre une session BDD et lance la collecte."""
+    """Job APScheduler : collecte puis pipeline autonome (KRINOS→HERMION).
+
+    C'est le déclencheur sans intervention humaine de la V1 : chaque cycle
+    de veille enchaîne automatiquement collecte → analyse → mise en rédaction.
+    """
     scraper = creer_scraper(nom_portail)
     with Session(get_engine()) as session:
         try:
             await executer_collecte(scraper, session)
         except Exception:  # noqa: BLE001
             logger.exception("Échec job ARGOS %s", nom_portail)
+        # Le pipeline est volontairement hors du try ci-dessus : il doit
+        # tourner même si une collecte a partiellement échoué (d'autres AO
+        # peuvent être en attente). `traiter_pipeline` ne propage rien.
+        try:
+            from hermes.agents.orchestrateur import traiter_pipeline
+
+            await traiter_pipeline(session)
+        except Exception:  # noqa: BLE001
+            logger.exception("Échec pipeline autonome après collecte %s", nom_portail)
 
 
 scheduler_global = ArgosScheduler()

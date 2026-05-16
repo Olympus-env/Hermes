@@ -8,14 +8,25 @@ import {
 } from "../lib/userProfile";
 import { Icon } from "../components/Icon";
 import { WorkflowEditor, type WorkflowDraft } from "../components/WorkflowEditor";
-import { api, type PortailArgos } from "../lib/api";
+import {
+  api,
+  type ConfigOrchestration,
+  type PortailArgos,
+  type RapportOrchestration,
+} from "../lib/api";
 
 type Props = {
   profile: UserProfile | null;
   onSaveProfile: (profile: UserProfile) => void;
 };
 
-type SectionId = "profil" | "portails" | "filtrage" | "scoring" | "redaction";
+type SectionId =
+  | "profil"
+  | "portails"
+  | "filtrage"
+  | "scoring"
+  | "redaction"
+  | "pipeline";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "profil",    label: "Profil utilisateur" },
@@ -23,6 +34,7 @@ const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "filtrage",  label: "Critères de filtrage" },
   { id: "scoring",   label: "Pondération du scoring" },
   { id: "redaction", label: "Rédaction HERMION" },
+  { id: "pipeline",  label: "Pipeline autonome" },
 ];
 
 export function Settings({ profile, onSaveProfile }: Props) {
@@ -56,6 +68,7 @@ export function Settings({ profile, onSaveProfile }: Props) {
           {section === "filtrage" && <FilteringSection />}
           {section === "scoring" && <ScoringSection />}
           {section === "redaction" && <RedactionSection />}
+          {section === "pipeline" && <OrchestrationSection />}
         </div>
       </div>
     </div>
@@ -954,6 +967,241 @@ function RedactionSection() {
             </span>
           </div>
 
+          {savedMsg && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(29,158,117,0.10)",
+                border: "1px solid rgba(29,158,117,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+              }}
+            >
+              {savedMsg}
+            </div>
+          )}
+          {error && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(220,80,80,0.10)",
+                border: "1px solid rgba(220,80,80,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+              }}
+            >
+              Erreur : {error}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+const CFG_DEFAUT: ConfigOrchestration = {
+  actif: true,
+  seuil_score: 70,
+  auto_rediger: true,
+  max_par_cycle: 5,
+};
+
+function OrchestrationSection() {
+  const [cfg, setCfg] = useState<ConfigOrchestration>(CFG_DEFAUT);
+  const [saved, setSaved] = useState<ConfigOrchestration>(CFG_DEFAUT);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [rapport, setRapport] = useState<RapportOrchestration | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+
+  const dirty = JSON.stringify(cfg) !== JSON.stringify(saved);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .lireConfigOrchestration()
+      .then((c) => {
+        if (cancelled) return;
+        setCfg(c);
+        setSaved(c);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onSave = async () => {
+    setSaving(true);
+    setError(null);
+    setSavedMsg(null);
+    try {
+      const c = await api.ecrireConfigOrchestration(cfg);
+      setCfg(c);
+      setSaved(c);
+      setSavedMsg(
+        c.actif
+          ? "Configuration enregistrée — le pipeline tournera après chaque cycle ARGOS."
+          : "Pipeline désactivé — aucune analyse/rédaction automatique.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onRun = async () => {
+    setRunning(true);
+    setError(null);
+    setRapport(null);
+    try {
+      setRapport(await api.lancerPipeline());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="settings-section">
+      <h2>Pipeline autonome</h2>
+      <p className="settings-section__desc">
+        Sans intervention humaine, après chaque collecte ARGOS : analyse KRINOS
+        (score, tags, résumé) puis, pour les AO au-dessus du seuil, mise en
+        rédaction HERMION. La réponse s'arrête en « en attente » — la
+        validation finale reste exclusivement humaine.
+      </p>
+
+      {loading ? (
+        <div style={{ color: "var(--fg-3)", fontSize: 13 }}>Chargement…</div>
+      ) : (
+        <>
+          <div className="settings-row">
+            <div>
+              <div className="settings-row__label">Pipeline activé</div>
+              <div className="settings-row__hint">
+                Interrupteur maître de l'autonomie
+              </div>
+            </div>
+            <button
+              className={`toggle${cfg.actif ? " toggle--on" : ""}`}
+              onClick={() => setCfg({ ...cfg, actif: !cfg.actif })}
+              role="switch"
+              aria-checked={cfg.actif}
+            >
+              <div className="toggle__thumb" />
+            </button>
+          </div>
+
+          <div className="settings-row">
+            <div>
+              <div className="settings-row__label">Seuil de mise en rédaction</div>
+              <div className="settings-row__hint">
+                Score KRINOS minimal pour passer un AO à HERMION
+              </div>
+            </div>
+            <div className="slider-row">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={cfg.seuil_score}
+                onChange={(e) =>
+                  setCfg({ ...cfg, seuil_score: +e.target.value })
+                }
+              />
+              <div className="slider-row__val">{cfg.seuil_score} / 100</div>
+            </div>
+          </div>
+
+          <div className="settings-row">
+            <div>
+              <div className="settings-row__label">Rédaction automatique</div>
+              <div className="settings-row__hint">
+                Si désactivé : KRINOS analyse, mais HERMION ne rédige pas seul
+              </div>
+            </div>
+            <button
+              className={`toggle${cfg.auto_rediger ? " toggle--on" : ""}`}
+              onClick={() =>
+                setCfg({ ...cfg, auto_rediger: !cfg.auto_rediger })
+              }
+              role="switch"
+              aria-checked={cfg.auto_rediger}
+            >
+              <div className="toggle__thumb" />
+            </button>
+          </div>
+
+          <div className="settings-row">
+            <div>
+              <div className="settings-row__label">AO max par cycle</div>
+              <div className="settings-row__hint">
+                Plafonne la charge PYTHIA à chaque passage (1-50)
+              </div>
+            </div>
+            <input
+              className="input"
+              style={{ width: 90 }}
+              type="number"
+              min={1}
+              max={50}
+              value={cfg.max_par_cycle}
+              onChange={(e) =>
+                setCfg({ ...cfg, max_par_cycle: +e.target.value })
+              }
+            />
+          </div>
+
+          <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center" }}>
+            <button
+              className="btn btn--gold"
+              disabled={saving || !dirty}
+              onClick={onSave}
+            >
+              {saving
+                ? "Enregistrement…"
+                : dirty
+                  ? "Enregistrer"
+                  : "Aucune modification"}
+            </button>
+            <button className="btn" disabled={running} onClick={onRun}>
+              {running ? "Pipeline en cours…" : "Lancer le pipeline maintenant"}
+            </button>
+          </div>
+
+          {rapport && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "rgba(29,158,117,0.10)",
+                border: "1px solid rgba(29,158,117,0.30)",
+                borderRadius: 6,
+                fontSize: 12.5,
+                color: "var(--fg-2)",
+                lineHeight: 1.6,
+              }}
+            >
+              {rapport.actif
+                ? `${rapport.ao_analyses} analysés, ${rapport.ao_rediges} mis en rédaction, ${rapport.ao_sous_seuil} sous le seuil, ${rapport.ao_echecs} échecs.`
+                : "Pipeline désactivé — rien n'a été traité."}
+            </div>
+          )}
           {savedMsg && (
             <div
               style={{

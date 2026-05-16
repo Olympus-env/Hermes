@@ -173,6 +173,22 @@ export type ReponseAvecAO = {
   maj_le: string;
 };
 
+export type ConfigOrchestration = {
+  actif: boolean;
+  seuil_score: number;
+  auto_rediger: boolean;
+  max_par_cycle: number;
+};
+
+export type RapportOrchestration = {
+  actif: boolean;
+  ao_analyses: number;
+  ao_rediges: number;
+  ao_sous_seuil: number;
+  ao_echecs: number;
+  details: { ao_id: number; action: string; score?: number }[];
+};
+
 export type SectionWorkflow = {
   titre: string;
   brief: string;
@@ -278,6 +294,17 @@ export const api = {
     fetchJson<ProgressionModele>("/pythia/modele/telecharger", {
       method: "POST",
       body: JSON.stringify(modele ? { modele } : {}),
+    }),
+  lireConfigOrchestration: () =>
+    fetchJson<ConfigOrchestration>("/orchestration/config"),
+  ecrireConfigOrchestration: (c: ConfigOrchestration) =>
+    fetchJson<ConfigOrchestration>("/orchestration/config", {
+      method: "PUT",
+      body: JSON.stringify(c),
+    }),
+  lancerPipeline: () =>
+    fetchJson<RapportOrchestration>("/orchestration/traiter", {
+      method: "POST",
     }),
   lireWorkflowHermion: () => fetchJson<WorkflowHermion>("/hermion/workflow"),
   ecrireWorkflowHermion: (wf: {
