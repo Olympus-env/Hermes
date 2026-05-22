@@ -163,6 +163,20 @@ export type ReponseHermion = {
   maj_le: string;
 };
 
+export type ProgressionHermion = {
+  appel_offre_id: number;
+  etape: string;
+  libelle: string;
+  index: number;
+  total: number;
+  message: string;
+  erreur: string | null;
+  termine: boolean;
+  reponse_id: number | null;
+  secondes_ecoulees: number;
+  connue: boolean;
+};
+
 export type ReponseAvecAO = {
   id: number;
   appel_offre_id: number;
@@ -382,6 +396,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  // Avancement de la rédaction en cours (polling pendant la génération).
+  progressionHermion: (ao_id: number) =>
+    fetchJson<ProgressionHermion>(
+      `/hermion/appels-offre/${ao_id}/progression`,
+    ),
   modifierStatutReponse: (
     id: number,
     statut: StatutReponseHermion,

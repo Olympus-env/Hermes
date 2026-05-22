@@ -21,6 +21,7 @@ from hermes.agents.hermion import (
     deriver_workflow,
     enregistrer_workflow,
     exporter_reponse_pdf,
+    progression,
     rediger_reponse,
 )
 from hermes.config import settings
@@ -87,6 +88,21 @@ class ReponseAvecAO(BaseModel):
 class RedactionResponse(BaseModel):
     reponse: ReponseRead
     plan: list[dict[str, str]]
+
+
+class ProgressionRead(BaseModel):
+    appel_offre_id: int
+    etape: str
+    libelle: str
+    index: int
+    total: int
+    message: str
+    erreur: str | None
+    termine: bool
+    reponse_id: int | None
+    secondes_ecoulees: float
+    # False quand aucune rédaction n'a (encore) été lancée pour cet AO.
+    connue: bool = True
 
 
 class StatutReponseUpdate(BaseModel):
@@ -188,6 +204,32 @@ async def rediger(
         reponse=_reponse_read(resultat.reponse),
         plan=resultat.plan,
     )
+
+
+@router.get("/appels-offre/{ao_id}/progression", response_model=ProgressionRead)
+def lire_progression(ao_id: int) -> ProgressionRead:
+    """Avancement de la rédaction HERMION en cours pour cet AO (issue #7).
+
+    Le frontend interroge cet endpoint pendant la génération pour afficher
+    l'étape courante, la section en cours et le temps écoulé. Aucun appel
+    PYTHIA : sert même quand une rédaction sature le LLM.
+    """
+    etat = progression.lire(ao_id)
+    if etat is None:
+        return ProgressionRead(
+            appel_offre_id=ao_id,
+            etape="inconnu",
+            libelle="Aucune rédaction en cours",
+            index=0,
+            total=0,
+            message="",
+            erreur=None,
+            termine=False,
+            reponse_id=None,
+            secondes_ecoulees=0.0,
+            connue=False,
+        )
+    return ProgressionRead(connue=True, **etat.en_dict())
 
 
 # --------------------------------------------------------------------------- #

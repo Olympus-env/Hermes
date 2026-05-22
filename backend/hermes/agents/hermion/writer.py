@@ -22,6 +22,7 @@ from typing import Any
 from sqlmodel import Session, func, select
 
 from hermes.agents import pythia
+from hermes.agents.hermion import progression
 from hermes.agents.hermion.workflow import WorkflowReponse, charger_workflow
 from hermes.config import settings
 from hermes.db.models import (
@@ -101,6 +102,29 @@ async def rediger_reponse(
     if appel_offre.id is None:
         raise ErreurRedactionHermion("Appel d'offre non persisté")
 
+    ao_id = appel_offre.id
+    progression.demarrer(ao_id)
+    try:
+        return await _rediger_reponse_suivie(
+            session, appel_offre, profil, consignes_supplementaires
+        )
+    except ErreurRedactionHermion as exc:
+        progression.echec(ao_id, str(exc))
+        raise
+    except Exception as exc:  # noqa: BLE001
+        progression.echec(ao_id, f"Erreur inattendue : {exc}")
+        raise
+
+
+async def _rediger_reponse_suivie(
+    session: Session,
+    appel_offre: AppelOffre,
+    profil: ProfilUtilisateur | None,
+    consignes_supplementaires: str | None,
+) -> ResultatRedaction:
+    """Corps de la rédaction, instrumenté pour publier l'avancement (#7)."""
+    ao_id = appel_offre.id
+
     analyse = session.exec(
         select(AnalyseKrinos)
         .where(AnalyseKrinos.appel_offre_id == appel_offre.id)
@@ -111,18 +135,23 @@ async def rediger_reponse(
             "Aucune analyse KRINOS pour cet AO — lancer /krinos/.../analyser d'abord"
         )
 
+    progression.maj(
+        ao_id, progression.ETAPE_PREPARATION, message="Analyse KRINOS chargée"
+    )
     workflow_cfg = charger_workflow(session)
     consignes = _combiner_consignes(workflow_cfg, consignes_supplementaires)
     contexte = _construire_contexte(session, appel_offre, analyse, profil, consignes)
 
     debut = time.perf_counter()
+    progression.maj(ao_id, progression.ETAPE_PLAN)
     if workflow_cfg is not None and workflow_cfg.sections:
         plan = _plan_depuis_workflow(workflow_cfg)
         origine = f"workflow_utilisateur ({workflow_cfg.source})"
     else:
         plan = await _generer_plan(contexte)
         origine = "plan_dynamique"
-    sections = await _rediger_sections(plan, contexte)
+    sections = await _rediger_sections(plan, contexte, ao_id=ao_id)
+    progression.maj(ao_id, progression.ETAPE_FINALISATION, total=len(plan))
     contenu = _assembler_document(appel_offre, plan, sections)
     duree_ms = int((time.perf_counter() - debut) * 1000)
 
@@ -162,6 +191,7 @@ async def rediger_reponse(
     )
     session.refresh(reponse)
 
+    progression.terminer(ao_id, reponse_id=reponse.id)
     return ResultatRedaction(reponse=reponse, plan=plan)
 
 
@@ -216,11 +246,19 @@ async def _generer_plan(contexte: dict[str, Any]) -> list[dict[str, str]]:
 
 
 async def _rediger_sections(
-    plan: list[dict[str, str]], contexte: dict[str, Any]
+    plan: list[dict[str, str]], contexte: dict[str, Any], *, ao_id: int | None = None
 ) -> list[str]:
     titres = [s["titre"] for s in plan]
     sections_textes: list[str] = []
     for index, section in enumerate(plan, start=1):
+        if ao_id is not None:
+            progression.maj(
+                ao_id,
+                progression.ETAPE_REDACTION,
+                index=index,
+                total=len(plan),
+                message=section["titre"],
+            )
         longueur_cible = _longueur_cible(section)
         contrainte_longueur = _contrainte_longueur_section(longueur_cible)
         prompt = (

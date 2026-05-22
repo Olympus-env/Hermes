@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type AnalyseKrinos, type AppelOffre, type PonderationKrinos } from "../lib/api";
+import {
+  api,
+  type AnalyseKrinos,
+  type AppelOffre,
+  type PonderationKrinos,
+  type ProgressionHermion,
+} from "../lib/api";
 import { deadlineInfo, type Tender, type TenderTag } from "../lib/data";
 import { AgentChip } from "../components/AgentChip";
 import { Deadline } from "../components/Deadline";
@@ -333,6 +339,7 @@ type PanelProps = {
 function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
   const { formatted, urgent, days } = deadlineInfo(tender.deadline);
   const [redigerEnCours, setRedigerEnCours] = useState(false);
+  const [progression, setProgression] = useState<ProgressionHermion | null>(null);
   const [analyse, setAnalyse] = useState<AnalyseKrinos | null>(null);
   const [ponderation, setPonderation] = useState<PonderationKrinos | null>(null);
   const [analyseLoading, setAnalyseLoading] = useState(true);
@@ -364,15 +371,28 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
 
   const rediger = async () => {
     setRedigerEnCours(true);
+    setProgression(null);
     onToast({
       title: "HERMION",
       app: "Rédaction lancée",
       msg: "PYTHIA prépare la réponse — comptez 30 à 90 s selon la longueur du dossier.",
       agent: "hermion",
     });
+    const aoId = Number(tender.id);
+    // Polling de l'avancement pendant la génération (issue #7).
+    const poll = window.setInterval(() => {
+      api
+        .progressionHermion(aoId)
+        .then((p) => {
+          if (p.connue) setProgression(p);
+        })
+        .catch(() => {
+          /* transitoire : on retentera au prochain tick */
+        });
+    }, 1200);
     try {
       const profile = loadUserProfile();
-      const result = await api.rediger(Number(tender.id), {
+      const result = await api.rediger(aoId, {
         profil: profile
           ? {
               prenom: profile.firstName,
@@ -398,7 +418,9 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
         agent: "hermion",
       });
     } finally {
+      window.clearInterval(poll);
       setRedigerEnCours(false);
+      setProgression(null);
     }
   };
 
@@ -549,6 +571,44 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
           />
         </div>
       </div>
+
+      {redigerEnCours && (
+        <div
+          style={{
+            margin: "0 20px 8px",
+            padding: "10px 14px",
+            background: "rgba(216,90,48,0.10)",
+            border: "1px solid rgba(216,90,48,0.30)",
+            borderRadius: 6,
+            fontSize: 12,
+            color: "var(--fg-2)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <span className="loading-banner__icon" />
+          <span style={{ flex: 1 }}>
+            <strong style={{ color: "var(--hermion)", letterSpacing: "0.04em" }}>
+              HERMION
+            </strong>{" "}
+            {progression
+              ? progression.libelle +
+                (progression.etape === "redaction" && progression.total
+                  ? ` — section ${progression.index}/${progression.total}`
+                  : "") +
+                (progression.message ? ` · ${progression.message}` : "")
+              : "Initialisation…"}
+          </span>
+          {progression && (
+            <span
+              style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-3)" }}
+            >
+              {Math.round(progression.secondes_ecoulees)}s
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="tender-panel__actions">
         <button
