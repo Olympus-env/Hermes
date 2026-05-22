@@ -17,13 +17,12 @@ C'est le canal légitime de consommation prévu par la DILA pour les éditeurs.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
 from hermes.agents.argos.base import AOCollecte, Scraper
-
 
 _UA = (
     "Mozilla/5.0 (compatible; HERMES/0.1; +https://github.com/local) "
@@ -121,11 +120,11 @@ def _parse_iso(valeur: Any) -> datetime | None:
     if not valeur:
         return None
     if isinstance(valeur, datetime):
-        return valeur if valeur.tzinfo else valeur.replace(tzinfo=timezone.utc)
+        return valeur if valeur.tzinfo else valeur.replace(tzinfo=UTC)
     try:
         s = str(valeur).strip().replace("Z", "+00:00")
         dt = datetime.fromisoformat(s)
-        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
     except (ValueError, TypeError):
         return None
 

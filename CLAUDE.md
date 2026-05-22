@@ -266,6 +266,11 @@ d'annoncer une avancée.
 - **Tauri Windows** : exige **MS Build Tools 2022** (composant « Desktop dev
   with C++ ») en plus de Rust. Sans ça, `npm run tauri dev` échoue à la
   compilation.
+- **Version éparpillée** : la version vit dans 6 fichiers (`__init__.py`,
+  `pyproject.toml`, `package.json`, `tauri.conf.json`, `Cargo.toml`,
+  `HERMES.iss`). Ne jamais les éditer à la main un par un — utiliser
+  `.\scripts\sync-version.ps1 X.Y.Z` (et `-Check` pour vérifier la cohérence).
+  L'oubli de `HERMES.iss` produit un installeur mal nommé.
 
 ---
 

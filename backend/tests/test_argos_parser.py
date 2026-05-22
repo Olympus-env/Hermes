@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from hermes.agents.argos.boamp import _record_vers_ao, _est_valide
-
+from hermes.agents.argos.boamp import _est_valide, _record_vers_ao
 
 _SNAPSHOT = [
     {

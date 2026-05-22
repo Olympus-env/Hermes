@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -53,7 +52,7 @@ class StatutUpdate(BaseModel):
 
 @router.get("")
 def lister(
-    statut: Optional[StatutAO] = None,
+    statut: StatutAO | None = None,
     limit: int = Query(default=50, le=500),
     offset: int = 0,
     session: Session = Depends(get_session),

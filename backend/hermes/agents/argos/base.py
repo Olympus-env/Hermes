@@ -5,7 +5,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -19,19 +18,19 @@ class AOCollecte:
     titre: str
     url_source: str
 
-    reference_externe: Optional[str] = None
-    emetteur: Optional[str] = None
-    objet: Optional[str] = None
+    reference_externe: str | None = None
+    emetteur: str | None = None
+    objet: str | None = None
 
-    budget_estime: Optional[float] = None
+    budget_estime: float | None = None
     devise: str = "EUR"
 
-    date_publication: Optional[datetime] = None
-    date_limite: Optional[datetime] = None
+    date_publication: datetime | None = None
+    date_limite: datetime | None = None
 
-    type_marche: Optional[str] = None
-    zone_geographique: Optional[str] = None
-    code_naf: Optional[str] = None
+    type_marche: str | None = None
+    zone_geographique: str | None = None
+    code_naf: str | None = None
 
     def cle_unicite(self) -> str:
         """Clé utilisée pour dédoublonner.

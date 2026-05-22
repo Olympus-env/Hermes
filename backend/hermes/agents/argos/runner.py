@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from loguru import logger
 from sqlmodel import Session, select
@@ -15,7 +15,7 @@ from hermes.securite.credentials import ErreurCredentials, dechiffrer_credential
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 async def executer_collecte(
@@ -114,7 +114,7 @@ def _injecter_credentials(scraper: Scraper, portail: Portail) -> None:
     except ErreurCredentials:
         logger.exception(f"Credentials ARGOS invalides pour le portail {portail.nom}")
         raise
-    setattr(scraper, "credentials", credentials or {})
+    scraper.credentials = credentials or {}
 
 
 def _existe(session: Session, portail_id: int | None, item: AOCollecte) -> bool:

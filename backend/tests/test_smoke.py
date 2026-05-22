@@ -56,7 +56,7 @@ def test_tables_creees():
     """Vérifie que les 8 tables MNEMOSYNE sont présentes."""
     from sqlmodel import SQLModel
 
-    from hermes.db.session import get_engine, init_db
+    from hermes.db.session import init_db
 
     init_db()
     tables_attendues = {

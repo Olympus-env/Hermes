@@ -64,7 +64,7 @@ class Ponderation:
     def total(self) -> int:
         return sum(self.en_dict().values())
 
-    def normalise(self) -> "Ponderation":
+    def normalise(self) -> Ponderation:
         """Re-normalise les poids pour que la somme soit 100."""
         total = self.total
         if total == 100 or total == 0:
@@ -94,12 +94,13 @@ def charger_ponderation(session: Session) -> Ponderation:
     if not isinstance(data, dict):
         return Ponderation()
     args: dict[str, int] = {}
+    defaut = Ponderation()
     for d in Ponderation.DIMENSIONS:
         valeur = data.get(d)
         try:
-            args[d] = max(0, min(100, int(valeur))) if valeur is not None else getattr(Ponderation(), d)
+            args[d] = max(0, min(100, int(valeur))) if valeur is not None else getattr(defaut, d)
         except (TypeError, ValueError):
-            args[d] = getattr(Ponderation(), d)
+            args[d] = getattr(defaut, d)
     return Ponderation(**args)
 
 

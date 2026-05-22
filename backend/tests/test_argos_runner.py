@@ -6,7 +6,7 @@ pas d'appel réseau ni de Playwright.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlmodel import Session, select
@@ -36,7 +36,7 @@ def _exemple_items() -> list[AOCollecte]:
             url_source="https://example.test/avis/1",
             reference_externe="TST-001",
             emetteur="Ville fictive",
-            date_limite=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            date_limite=datetime(2026, 9, 1, tzinfo=UTC),
         ),
         AOCollecte(
             titre="Marché test 2",
