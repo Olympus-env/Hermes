@@ -12,12 +12,15 @@ from hermes.agents.argos.boamp import BoampScraper, _construire_where
 
 def test_where_inclus_seuls():
     where = _construire_where(("SMS", "RCS"), ())
-    assert where == '("SMS" OR "RCS")'
+    assert where == '(search(objet, "SMS") OR search(objet, "RCS"))'
 
 
 def test_where_inclus_et_exclus():
     where = _construire_where(("SMS",), ("nettoyage", "voirie"))
-    assert where == '("SMS") AND NOT ("nettoyage" OR "voirie")'
+    assert where == (
+        '(search(objet, "SMS")) AND NOT '
+        '(search(objet, "nettoyage") OR search(objet, "voirie"))'
+    )
 
 
 def test_where_sans_inclus_est_none():
@@ -26,8 +29,10 @@ def test_where_sans_inclus_est_none():
 
 def test_where_echappe_les_guillemets():
     where = _construire_where(('SMS "premium"',), ())
-    assert '"' not in where.replace('("', "").replace('")', "")  # plus de guillemets internes
-    assert "premium" in where
+    # Les guillemets internes du mot-clé sont retirés : le terme injecté est
+    # `SMS premium`, donc la clause ne contient pas de `""` ni de guillemet
+    # orphelin qui casserait l'ODSQL.
+    assert where == '(search(objet, "SMS premium"))'
 
 
 def _record(objet: str = "Marché d'envoi de SMS de notification"):
@@ -100,4 +105,6 @@ def test_collecte_avec_filtre_envoie_le_where(monkeypatch):
 
     asyncio.run(scraper.collecter(limite=20))
 
-    assert _ClientOk.captured.get("where") == '("SMS") AND NOT ("nettoyage")'
+    assert _ClientOk.captured.get("where") == (
+        '(search(objet, "SMS")) AND NOT (search(objet, "nettoyage"))'
+    )

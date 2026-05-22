@@ -99,22 +99,24 @@ class BoampScraper(Scraper):
 def _construire_where(
     inclus: tuple[str, ...], exclus: tuple[str, ...]
 ) -> str | None:
-    """Construit une clause ODSQL `where` full-text à partir des mots-clés.
+    """Construit une clause ODSQL `where` à partir des mots-clés.
 
-    Forme : ("kw1" OR "kw2" …) AND NOT ("ex1" OR "ex2" …)
+    Forme : (search(objet,"kw1") OR …) AND NOT (search(objet,"ex1") OR …)
 
-    Les chaînes nues sont interprétées par Opendatasoft comme une recherche
-    plein-texte sur l'enregistrement. Renvoie None si aucun mot-clé inclus
-    (auquel cas on garde la collecte des derniers avis).
+    On cible le champ `objet` via la fonction `search()` (full-text par mot).
+    C'est volontaire : une recherche plein-texte nue sur tout l'enregistrement
+    matche les mentions légales (ex. « RCS » = Registre du Commerce, présent
+    partout) et explose en faux positifs. Renvoie None si aucun mot-clé inclus
+    (on garde alors la collecte des derniers avis).
     """
     inc = [_echapper(k) for k in inclus if _echapper(k)]
     if not inc:
         return None
-    clause = "(" + " OR ".join(f'"{k}"' for k in inc) + ")"
+    clause = "(" + " OR ".join(f'search(objet, "{k}")' for k in inc) + ")"
 
     exc = [_echapper(k) for k in exclus if _echapper(k)]
     if exc:
-        clause += " AND NOT (" + " OR ".join(f'"{k}"' for k in exc) + ")"
+        clause += " AND NOT (" + " OR ".join(f'search(objet, "{k}")' for k in exc) + ")"
     return clause
 
 

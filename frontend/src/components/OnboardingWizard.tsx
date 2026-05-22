@@ -14,12 +14,15 @@ type Props = {
 // Préset métier par défaut (déploiement mono-utilisateur : commercial
 // LinkMobility — CPaaS / messagerie mobile). Éditable à l'onboarding et dans
 // Paramètres. Centralisé ici pour être ajusté facilement si la cible change.
+// Termes choisis pour la précision (testés sur l'API BOAMP) : on évite les
+// mots génériques qui collisionnent avec le jargon administratif — ex.
+// « notification » seul matche « à compter de la notification du marché »,
+// « système d'alerte » matche « alerte incendie ».
 const PRESET_INCLUS =
-  "SMS, SMS A2P, campagne SMS, envoi de SMS, RCS, messagerie mobile, " +
-  "WhatsApp Business, messagerie instantanée, notification SMS, notifications, " +
-  "alerte SMS, système d'alerte, communication multicanale, omnicanal, CPaaS, " +
-  "plateforme de communication, engagement client, relation citoyen, OTP, " +
-  "authentification forte, rappel de rendez-vous, diffusion de messages, envoi en masse";
+  "SMS, SMS A2P, campagne SMS, envoi de SMS, notification SMS, alerte SMS, " +
+  "RCS, messagerie mobile, WhatsApp Business, messagerie instantanée, CPaaS, " +
+  "OTP, authentification forte, communication multicanale, omnicanal, " +
+  "rappel de rendez-vous, relation citoyen, engagement client";
 
 const PRESET_EXCLUS =
   "téléphonie fixe, standard téléphonique, PABX, IPBX, fibre optique, câblage, " +
