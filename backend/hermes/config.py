@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     pythia_modele_embeddings: str = "nomic-embed-text"
     pythia_timeout_secondes: float = 180.0
     pythia_temperature: float = 0.2
+    # Inférences LLM simultanées autorisées. Ollama traite les requêtes une à
+    # une : au-delà de 1, KRINOS et HERMION s'empilent et saturent la machine
+    # (issue #4). On sérialise donc par défaut.
+    pythia_concurrence_max: int = 1
     # HERMION peut générer des réponses nettement plus longues que KRINOS.
     # Les timeouts sont donc séparés pour éviter de pénaliser les appels courts.
     hermion_plan_timeout_secondes: float = 180.0

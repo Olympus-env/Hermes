@@ -79,6 +79,12 @@ class ArgosScheduler:
                 id=job_id,
                 replace_existing=True,
                 next_run_time=datetime.now(UTC),
+                # Une seule exécution simultanée par portail, et on fusionne les
+                # déclenchements ratés au lieu de les rejouer en rafale : évite
+                # d'empiler des collectes + pipelines KRINOS concurrents (#4).
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=300,
             )
 
         for job in self._sched.get_jobs():

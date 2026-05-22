@@ -11,6 +11,7 @@ Ollama avec `httpx` directement.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +23,23 @@ from hermes.config import settings
 
 class ErreurPythia(RuntimeError):
     """Erreur contrôlée lors d'un appel à PYTHIA / Ollama."""
+
+
+# Verrou de concurrence des inférences LLM, par boucle d'événements (issue #4).
+# Ollama sert les requêtes séquentiellement ; sans ce garde-fou, des collectes
+# ARGOS enchaînant le pipeline KRINOS/HERMION lancent plusieurs inférences en
+# parallèle qui s'empilent, allongent les temps de réponse et déclenchent des
+# timeouts. On les sérialise (concurrence configurable, 1 par défaut).
+_verrous: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
+
+
+def _verrou_inference() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    verrou = _verrous.get(loop)
+    if verrou is None:
+        verrou = asyncio.Semaphore(max(1, settings.pythia_concurrence_max))
+        _verrous[loop] = verrou
+    return verrou
 
 
 @dataclass(frozen=True)
@@ -72,7 +90,7 @@ async def generer(
     url = f"{settings.ollama_base_url.rstrip('/')}/api/generate"
     timeout_effectif = _timeout_effectif(timeout)
     try:
-        async with httpx.AsyncClient(timeout=timeout_effectif) as client:
+        async with _verrou_inference(), httpx.AsyncClient(timeout=timeout_effectif) as client:
             r = await client.post(url, json=payload)
             r.raise_for_status()
             data = r.json()
@@ -110,7 +128,7 @@ async def embeddings(
     payload = {"model": modele_utilise, "prompt": texte}
     timeout_effectif = _timeout_effectif(timeout)
     try:
-        async with httpx.AsyncClient(timeout=timeout_effectif) as client:
+        async with _verrou_inference(), httpx.AsyncClient(timeout=timeout_effectif) as client:
             r = await client.post(url, json=payload)
             r.raise_for_status()
             data = r.json()
