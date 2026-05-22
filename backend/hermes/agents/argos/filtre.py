@@ -25,11 +25,18 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from hermes.agents import pythia
 from hermes.agents.argos.base import AOCollecte
-from hermes.db.models import Parametre
+from hermes.db.models import (
+    AnalyseKrinos,
+    AppelOffre,
+    LogAgent,
+    NiveauLog,
+    Parametre,
+    StatutAO,
+)
 
 CLE_PARAMETRE = "argos.filtre.mots_cles"
 
@@ -46,8 +53,17 @@ class FiltreVeille:
         return bool(self.inclus) or bool(self.exclus)
 
     def correspond(self, item: AOCollecte) -> bool:
-        """Retourne True si l'AO doit être conservé."""
-        cible = _normaliser(" ".join(filter(None, [item.titre, item.objet, item.emetteur])))
+        """Retourne True si l'AO collecté doit être conservé."""
+        return self.correspond_champs(item.titre, item.objet, item.emetteur)
+
+    def correspond_champs(
+        self,
+        titre: str | None,
+        objet: str | None = None,
+        emetteur: str | None = None,
+    ) -> bool:
+        """Cœur du filtrage, applicable à un AO collecté comme persisté."""
+        cible = _normaliser(" ".join(filter(None, [titre, objet, emetteur])))
         if not cible:
             # Pas de texte exploitable : on garde si pas d'inclusion exigée.
             return not self.inclus
@@ -97,6 +113,82 @@ def enregistrer_filtre(session: Session, filtre: FiltreVeille) -> FiltreVeille:
     session.add(entree)
     session.commit()
     return nettoye
+
+
+@dataclass(frozen=True)
+class ResultatRefiltrage:
+    """Bilan d'un re-filtrage des AO déjà présents en base."""
+
+    conserves: int = 0
+    exclus: int = 0
+    reintegres: int = 0
+
+    def en_dict(self) -> dict[str, int]:
+        return {
+            "conserves": self.conserves,
+            "exclus": self.exclus,
+            "reintegres": self.reintegres,
+        }
+
+
+# Statuts « précoces » re-filtrables : l'AO n'a pas encore fait l'objet d'une
+# décision humaine (à répondre / rejeté) ni d'une rédaction. On ne touche
+# jamais aux statuts engagés pour ne pas défaire un choix de l'utilisateur.
+_STATUTS_REFILTRABLES = (StatutAO.BRUT, StatutAO.ANALYSE)
+
+
+def refiltrer_existants(session: Session, filtre: FiltreVeille) -> ResultatRefiltrage:
+    """Réapplique le filtre métier courant aux AO déjà présents (issue #6).
+
+    - AO précoces (BRUT/ANALYSE) ne correspondant plus → `HORS_FILTRE`.
+    - AO `HORS_FILTRE` correspondant de nouveau → réintégrés (ANALYSE s'il
+      existe une analyse, sinon BRUT) pour repasser dans le pipeline.
+    - Filtre inactif (aucun mot-clé) → tous les `HORS_FILTRE` sont réintégrés.
+
+    Les statuts engagés (A_REPONDRE, EN_REDACTION, REPONDU, REJETE, EXPIRE)
+    sont laissés intacts.
+    """
+    conserves = exclus = reintegres = 0
+
+    precoces = session.exec(
+        select(AppelOffre).where(AppelOffre.statut.in_(_STATUTS_REFILTRABLES))
+    ).all()
+    for ao in precoces:
+        if filtre.actif and not filtre.correspond_champs(ao.titre, ao.objet, ao.emetteur):
+            ao.statut = StatutAO.HORS_FILTRE
+            ao.maj_le = datetime.now(UTC)
+            session.add(ao)
+            exclus += 1
+        else:
+            conserves += 1
+
+    hors_filtre = session.exec(
+        select(AppelOffre).where(AppelOffre.statut == StatutAO.HORS_FILTRE)
+    ).all()
+    for ao in hors_filtre:
+        if filtre.actif and not filtre.correspond_champs(ao.titre, ao.objet, ao.emetteur):
+            continue
+        a_analyse = session.exec(
+            select(AnalyseKrinos.id).where(AnalyseKrinos.appel_offre_id == ao.id)
+        ).first()
+        ao.statut = StatutAO.ANALYSE if a_analyse is not None else StatutAO.BRUT
+        ao.maj_le = datetime.now(UTC)
+        session.add(ao)
+        reintegres += 1
+
+    if exclus or reintegres:
+        session.add(
+            LogAgent(
+                agent="ARGOS",
+                niveau=NiveauLog.INFO,
+                message=(
+                    f"Re-filtrage des AO existants : {conserves} conservés, "
+                    f"{exclus} exclus (hors filtre), {reintegres} réintégrés"
+                ),
+            )
+        )
+    session.commit()
+    return ResultatRefiltrage(conserves=conserves, exclus=exclus, reintegres=reintegres)
 
 
 def _filtre_depuis_dict(data: object) -> FiltreVeille:

@@ -86,6 +86,10 @@ export function OnboardingWizard({ onDone }: Props) {
           sections: workflow.sections,
         });
       }
+      // Filtres persistés : on déverrouille ARGOS et on déclenche la première
+      // collecte avec les critères définitifs (issue #3). ARGOS n'a rien
+      // collecté avant cet instant.
+      await api.initialiserArgos();
       markOnboardingDone();
       onDone(profile);
     } catch (e) {

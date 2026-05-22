@@ -14,6 +14,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
 from sqlmodel import Session, select
 
+from hermes import onboarding
 from hermes.agents.argos.registry import creer_scraper, scrapers_disponibles
 from hermes.agents.argos.runner import executer_collecte
 from hermes.db.models import Portail
@@ -45,13 +46,23 @@ class ArgosScheduler:
             logger.info("ARGOS scheduler arrêté")
 
     def synchroniser_jobs(self) -> None:
-        """(Re)programme un job par portail actif dont le scraper existe."""
+        """(Re)programme un job par portail actif dont le scraper existe.
+
+        Tant que l'onboarding n'est pas validé, aucun job n'est programmé :
+        ARGOS ne doit pas collecter avant que les filtres métier soient
+        persistés (issue #3). `POST /argos/initialiser` lève ce verrou.
+        """
         if self._sched is None:
             return
 
         disponibles = set(scrapers_disponibles())
 
         with Session(get_engine()) as session:
+            if not onboarding.est_termine(session):
+                for job in self._sched.get_jobs():
+                    self._sched.remove_job(job.id)
+                logger.info("ARGOS : collectes en attente (onboarding non finalisé)")
+                return
             _creer_portails_publics_manquants(session)
             portails = session.exec(select(Portail).where(Portail.actif)).all()
 

@@ -41,6 +41,9 @@ export type AppelOffre = {
   statut: string;
   cree_le: string;
   maj_le: string;
+  // Score KRINOS pondéré ; null si l'AO n'a jamais été analysé (≠ score 0).
+  score: number | null;
+  analyse_disponible: boolean;
 };
 
 export type AppelsOffrePage = {
@@ -292,6 +295,13 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(filtre),
     }),
+  // Déverrouille ARGOS en fin d'onboarding : les collectes ne démarrent
+  // qu'après cet appel, une fois les filtres métier persistés.
+  initialiserArgos: () =>
+    fetchJson<{ message: string; refiltrage: Record<string, number> }>(
+      "/argos/initialiser",
+      { method: "POST" },
+    ),
   suggererFiltreVeille: (profil: { entreprise: string; activite: string; infos: string }) =>
     fetchJson<SuggestionMotsCles>("/argos/filtre/suggerer", {
       method: "POST",
@@ -305,6 +315,13 @@ export const api = {
     }),
   lireAnalyseKrinos: (aoId: number) =>
     fetchJson<AnalyseKrinos>(`/krinos/appels-offre/${aoId}/analyse`),
+  // Relance une analyse KRINOS complète via PYTHIA (résumé + ventilation +
+  // score). `forcer` régénère même si une analyse existe déjà.
+  analyserKrinos: (aoId: number, forcer = true) =>
+    fetchJson<{ analyse: AnalyseKrinos; nouveau: boolean }>(
+      `/krinos/appels-offre/${aoId}/analyser`,
+      { method: "POST", body: JSON.stringify({ forcer }) },
+    ),
   recalculerScoreKrinos: (aoId: number) =>
     fetchJson<AnalyseKrinos>(`/krinos/appels-offre/${aoId}/recalculer-score`, {
       method: "POST",

@@ -19,6 +19,9 @@ export type Tender = {
   budget: string;
   reference: string;
   score: number;
+  // false ou absent = AO jamais analysé par KRINOS (score à ignorer/afficher
+  // « non analysé » plutôt que 0).
+  analyzed?: boolean;
   tags: TenderTag[];
   summary: string;
   keypoints: string[];

@@ -31,6 +31,10 @@ class StatutAO(str, Enum):
     REPONDU = "repondu"
     REJETE = "rejete"
     EXPIRE = "expire"
+    # AO collecté mais ne correspondant plus aux filtres métier courants
+    # (ex. importé avant validation des filtres). Masqué par défaut, conservé
+    # pour audit ; réintégrable si les filtres changent à nouveau.
+    HORS_FILTRE = "hors_filtre"
 
 
 class StatutReponse(str, Enum):

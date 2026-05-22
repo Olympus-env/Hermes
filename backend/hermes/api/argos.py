@@ -6,11 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from hermes import onboarding
 from hermes.agents import pythia
 from hermes.agents.argos.filtre import (
     FiltreVeille,
     charger_filtre,
     enregistrer_filtre,
+    refiltrer_existants,
     suggerer_mots_cles,
 )
 from hermes.agents.argos.registry import creer_scraper, scrapers_disponibles
@@ -47,6 +49,23 @@ class FiltreVeilleIO(BaseModel):
     inclus: list[str] = Field(default_factory=list)
     exclus: list[str] = Field(default_factory=list)
     actif: bool = False
+
+
+class RefiltrageResume(BaseModel):
+    conserves: int = 0
+    exclus: int = 0
+    reintegres: int = 0
+
+
+class FiltreVeilleResponse(FiltreVeilleIO):
+    """Filtre persisté + bilan du re-filtrage des AO déjà en base."""
+
+    refiltrage: RefiltrageResume | None = None
+
+
+class InitialisationResponse(BaseModel):
+    message: str
+    refiltrage: RefiltrageResume
 
 
 class SuggestionRequest(BaseModel):
@@ -162,20 +181,45 @@ def lire_filtre(session: Session = Depends(get_session)) -> FiltreVeilleIO:
     )
 
 
-@router.put("/filtre", response_model=FiltreVeilleIO)
+@router.put("/filtre", response_model=FiltreVeilleResponse)
 def ecrire_filtre(
     payload: FiltreVeilleIO,
     session: Session = Depends(get_session),
-) -> FiltreVeilleIO:
-    """Met à jour le filtre mots-clés. Les listes sont normalisées et dédupliquées."""
+) -> FiltreVeilleResponse:
+    """Met à jour le filtre mots-clés et re-filtre les AO déjà collectés.
+
+    Les listes sont normalisées et dédupliquées. Les AO précoces ne
+    correspondant plus aux critères passent en `hors_filtre` ; ceux redevenus
+    pertinents sont réintégrés (issue #6).
+    """
     nettoye = enregistrer_filtre(
         session,
         FiltreVeille(inclus=tuple(payload.inclus), exclus=tuple(payload.exclus)),
     )
-    return FiltreVeilleIO(
+    bilan = refiltrer_existants(session, nettoye)
+    return FiltreVeilleResponse(
         inclus=list(nettoye.inclus),
         exclus=list(nettoye.exclus),
         actif=nettoye.actif,
+        refiltrage=RefiltrageResume(**bilan.en_dict()),
+    )
+
+
+@router.post("/initialiser", response_model=InitialisationResponse)
+def initialiser_argos(session: Session = Depends(get_session)) -> InitialisationResponse:
+    """Déverrouille ARGOS en fin d'onboarding et lance la première collecte.
+
+    Appelé par le wizard APRÈS la persistance des filtres : marque l'onboarding
+    terminé, re-filtre les AO éventuellement déjà présents, puis (re)synchronise
+    le scheduler — ce qui programme la première collecte avec les filtres
+    définitifs de l'utilisateur (issue #3).
+    """
+    onboarding.marquer_termine(session)
+    bilan = refiltrer_existants(session, charger_filtre(session))
+    scheduler_global.synchroniser_jobs()
+    return InitialisationResponse(
+        message="Onboarding finalisé — collectes ARGOS activées.",
+        refiltrage=RefiltrageResume(**bilan.en_dict()),
     )
 
 

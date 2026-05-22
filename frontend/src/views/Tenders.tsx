@@ -195,7 +195,7 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
                   </div>
                 </div>
                 <div className="tender-card__right">
-                  <Score value={t.score} />
+                  {t.analyzed ? <Score value={t.score} /> : <NonAnalyse />}
                   <Deadline date={t.deadline} />
                 </div>
               </article>
@@ -258,7 +258,8 @@ function mapAppelOffre(ao: AppelOffre): Tender {
     deadline: ao.date_limite ?? ao.cree_le,
     budget: formatBudget(ao.budget_estime, ao.devise),
     reference: ao.reference_externe ?? `AO-${ao.id}`,
-    score: defaultScore(ao.statut),
+    score: ao.score ?? 0,
+    analyzed: ao.analyse_disponible,
     tags,
     summary:
       ao.objet ??
@@ -289,13 +290,6 @@ function formatDate(value: string): string {
   });
 }
 
-function defaultScore(statut: string): number {
-  if (statut === "a_repondre" || statut === "en_redaction") return 75;
-  if (statut === "rejete" || statut === "expire") return 20;
-  if (statut === "analyse") return 50;
-  return 0;
-}
-
 function statutLabel(statut: string): string {
   const labels: Record<string, string> = {
     brut: "Brut",
@@ -305,8 +299,28 @@ function statutLabel(statut: string): string {
     repondu: "Répondu",
     rejete: "Rejeté",
     expire: "Expiré",
+    hors_filtre: "Hors filtre",
   };
   return labels[statut] ?? statut;
+}
+
+/** Pastille « non analysé » — distingue l'absence de score d'un score réel de 0. */
+function NonAnalyse() {
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        color: "var(--fg-3)",
+        border: "1px solid var(--line)",
+        borderRadius: 6,
+        padding: "3px 8px",
+        whiteSpace: "nowrap",
+      }}
+      title="KRINOS n'a pas encore analysé cet AO"
+    >
+      Non analysé
+    </span>
+  );
 }
 
 type PanelProps = {
@@ -323,6 +337,9 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
   const [ponderation, setPonderation] = useState<PonderationKrinos | null>(null);
   const [analyseLoading, setAnalyseLoading] = useState(true);
   const [recalculEnCours, setRecalculEnCours] = useState(false);
+  const [relanceEnCours, setRelanceEnCours] = useState(false);
+  const aAnalyse = analyse !== null || tender.analyzed === true;
+  const aDimensions = !!analyse && Object.keys(analyse.scores_dimensions).length > 0;
   const scoreAffiche = analyse?.score ?? tender.score;
 
   useEffect(() => {
@@ -431,6 +448,37 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
     }
   };
 
+  // Relance une analyse KRINOS complète (PYTHIA) : produit résumé, ventilation
+  // par dimension et score. À utiliser quand aucune analyse n'existe encore.
+  const relancerAnalyse = async () => {
+    setRelanceEnCours(true);
+    onToast({
+      title: "KRINOS",
+      app: "Analyse lancée",
+      msg: "PYTHIA analyse l'AO — résumé, ventilation et score à venir.",
+      agent: "krinos",
+    });
+    try {
+      const { analyse: next } = await api.analyserKrinos(Number(tender.id), true);
+      setAnalyse(next);
+      onToast({
+        title: "KRINOS",
+        app: "Analyse terminée",
+        msg: `Score : ${Math.round(next.score)}/100.`,
+        agent: "krinos",
+      });
+    } catch (error) {
+      onToast({
+        title: "KRINOS",
+        app: "Analyse impossible",
+        msg: error instanceof Error ? error.message : "PYTHIA est-il démarré ?",
+        agent: "krinos",
+      });
+    } finally {
+      setRelanceEnCours(false);
+    }
+  };
+
   return (
     <aside className="tender-panel">
       <div className="tender-panel__head">
@@ -446,7 +494,7 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
         </div>
         <h2 className="tender-panel__title">{tender.title}</h2>
         <div className="tender-panel__meta">
-          <Score value={Math.round(scoreAffiche)} />
+          {aAnalyse ? <Score value={Math.round(scoreAffiche)} /> : <NonAnalyse />}
           <span style={{ color: "var(--fg-4)" }}>·</span>
           <Deadline date={tender.deadline} />
           <span style={{ color: "var(--fg-4)" }}>·</span>
@@ -524,15 +572,27 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
           <Icon.refresh size={13} />
           {redigerEnCours ? "Rédaction…" : "Rédiger une réponse"}
         </button>
-        <button
-          className="btn"
-          onClick={() => void recalculerScore()}
-          disabled={recalculEnCours || !analyse || Object.keys(analyse.scores_dimensions).length === 0}
-          title="Recalcule le score avec la pondération KRINOS actuelle, sans relancer PYTHIA"
-        >
-          <Icon.refresh size={13} />
-          {recalculEnCours ? "Recalcul…" : "Recalculer score"}
-        </button>
+        {aDimensions ? (
+          <button
+            className="btn"
+            onClick={() => void recalculerScore()}
+            disabled={recalculEnCours}
+            title="Recalcule le score avec la pondération KRINOS actuelle, sans relancer PYTHIA"
+          >
+            <Icon.refresh size={13} />
+            {recalculEnCours ? "Recalcul…" : "Recalculer score"}
+          </button>
+        ) : (
+          <button
+            className="btn"
+            onClick={() => void relancerAnalyse()}
+            disabled={relanceEnCours || analyseLoading}
+            title="Lance une analyse KRINOS complète (PYTHIA) : résumé, ventilation et score"
+          >
+            <Icon.refresh size={13} />
+            {relanceEnCours ? "Analyse…" : "Lancer l'analyse"}
+          </button>
+        )}
         <button className="btn">
           <Icon.download size={13} /> Télécharger DCE
         </button>
@@ -566,8 +626,8 @@ function ScoreBreakdown({
   if (!scores || Object.keys(scores).length === 0) {
     return (
       <div style={{ color: "var(--fg-3)", fontSize: 12, lineHeight: 1.5 }}>
-        Aucune ventilation disponible. Relance l'analyse KRINOS pour produire les scores
-        par dimension.
+        Aucune ventilation disponible. Utilise le bouton « Lancer l'analyse » ci-dessous
+        pour que KRINOS produise les scores par dimension.
       </div>
     );
   }
