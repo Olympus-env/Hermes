@@ -94,6 +94,21 @@ def test_progression_echec_si_pythia_down(monkeypatch):
     assert etat.erreur is not None
 
 
+def test_purge_des_entrees_terminees_anciennes():
+    import time
+
+    progression._etats.clear()
+    # Entrée terminée « ancienne » (au-delà de la rétention).
+    vieille = progression.EtatProgression(appel_offre_id=4242, termine=True)
+    vieille.maj = time.time() - (progression._RETENTION_TERMINES_S + 10)
+    progression._etats[4242] = vieille
+
+    progression.demarrer(7)  # déclenche la purge
+
+    assert 4242 not in progression._etats
+    assert 7 in progression._etats
+
+
 def test_endpoint_progression_inconnue():
     from fastapi.testclient import TestClient
 

@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
-from hermes import __version__
+from hermes import __version__, onboarding
 from hermes.agents.argos.scheduler import scheduler_global
 from hermes.api import (
     appels_offre,
@@ -37,6 +37,7 @@ from hermes.db.session import get_engine, init_db
 async def lifespan(_app: FastAPI):
     settings.ensure_dirs()
     init_db()
+    _migrer_onboarding()
     # Marqueur de session uniquement en runtime réel (pas en debug/tests/reload) :
     # garantit qu'au lancement sur le poste utilisateur le journal reçoit une
     # entrée datée de la session réelle et expose la BDD résolue (issue #8).
@@ -45,6 +46,16 @@ async def lifespan(_app: FastAPI):
         scheduler_global.demarrer()
     yield
     scheduler_global.arreter()
+
+
+def _migrer_onboarding() -> None:
+    """Auto-répare le verrou d'onboarding pour les installs antérieures à 1.0.1.
+
+    Sans ça, une mise à jour ferait croire que l'onboarding n'a jamais eu lieu
+    et stopperait les collectes ARGOS.
+    """
+    with Session(get_engine()) as session:
+        onboarding.backfill_si_deja_utilise(session)
 
 
 def _journaliser_demarrage() -> None:

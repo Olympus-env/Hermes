@@ -64,9 +64,40 @@ class EtatProgression:
 _etats: dict[int, EtatProgression] = {}
 _verrou = Lock()
 
+# Garde-fous mémoire : le registre est volatil mais ne doit pas croître sans
+# fin sur une session longue (une entrée par AO rédigé).
+_RETENTION_TERMINES_S = 3600.0  # purge les rédactions finies depuis > 1 h
+_MAX_ENTREES = 200
+
+
+def _purger(maintenant: float) -> None:
+    """Retire les entrées terminées anciennes ; plafonne la taille totale.
+
+    Appelé sous `_verrou`. Ne touche jamais une rédaction en cours.
+    """
+    expirees = [
+        ao_id
+        for ao_id, etat in _etats.items()
+        if etat.termine and (maintenant - etat.maj) > _RETENTION_TERMINES_S
+    ]
+    for ao_id in expirees:
+        del _etats[ao_id]
+
+    if len(_etats) <= _MAX_ENTREES:
+        return
+    # Au-delà du plafond, on sacrifie les plus anciennes parmi les terminées.
+    terminees = sorted(
+        (e for e in _etats.values() if e.termine), key=lambda e: e.maj
+    )
+    for etat in terminees:
+        if len(_etats) <= _MAX_ENTREES:
+            break
+        _etats.pop(etat.appel_offre_id, None)
+
 
 def demarrer(ao_id: int) -> None:
     with _verrou:
+        _purger(time.time())
         _etats[ao_id] = EtatProgression(appel_offre_id=ao_id)
 
 

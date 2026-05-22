@@ -12,17 +12,39 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from hermes.db.models import Parametre
+from hermes.db.models import AppelOffre, Parametre
 
 CLE_PARAMETRE = "app.onboarding.termine"
+# Le filtre est écrit par le wizard à la toute fin de l'onboarding.
+_CLE_FILTRE = "argos.filtre.mots_cles"
 
 
 def est_termine(session: Session) -> bool:
     """Vrai si l'onboarding a été finalisé au moins une fois."""
     entree = session.get(Parametre, CLE_PARAMETRE)
     return bool(entree and entree.valeur == "true")
+
+
+def backfill_si_deja_utilise(session: Session) -> bool:
+    """Marque l'onboarding terminé pour une install déjà en service.
+
+    Migration : avant la v1.0.1, l'onboarding n'était tracé qu'en localStorage
+    (frontend). Sans ce backfill, une mise à jour ferait croire au backend que
+    l'onboarding n'a jamais eu lieu → le verrou stopperait ARGOS (régression).
+
+    Heuristique : si un filtre a déjà été enregistré ou si des AO existent en
+    base, l'app a forcément dépassé l'onboarding. Idempotent.
+    """
+    if est_termine(session):
+        return False
+    filtre_present = session.get(Parametre, _CLE_FILTRE) is not None
+    a_des_ao = session.exec(select(AppelOffre.id).limit(1)).first() is not None
+    if filtre_present or a_des_ao:
+        marquer_termine(session)
+        return True
+    return False
 
 
 def marquer_termine(session: Session) -> None:

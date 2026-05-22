@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from hermes import onboarding
-from hermes.agents.argos.filtre import FiltreVeille, refiltrer_existants
+from hermes.agents.argos.filtre import FiltreVeille, enregistrer_filtre, refiltrer_existants
 from hermes.db.models import AnalyseKrinos, AppelOffre, StatutAO
 from hermes.db.session import get_engine
 
@@ -122,6 +122,31 @@ def test_put_filtre_refiltre_les_existants():
     with Session(get_engine()) as session:
         statuts = session.exec(select(AppelOffre.statut)).all()
         assert StatutAO.HORS_FILTRE in statuts
+
+
+# --------------------------------------------------------------------------- #
+# Migration : backfill du verrou onboarding (install antérieure à 1.0.1)
+# --------------------------------------------------------------------------- #
+
+
+def test_backfill_neutre_sur_install_vierge():
+    with Session(get_engine()) as session:
+        assert onboarding.backfill_si_deja_utilise(session) is False
+        assert onboarding.est_termine(session) is False
+
+
+def test_backfill_active_si_filtre_deja_enregistre():
+    with Session(get_engine()) as session:
+        enregistrer_filtre(session, FiltreVeille(inclus=("java",)))
+        assert onboarding.backfill_si_deja_utilise(session) is True
+        assert onboarding.est_termine(session) is True
+
+
+def test_backfill_active_si_des_ao_existent():
+    with Session(get_engine()) as session:
+        _ao(session, "AO préexistant")
+        assert onboarding.backfill_si_deja_utilise(session) is True
+        assert onboarding.est_termine(session) is True
 
 
 # --------------------------------------------------------------------------- #
