@@ -84,6 +84,29 @@ New-Item -ItemType Directory -Path $Staging -Force | Out-Null
 Copy-Item $HermesExe -Destination (Join-Path $Staging "hermes.exe") -Force
 Copy-Item $BackendDir -Destination (Join-Path $Staging "backend") -Recurse -Force
 
+# Hygiène : ne JAMAIS embarquer d'artefacts runtime (BDD, logs, clé maître)
+# qui auraient pu être créés si backend.exe a été lancé depuis le dossier de
+# build (chemins relatifs au CWD). Sinon l'installeur expédierait une BDD de
+# dev — journal pollué de logs anciens chez l'utilisateur (issue #8).
+$StagingBackend = Join-Path $Staging "backend"
+$ArtefactsRuntime = @(
+    (Join-Path $StagingBackend "data"),
+    (Join-Path $StagingBackend "logs"),
+    (Join-Path $StagingBackend "storage"),
+    (Join-Path $StagingBackend "master.key")
+)
+foreach ($a in $ArtefactsRuntime) {
+    if (Test-Path $a) {
+        Write-Host "  Purge artefact runtime du staging : $a" -ForegroundColor DarkYellow
+        Remove-Item $a -Recurse -Force
+    }
+}
+Get-ChildItem -Path $StagingBackend -Recurse -File -Include "*.db", "*.db-wal", "*.db-shm" |
+    ForEach-Object {
+        Write-Host "  Purge base SQLite du staging : $($_.FullName)" -ForegroundColor DarkYellow
+        Remove-Item $_.FullName -Force
+    }
+
 # Icone — réutilise celle de Tauri si disponible
 $TauriIcon = Join-Path $Frontend "src-tauri\icons\icon.ico"
 if (Test-Path $TauriIcon) {

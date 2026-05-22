@@ -1423,6 +1423,11 @@ button { font-family: inherit; cursor: pointer; }
 }
 .profile-modal__body {
   padding: 24px 28px 8px;
+  /* Corps scrollable : head + foot restent visibles même quand le contenu
+     dépasse (ex. étape 4 onboarding qui ajoute beaucoup de sections). */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .profile-modal__avatar {
   width: 58px;
