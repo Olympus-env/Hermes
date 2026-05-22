@@ -32,6 +32,11 @@ async def executer_collecte(
     portail = _portail_ou_creer(session, scraper)
     _injecter_credentials(scraper, portail)
 
+    # Charge le filtre une fois : poussé au scraper (filtrage côté API quand le
+    # portail le supporte) puis réutilisé pour le garde-fou client ci-dessous.
+    filtre = charger_filtre(session)
+    _injecter_filtre(scraper, filtre)
+
     try:
         items = await scraper.collecter(limite=limite)
     except Exception as exc:  # noqa: BLE001
@@ -53,8 +58,6 @@ async def executer_collecte(
 
     resultat.items = items
     resultat.ao_trouves = len(items)
-
-    filtre = charger_filtre(session)
 
     for item in items:
         if filtre.actif and not filtre.correspond(item):
@@ -115,6 +118,18 @@ def _injecter_credentials(scraper: Scraper, portail: Portail) -> None:
         logger.exception(f"Credentials ARGOS invalides pour le portail {portail.nom}")
         raise
     scraper.credentials = credentials or {}
+
+
+def _injecter_filtre(scraper: Scraper, filtre) -> None:
+    """Pousse les mots-clés au scraper pour un filtrage côté API si supporté.
+
+    Best-effort : un scraper qui n'expose pas ces attributs (factices de test,
+    portails sans API filtrable) les ignore simplement.
+    """
+    if hasattr(scraper, "filtre_inclus"):
+        scraper.filtre_inclus = tuple(filtre.inclus)
+    if hasattr(scraper, "filtre_exclus"):
+        scraper.filtre_exclus = tuple(filtre.exclus)
 
 
 def _existe(session: Session, portail_id: int | None, item: AOCollecte) -> bool:

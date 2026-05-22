@@ -90,4 +90,4 @@ def test_crud_portail():
         rec = s.exec(select(Portail).where(Portail.nom == "BOAMP-test")).first()
         assert rec is not None
         assert rec.actif is True
-        assert rec.frequence_minutes == 360
+        assert rec.frequence_minutes == 720  # 2 collectes/jour par défaut

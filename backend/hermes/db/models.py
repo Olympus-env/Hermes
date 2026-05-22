@@ -89,7 +89,7 @@ class Portail(SQLModel, table=True):
         default=None, sa_column=Column(LargeBinary)
     )
 
-    frequence_minutes: int = Field(default=360)  # 6h par défaut
+    frequence_minutes: int = Field(default=720)  # 12h → 2 collectes/jour
     derniere_collecte: Optional[datetime] = None
 
     cree_le: datetime = Field(default_factory=_utcnow)

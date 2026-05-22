@@ -11,6 +11,21 @@ type Props = {
   onDone: (profile: UserProfile) => void;
 };
 
+// Préset métier par défaut (déploiement mono-utilisateur : commercial
+// LinkMobility — CPaaS / messagerie mobile). Éditable à l'onboarding et dans
+// Paramètres. Centralisé ici pour être ajusté facilement si la cible change.
+const PRESET_INCLUS =
+  "SMS, SMS A2P, campagne SMS, envoi de SMS, RCS, messagerie mobile, " +
+  "WhatsApp Business, messagerie instantanée, notification SMS, notifications, " +
+  "alerte SMS, système d'alerte, communication multicanale, omnicanal, CPaaS, " +
+  "plateforme de communication, engagement client, relation citoyen, OTP, " +
+  "authentification forte, rappel de rendez-vous, diffusion de messages, envoi en masse";
+
+const PRESET_EXCLUS =
+  "téléphonie fixe, standard téléphonique, PABX, IPBX, fibre optique, câblage, " +
+  "infrastructure réseau, flotte mobile, téléphones mobiles, matériel informatique, " +
+  "nettoyage, espaces verts, restauration, travaux, voirie";
+
 function parseMotsCles(value: string): string[] {
   return value
     .split(/[,\n]/)
@@ -45,9 +60,9 @@ export function OnboardingWizard({ onDone }: Props) {
   const [activite, setActivite] = useState("");
   const [infosUtiles, setInfosUtiles] = useState("");
 
-  // Étape 3
-  const [inclus, setInclus] = useState("");
-  const [exclus, setExclus] = useState("");
+  // Étape 3 — pré-remplie avec le préset métier (éditable).
+  const [inclus, setInclus] = useState(PRESET_INCLUS);
+  const [exclus, setExclus] = useState(PRESET_EXCLUS);
 
   // Étape 4
   const [workflow, setWorkflow] = useState<WorkflowDraft>({

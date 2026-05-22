@@ -43,25 +43,87 @@ class BoampScraper(Scraper):
 
     def __init__(self, timeout: float = 30.0):
         self._timeout = timeout
+        # Injectés par le runner avant collecte (même pattern que credentials) :
+        # mots-clés métier poussés à l'API pour filtrer dans tout le corpus,
+        # plutôt que de ne récupérer que les derniers avis (sinon une cible
+        # étroite — ex. SMS/RCS — donne une veille quasi vide).
+        self.filtre_inclus: tuple[str, ...] = ()
+        self.filtre_exclus: tuple[str, ...] = ()
 
     async def collecter(self, limite: int = 20) -> list[AOCollecte]:
-        # L'API Opendatasoft plafonne à 100 records par requête.
-        limite_api = min(limite, 100)
-        params = {
+        where = _construire_where(self.filtre_inclus, self.filtre_exclus)
+        # Avec un filtre serveur, on élargit la fenêtre : les avis pertinents
+        # sont rares et dispersés dans le corpus. Sans filtre, on garde le
+        # comportement « derniers avis ».
+        limite_api = min(100 if where else limite, 100)
+
+        records = await self._requeter(limite_api, where)
+        if records is None and where is not None:
+            # Requête filtrée rejetée par l'API (ODSQL invalide, champ, etc.) :
+            # repli sûr sur une collecte non filtrée — le runner re-filtrera
+            # côté client. On ne perd jamais un cycle à cause du filtre.
+            records = await self._requeter(min(limite, 100), None)
+
+        records = records or []
+        return [_record_vers_ao(rec) for rec in records if _est_valide(rec)]
+
+    async def _requeter(
+        self, limite_api: int, where: str | None
+    ) -> list[dict[str, Any]] | None:
+        """Exécute une requête Opendatasoft. Renvoie None en cas d'échec HTTP."""
+        params: dict[str, Any] = {
             "limit": limite_api,
             "order_by": "dateparution desc",
         }
-        async with httpx.AsyncClient(
-            timeout=self._timeout,
-            headers={"User-Agent": _UA, "Accept": "application/json"},
-            follow_redirects=True,
-        ) as client:
-            r = await client.get(API_URL, params=params)
-            r.raise_for_status()
-            data = r.json()
+        if where:
+            params["where"] = where
+        try:
+            async with httpx.AsyncClient(
+                timeout=self._timeout,
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                follow_redirects=True,
+            ) as client:
+                r = await client.get(API_URL, params=params)
+                r.raise_for_status()
+                data = r.json()
+        except httpx.HTTPError:
+            return None
+        return data.get("results", [])
 
-        records = data.get("results", [])
-        return [_record_vers_ao(rec) for rec in records if _est_valide(rec)]
+
+# --------------------------------------------------------------------------- #
+# Construction de la requête serveur (ODSQL Opendatasoft)
+# --------------------------------------------------------------------------- #
+
+
+def _construire_where(
+    inclus: tuple[str, ...], exclus: tuple[str, ...]
+) -> str | None:
+    """Construit une clause ODSQL `where` full-text à partir des mots-clés.
+
+    Forme : ("kw1" OR "kw2" …) AND NOT ("ex1" OR "ex2" …)
+
+    Les chaînes nues sont interprétées par Opendatasoft comme une recherche
+    plein-texte sur l'enregistrement. Renvoie None si aucun mot-clé inclus
+    (auquel cas on garde la collecte des derniers avis).
+    """
+    inc = [_echapper(k) for k in inclus if _echapper(k)]
+    if not inc:
+        return None
+    clause = "(" + " OR ".join(f'"{k}"' for k in inc) + ")"
+
+    exc = [_echapper(k) for k in exclus if _echapper(k)]
+    if exc:
+        clause += " AND NOT (" + " OR ".join(f'"{k}"' for k in exc) + ")"
+    return clause
+
+
+def _echapper(terme: str | None) -> str:
+    """Nettoie un mot-clé pour l'insérer entre guillemets dans une clause ODSQL."""
+    if not terme:
+        return ""
+    # On retire les guillemets pour ne pas casser la chaîne ODSQL.
+    return terme.replace('"', "").strip()
 
 
 # --------------------------------------------------------------------------- #
