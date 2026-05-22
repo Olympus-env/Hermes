@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-backend"
-version = "1.0.0"
+version = "1.0.1"
 description = "Backend FastAPI de l'application HERMES (veille AO locale)."
 requires-python = ">=3.11"
 

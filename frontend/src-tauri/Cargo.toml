@@ -1,6 +1,6 @@
 [package]
 name = "hermes"
-version = "1.0.0"
+version = "1.0.1"
 description = "HERMES — application desktop locale de veille et réponse aux appels d'offre."
 edition = "2021"
 rust-version = "1.77"
