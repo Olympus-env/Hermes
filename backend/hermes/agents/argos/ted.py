@@ -20,10 +20,11 @@ Swagger (interface JS non introspectable hors ligne). Le parseur est donc
 trois formes multilingues (chaîne / liste / objet indexé par code langue),
 en privilégiant le français. Même philosophie que le parseur BOAMP.
 
-Conséquence : seuls les champs eForms les plus stables sont demandés. La
-date limite de réponse (nom de champ eForms variable selon le type d'avis)
-n'est pas demandée pour éviter un rejet 400 ; elle restera ``None`` côté
-AO — le pipeline KRINOS/HERMION fonctionne sans (analyse sur métadonnées).
+Filtrage serveur : les mots-clés métier inclus sont poussés via
+``notice-title ~ "terme"`` (précis, validé en live ; ``FT~`` est trop large),
+avec **repli** automatique sur la query « France seule » si l'API rejette la
+requête filtrée. La date limite de réponse est extraite du champ
+``deadline-receipt-tender-date-lot`` (le seul validé sans 400).
 """
 
 from __future__ import annotations
@@ -46,16 +47,23 @@ API_URL = "https://api.ted.europa.eu/v3/notices/search"
 # Langues préférées pour résoudre un champ multilingue eForms.
 _LANGUES_PREFEREES = ("fra", "fr", "FRA", "FR", "eng", "en", "ENG", "EN")
 
-# Champs eForms demandés (volontairement conservateur — voir docstring).
+# Champs eForms demandés. `deadline-receipt-tender-date-lot` est le champ de
+# date limite *validé en live* (le plus stable) : `deadline-receipt-tender`
+# provoque des 400 selon le type d'avis. Il revient en liste (un élément par
+# lot), parsé défensivement côté `_date_limite`.
 _FIELDS = [
     "publication-number",
     "notice-title",
     "publication-date",
+    "deadline-receipt-tender-date-lot",
     "buyer-name",
     "place-of-performance",
     "classification-cpv",
     "links",
 ]
+
+# Tri appliqué à toutes les requêtes (fait partie de la query expert eForms).
+_TRI = "SORT BY publication-date DESC"
 
 
 class TedScraper(Scraper):
@@ -66,20 +74,44 @@ class TedScraper(Scraper):
 
     def __init__(self, timeout: float = 30.0):
         self._timeout = timeout
+        # Injectés par le runner avant collecte (même pattern que BOAMP). Les
+        # mots-clés inclus sont poussés à l'API via `notice-title ~ "terme"`
+        # (précis — validé en live, contrairement à `FT~` trop large). Les
+        # exclus restent au filtre client (runner) : la négation eForms n'a pas
+        # été validée, et le garde-fou client re-trie déjà sur le titre.
+        self.filtre_inclus: tuple[str, ...] = ()
+        self.filtre_exclus: tuple[str, ...] = ()
 
     async def collecter(self, limite: int = 20) -> list[AOCollecte]:
+        query = _construire_query(self.filtre_inclus)
+        try:
+            notices = await self._requeter(query, limite)
+        except httpx.HTTPError:
+            # Sans filtre, un échec est une vraie panne : on laisse remonter au
+            # runner pour journalisation. Avec filtre, on tente le repli.
+            if not self.filtre_inclus:
+                raise
+            notices = None
+
+        if notices is None:
+            # Requête filtrée rejetée (query eForms invalide, champ…) : repli sûr
+            # sur la query « France seule ». Le runner re-filtrera côté client.
+            # Un échec ici lève → journalisé par le runner.
+            notices = await self._requeter(_construire_query(()), limite)
+
+        return [_notice_vers_ao(n) for n in notices if _est_valide(n)]
+
+    async def _requeter(self, query: str, limite: int) -> list[dict[str, Any]]:
+        """Exécute une requête TED (avec retry/backoff). Lève sur échec HTTP."""
         payload = {
-            # Lieu d'exécution = France, plus récents d'abord.
-            "query": (
-                "place-of-performance IN (FRA) "
-                "SORT BY publication-date DESC"
-            ),
+            "query": query,
             "fields": _FIELDS,
             "limit": min(max(1, limite), 100),
             "scope": "ACTIVE",
             "paginationMode": "PAGE_NUMBER",
             "page": 1,
         }
+
         async def envoyer() -> httpx.Response:
             async with httpx.AsyncClient(
                 timeout=self._timeout,
@@ -95,9 +127,34 @@ class TedScraper(Scraper):
         r = await requeter_avec_retry(envoyer, nom="TED")
         r.raise_for_status()
         data = r.json()
+        return data.get("notices") or data.get("results") or []
 
-        notices = data.get("notices") or data.get("results") or []
-        return [_notice_vers_ao(n) for n in notices if _est_valide(n)]
+
+# --------------------------------------------------------------------------- #
+# Construction de la query serveur (langage expert eForms)
+# --------------------------------------------------------------------------- #
+
+
+def _construire_query(inclus: tuple[str, ...]) -> str:
+    """Construit la query eForms : France + mots-clés inclus sur le titre.
+
+    Forme : ``(place-of-performance IN (FRA)) AND (notice-title ~ "kw1" OR …)``
+    suivie du tri. Sans mot-clé inclus → query « France seule » (comportement
+    historique).
+    """
+    base = "place-of-performance IN (FRA)"
+    termes = [_echapper(k) for k in inclus if _echapper(k)]
+    if termes:
+        ors = " OR ".join(f'notice-title ~ "{t}"' for t in termes)
+        base = f"({base}) AND ({ors})"
+    return f"{base} {_TRI}"
+
+
+def _echapper(terme: str | None) -> str:
+    """Nettoie un mot-clé pour l'insérer entre guillemets dans une query eForms."""
+    if not terme:
+        return ""
+    return terme.replace('"', "").strip()
 
 
 # --------------------------------------------------------------------------- #
@@ -129,7 +186,7 @@ def _notice_vers_ao(notice: dict[str, Any]) -> AOCollecte:
         emetteur=emetteur,
         objet=(_texte_multi(notice.get("notice-title")) or "")[:1000] or None,
         date_publication=_parse_date(notice.get("publication-date")),
-        date_limite=None,  # cf. docstring : champ eForms non demandé
+        date_limite=_date_limite(notice.get("deadline-receipt-tender-date-lot")),
         type_marche=_texte_multi(notice.get("notice-type")),
         zone_geographique=_zone(notice.get("place-of-performance")),
         code_naf=_premier(notice.get("classification-cpv")),
@@ -231,3 +288,17 @@ def _parse_date(valeur: Any) -> datetime | None:
         except (ValueError, TypeError):
             continue
     return None
+
+
+def _date_limite(valeur: Any) -> datetime | None:
+    """Extrait la date limite de réponse de `deadline-receipt-tender-date-lot`.
+
+    Le champ revient en liste (un élément par lot), chaque valeur au format
+    ``2026-06-30+02:00`` (parfois une simple date). On retient la **plus
+    tardive** : un AO multi-lots reste ouvert tant qu'un lot accepte des
+    offres — l'expiration automatique ne doit pas le masquer prématurément.
+    Parsing défensif : toute valeur illisible est ignorée.
+    """
+    valeurs = valeur if isinstance(valeur, list) else [valeur]
+    dates = [d for d in (_parse_date(v) for v in valeurs) if d is not None]
+    return max(dates) if dates else None

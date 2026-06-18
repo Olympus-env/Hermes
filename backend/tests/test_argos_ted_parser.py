@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+
+import httpx
+
+from hermes.agents.argos import ted
 from hermes.agents.argos.ted import (
+    TedScraper,
+    _construire_query,
+    _date_limite,
     _est_valide,
     _notice_vers_ao,
     _parse_date,
@@ -72,7 +80,8 @@ def test_dates_parsees():
     assert ao.date_publication is not None
     assert ao.date_publication.year == 2026
     assert ao.date_publication.month == 5
-    # eForms ne fournit pas de date limite fiable ⇒ None assumé.
+    # Ce snapshot ne porte pas le champ deadline ⇒ date_limite None (le parsing
+    # du champ deadline est couvert par les tests dédiés plus bas).
     assert ao.date_limite is None
 
 
@@ -108,3 +117,129 @@ def test_titre_tronque_si_long():
     notice = {"publication-number": "x", "notice-title": "A" * 800}
     ao = _notice_vers_ao(notice)
     assert len(ao.titre) <= 500
+
+
+# --------------------------------------------------------------------------- #
+# Filtrage serveur (query eForms) + date limite
+# --------------------------------------------------------------------------- #
+
+
+def test_query_france_seule_sans_filtre():
+    assert _construire_query(()) == (
+        "place-of-performance IN (FRA) SORT BY publication-date DESC"
+    )
+
+
+def test_query_inclus_pousses_sur_notice_title():
+    q = _construire_query(("SMS", "RCS"))
+    assert q == (
+        '(place-of-performance IN (FRA)) AND '
+        '(notice-title ~ "SMS" OR notice-title ~ "RCS") '
+        "SORT BY publication-date DESC"
+    )
+
+
+def test_query_echappe_les_guillemets():
+    q = _construire_query(('SMS "premium"',))
+    # Les guillemets internes sont retirés : pas de guillemet orphelin.
+    assert 'notice-title ~ "SMS premium"' in q
+
+
+def test_date_limite_liste_retient_la_plus_tardive():
+    d = _date_limite(["2026-06-30+02:00", "2026-07-15+02:00"])
+    assert d is not None
+    assert d.year == 2026 and d.month == 7 and d.day == 15
+
+
+def test_date_limite_valeur_simple_et_vide():
+    assert _date_limite("2026-06-30+02:00") is not None
+    assert _date_limite([]) is None
+    assert _date_limite(None) is None
+    assert _date_limite(["pas-une-date"]) is None
+
+
+def test_notice_vers_ao_extrait_la_date_limite():
+    notice = {
+        "publication-number": "555-2026",
+        "notice-title": "Marché SMS",
+        "deadline-receipt-tender-date-lot": ["2026-06-30+02:00"],
+    }
+    ao = _notice_vers_ao(notice)
+    assert ao.date_limite is not None
+    assert ao.date_limite.month == 6
+
+
+class _Resp:
+    # status_code inspecté par le helper réseau (retry/backoff) avant rendu.
+    status_code = 200
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+def _notice(titre="Marché d'envoi de SMS"):
+    return {"publication-number": "1-2026", "notice-title": titre}
+
+
+class _ClientRejetteFiltre:
+    """Simule une API qui REJETTE la query filtrée mais accepte la query nue."""
+
+    def __init__(self, *_a, **_k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_a):
+        return None
+
+    async def post(self, _url, json=None):
+        query = (json or {}).get("query", "")
+        if "notice-title ~" in query:
+            raise httpx.HTTPError("400 — query filtrée rejetée")
+        return _Resp({"notices": [_notice()]})
+
+
+def test_collecte_filtree_replie_sur_france_seule(monkeypatch):
+    monkeypatch.setattr(ted.httpx, "AsyncClient", _ClientRejetteFiltre)
+    scraper = TedScraper()
+    scraper.filtre_inclus = ("SMS", "RCS")
+
+    items = asyncio.run(scraper.collecter(limite=20))
+
+    assert len(items) == 1
+    assert "SMS" in items[0].titre
+
+
+class _ClientCapture:
+    captured: dict = {}
+
+    def __init__(self, *_a, **_k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_a):
+        return None
+
+    async def post(self, _url, json=None):
+        type(self).captured = dict(json or {})
+        return _Resp({"notices": [_notice()]})
+
+
+def test_collecte_avec_filtre_envoie_la_query_titre(monkeypatch):
+    monkeypatch.setattr(ted.httpx, "AsyncClient", _ClientCapture)
+    scraper = TedScraper()
+    scraper.filtre_inclus = ("SMS",)
+
+    asyncio.run(scraper.collecter(limite=20))
+
+    assert 'notice-title ~ "SMS"' in _ClientCapture.captured.get("query", "")
+    assert "deadline-receipt-tender-date-lot" in _ClientCapture.captured.get("fields", [])
