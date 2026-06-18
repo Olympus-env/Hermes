@@ -133,6 +133,54 @@ def enregistrer_config(
 
 
 # --------------------------------------------------------------------------- #
+# Expiration automatique
+# --------------------------------------------------------------------------- #
+
+# Statuts périmables : AO sans réponse rédigée. On ne touche jamais aux statuts
+# portant un travail ou une décision (EN_REDACTION a une réponse en cours,
+# REPONDU/REJETE sont finaux ; HORS_FILTRE est déjà écarté).
+_STATUTS_EXPIRABLES = (StatutAO.BRUT, StatutAO.ANALYSE, StatutAO.A_REPONDRE)
+
+
+def expirer_ao_depasses(
+    session: Session, *, maintenant: datetime | None = None
+) -> int:
+    """Passe en `EXPIRE` les AO périmables dont la date limite est dépassée.
+
+    Comparaison au **jour** : un AO reste actif tout le jour de sa date limite
+    (beaucoup d'échéances n'ont que la date, à minuit) — on n'expire qu'à partir
+    du lendemain. Renvoie le nombre d'AO expirés.
+    """
+    maintenant = maintenant or datetime.now(UTC)
+    seuil = maintenant.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    candidats = session.exec(
+        select(AppelOffre).where(AppelOffre.statut.in_(_STATUTS_EXPIRABLES))
+    ).all()
+
+    expires = 0
+    for ao in candidats:
+        limite = ao.date_limite
+        if limite is None:
+            continue
+        if limite.tzinfo is None:
+            limite = limite.replace(tzinfo=UTC)
+        if limite < seuil:
+            ao.statut = StatutAO.EXPIRE
+            ao.maj_le = maintenant
+            session.add(ao)
+            expires += 1
+
+    if expires:
+        _journaliser(
+            session,
+            niveau=NiveauLog.INFO,
+            message=f"Expiration automatique : {expires} AO périmés passés en EXPIRE",
+        )
+    return expires
+
+
+# --------------------------------------------------------------------------- #
 # Pipeline
 # --------------------------------------------------------------------------- #
 
@@ -146,6 +194,11 @@ async def traiter_pipeline(
     document illisible…) n'interrompt pas le cycle et laisse l'AO récupérable
     au prochain passage. Aucune exception n'est propagée.
     """
+    # Maintenance systématique : on périme les AO dont la date limite est
+    # passée, indépendamment de l'autonomie (un AO expiré ne doit ni être
+    # analysé ni rédigé). Exécuté en tête, avant le court-circuit `cfg.actif`.
+    expirer_ao_depasses(session)
+
     cfg = charger_config(session)
     rapport = RapportOrchestration(actif=cfg.actif)
     if not cfg.actif:

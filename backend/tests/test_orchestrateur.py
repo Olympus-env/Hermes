@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -230,6 +231,94 @@ def test_pipeline_resiste_a_echec_analyse(monkeypatch):
     with Session(get_engine()) as s:
         # AO laissé en BRUT → reprenable au prochain cycle.
         assert s.get(AppelOffre, ao_id).statut == StatutAO.BRUT
+
+
+# --------------------------------------------------------------------------- #
+# Expiration automatique
+# --------------------------------------------------------------------------- #
+
+_REF = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)  # « maintenant » de référence
+
+
+def _ao(session: Session, statut: StatutAO, date_limite: datetime | None) -> int:
+    ao = AppelOffre(
+        titre=f"AO {statut.value}",
+        url_source=f"https://example.test/{statut.value}-{date_limite}",
+        statut=statut,
+        date_limite=date_limite,
+    )
+    session.add(ao)
+    session.commit()
+    session.refresh(ao)
+    return ao.id  # type: ignore[return-value]
+
+
+def test_expire_les_ao_perimables_depasses():
+    init_db()
+    hier = _REF - timedelta(days=1)
+    with Session(get_engine()) as s:
+        ids = {
+            st: _ao(s, st, hier)
+            for st in (StatutAO.BRUT, StatutAO.ANALYSE, StatutAO.A_REPONDRE)
+        }
+
+    with Session(get_engine()) as s:
+        n = orch.expirer_ao_depasses(s, maintenant=_REF)
+    assert n == 3
+
+    with Session(get_engine()) as s:
+        for ao_id in ids.values():
+            assert s.get(AppelOffre, ao_id).statut == StatutAO.EXPIRE
+
+
+def test_preserve_les_statuts_engages_et_finaux():
+    init_db()
+    hier = _REF - timedelta(days=1)
+    with Session(get_engine()) as s:
+        ids = {
+            st: _ao(s, st, hier)
+            for st in (StatutAO.EN_REDACTION, StatutAO.REPONDU, StatutAO.REJETE)
+        }
+
+    with Session(get_engine()) as s:
+        assert orch.expirer_ao_depasses(s, maintenant=_REF) == 0
+
+    with Session(get_engine()) as s:
+        for st, ao_id in ids.items():
+            assert s.get(AppelOffre, ao_id).statut == st
+
+
+def test_actif_le_jour_meme_et_sans_date_limite():
+    init_db()
+    with Session(get_engine()) as s:
+        aujourdhui = _ao(s, StatutAO.BRUT, _REF.replace(hour=0, minute=0))
+        futur = _ao(s, StatutAO.BRUT, _REF + timedelta(days=3))
+        sans_date = _ao(s, StatutAO.BRUT, None)
+
+    with Session(get_engine()) as s:
+        assert orch.expirer_ao_depasses(s, maintenant=_REF) == 0
+
+    with Session(get_engine()) as s:
+        for ao_id in (aujourdhui, futur, sans_date):
+            assert s.get(AppelOffre, ao_id).statut == StatutAO.BRUT
+
+
+def test_pipeline_expire_meme_si_inactif():
+    init_db()
+    # `traiter_pipeline` utilise le vrai `now()` : date limite franchement
+    # ancienne pour rester déterministe quelle que soit l'horloge.
+    ancienne = datetime(2020, 1, 1, tzinfo=UTC)
+    with Session(get_engine()) as s:
+        ao_id = _ao(s, StatutAO.BRUT, ancienne)
+        orch.enregistrer_config(s, orch.ConfigOrchestration(actif=False))
+
+    with Session(get_engine()) as s:
+        rapport = asyncio.run(orch.traiter_pipeline(s))
+    assert rapport.actif is False
+
+    with Session(get_engine()) as s:
+        # L'expiration tourne même autonomie coupée.
+        assert s.get(AppelOffre, ao_id).statut == StatutAO.EXPIRE
 
 
 # --------------------------------------------------------------------------- #
