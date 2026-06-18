@@ -325,38 +325,25 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
 
 ---
 
-## 🔜 Travaux en cours — amélioration du scraping (prochaine session)
+## Amélioration du scraping — livré
 
 Veille recalibrée pour un usage **mono-utilisateur ciblé** (commercial
-LinkMobility : SMS / RCS / CPaaS / notifications). Suite à reprendre.
+LinkMobility : SMS / RCS / CPaaS / notifications).
 
-### Déjà livré
-- **Filtrage BOAMP côté serveur** : les mots-clés métier sont poussés en clause
-  ODSQL `search(objet, "terme")` (ciblé sur le champ `objet`) → recherche dans
-  tout le corpus, plus seulement les derniers avis. **Ne pas** repasser au
-  full-text nu : « RCS » y matche « Registre du Commerce » → 7425 faux positifs.
-  Repli automatique sur collecte non filtrée si l'API rejette la requête.
-- **Préset de mots-clés LinkMobility** par défaut à l'onboarding (éditable).
-- **Cadence 2 collectes/jour** (`frequence_minutes = 720`).
-
-### Reste à faire (ordre suggéré)
-1. **Retry/backoff réseau** sur les scrapers (429 / 5xx / timeout + `Retry-After`)
-   — un échec ne doit plus coûter un cycle entier (critique à 2/jour).
-2. **TED : filtrage serveur + date limite.** Résultats **validés en live** :
-   - date limite = champ **`deadline-receipt-tender-date-lot`** (et non
-     `deadline-receipt-tender`, qui provoquait les 400) — à réintégrer dans
-     `AOCollecte.date_limite` ;
-   - filtrer via **`notice-title ~ "terme"`** (précis : SMS→31) — **pas**
-     `FT~"terme"` (fuzzy, ~21065 résultats) ;
-   - avec repli sur la requête « France seule » actuelle en cas d'erreur.
-3. **Collecte incrémentale + pagination** : fenêtre `dateparution >=
-   derniere_collecte` (BOAMP) / `publication-date >=` (TED) + pagination, pour
-   ne rien rater entre deux passes.
-4. **Expiration automatique** : passer les AO en `EXPIRE` quand `date_limite`
-   est dépassée (le statut existe mais rien ne le déclenche).
-
-> Détails techniques complets (syntaxes API validées, pattern d'injection du
-> filtre, garde-fous tests/ruff) : mémoire projet `project_hermes_scraping_todo`.
+- **Filtrage serveur ciblé** — BOAMP via clause ODSQL `search(objet, "terme")`
+  (champ `objet`, pas de full-text nu : « RCS » matcherait « Registre du
+  Commerce ») ; TED via `notice-title ~ "terme"` (précis ; `FT~` rejeté car trop
+  large). Repli automatique sur collecte non filtrée si l'API rejette la requête.
+- **Date limite TED** extraite de `deadline-receipt-tender-date-lot` (seul champ
+  sans 400) → `AOCollecte.date_limite`.
+- **Retry/backoff réseau** partagé (`agents/argos/reseau.py`) : 429 / 5xx /
+  timeout + respect de `Retry-After` — un échec ponctuel ne coûte plus un cycle.
+- **Collecte incrémentale + pagination** — BOAMP (`offset`) / TED (`page`),
+  arrêt dès qu'une page dépasse la fenêtre `derniere_collecte − 2 j`.
+- **Expiration automatique** — les AO périmables (BRUT / ANALYSE / A_REPONDRE)
+  dont la date limite est passée basculent en `EXPIRE` à chaque cycle.
+- **Préset de mots-clés LinkMobility** par défaut à l'onboarding (éditable) ;
+  **cadence 2 collectes/jour** (`frequence_minutes = 720`).
 
 ---
 
