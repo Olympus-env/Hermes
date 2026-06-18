@@ -37,6 +37,11 @@ async def executer_collecte(
     filtre = charger_filtre(session)
     _injecter_filtre(scraper, filtre)
 
+    # Fenêtre incrémentale : on pousse la date de la collecte précédente pour
+    # que le scraper arrête de paginer une fois la fenêtre dépassée (la valeur
+    # courante n'est mise à jour qu'en fin de collecte, plus bas).
+    _injecter_fenetre(scraper, portail)
+
     try:
         items = await scraper.collecter(limite=limite)
     except Exception as exc:  # noqa: BLE001
@@ -130,6 +135,16 @@ def _injecter_filtre(scraper: Scraper, filtre) -> None:
         scraper.filtre_inclus = tuple(filtre.inclus)
     if hasattr(scraper, "filtre_exclus"):
         scraper.filtre_exclus = tuple(filtre.exclus)
+
+
+def _injecter_fenetre(scraper: Scraper, portail: Portail) -> None:
+    """Pousse la date de dernière collecte au scraper pour l'incrémental.
+
+    Best-effort : un scraper sans cet attribut (factices de test, portails non
+    paginables) l'ignore. `None` à la première collecte → rattrapage complet.
+    """
+    if hasattr(scraper, "depuis"):
+        scraper.depuis = portail.derniere_collecte
 
 
 def _existe(session: Session, portail_id: int | None, item: AOCollecte) -> bool:

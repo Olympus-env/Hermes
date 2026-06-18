@@ -34,7 +34,13 @@ from typing import Any
 
 import httpx
 
-from hermes.agents.argos.base import AOCollecte, Scraper
+from hermes.agents.argos.base import (
+    MAX_PAGES,
+    TAILLE_PAGE,
+    AOCollecte,
+    Scraper,
+    borne_incrementale,
+)
 from hermes.agents.argos.reseau import requeter_avec_retry
 
 _UA = (
@@ -81,11 +87,15 @@ class TedScraper(Scraper):
         # été validée, et le garde-fou client re-trie déjà sur le titre.
         self.filtre_inclus: tuple[str, ...] = ()
         self.filtre_exclus: tuple[str, ...] = ()
+        # Date de la dernière collecte (injectée par le runner) : borne la
+        # pagination incrémentale. None à la première collecte.
+        self.depuis: datetime | None = None
 
     async def collecter(self, limite: int = 20) -> list[AOCollecte]:
         query = _construire_query(self.filtre_inclus)
+        borne = borne_incrementale(self.depuis)
         try:
-            notices = await self._requeter(query, limite)
+            notices = await self._collecter_pagine(query, borne)
         except httpx.HTTPError:
             # Sans filtre, un échec est une vraie panne : on laisse remonter au
             # runner pour journalisation. Avec filtre, on tente le repli.
@@ -97,11 +107,32 @@ class TedScraper(Scraper):
             # Requête filtrée rejetée (query eForms invalide, champ…) : repli sûr
             # sur la query « France seule ». Le runner re-filtrera côté client.
             # Un échec ici lève → journalisé par le runner.
-            notices = await self._requeter(_construire_query(()), limite)
+            notices = await self._collecter_pagine(_construire_query(()), borne)
 
         return [_notice_vers_ao(n) for n in notices if _est_valide(n)]
 
-    async def _requeter(self, query: str, limite: int) -> list[dict[str, Any]]:
+    async def _collecter_pagine(
+        self, query: str, borne: datetime | None
+    ) -> list[dict[str, Any]]:
+        """Pagine via `page` jusqu'à la borne incrémentale ou au plafond.
+
+        Propage les erreurs HTTP : `collecter` décide du repli selon le filtre.
+        """
+        cumul: list[dict[str, Any]] = []
+        for page in range(1, MAX_PAGES + 1):
+            lot = await self._requeter(query, TAILLE_PAGE, page)
+            if not lot:
+                break
+            cumul.extend(lot)
+            if len(lot) < TAILLE_PAGE:
+                break  # dernière page disponible
+            if borne is not None and _page_anterieure(lot, borne):
+                break  # fenêtre incrémentale dépassée
+        return cumul
+
+    async def _requeter(
+        self, query: str, limite: int, page: int = 1
+    ) -> list[dict[str, Any]]:
         """Exécute une requête TED (avec retry/backoff). Lève sur échec HTTP."""
         payload = {
             "query": query,
@@ -109,7 +140,7 @@ class TedScraper(Scraper):
             "limit": min(max(1, limite), 100),
             "scope": "ACTIVE",
             "paginationMode": "PAGE_NUMBER",
-            "page": 1,
+            "page": page,
         }
 
         async def envoyer() -> httpx.Response:
@@ -168,6 +199,18 @@ def _est_valide(notice: dict[str, Any]) -> bool:
         _texte_multi(notice.get("notice-title"))
         or _texte_multi(notice.get("buyer-name"))
     )
+
+
+def _page_anterieure(notices: list[dict[str, Any]], borne: datetime) -> bool:
+    """Vrai si la notice la plus ancienne de la page est antérieure à la borne.
+
+    Résultats triés par `publication-date` décroissante : si la dernière est
+    déjà avant la borne, les pages suivantes le sont aussi.
+    """
+    if not notices:
+        return True
+    d = _parse_date(notices[-1].get("publication-date"))
+    return d is not None and d < borne
 
 
 def _notice_vers_ao(notice: dict[str, Any]) -> AOCollecte:

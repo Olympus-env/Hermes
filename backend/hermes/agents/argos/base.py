@@ -4,7 +4,27 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
+
+# Pagination des collectes (incrémental réalisé côté client).
+TAILLE_PAGE = 100  # plafond par requête des deux APIs (BOAMP, TED)
+MAX_PAGES = 10  # garde-fou : au plus 1000 avis par cycle et par portail
+# Recouvrement de sécurité : on pagine un peu au-delà de la dernière collecte
+# pour absorber l'imprécision des dates (jour) et un éventuel cycle raté.
+MARGE_INCREMENTALE = timedelta(days=2)
+
+
+def borne_incrementale(depuis: datetime | None) -> datetime | None:
+    """Date en-deçà de laquelle il est inutile de paginer plus loin.
+
+    `None` (première collecte) → pas de borne : rattrapage jusqu'au plafond de
+    pages. Sinon `depuis - MARGE_INCREMENTALE` : les résultats étant triés par
+    date décroissante, on arrête la pagination dès qu'une page est entièrement
+    antérieure à cette borne.
+    """
+    if depuis is None:
+        return None
+    return depuis - MARGE_INCREMENTALE
 
 
 @dataclass
