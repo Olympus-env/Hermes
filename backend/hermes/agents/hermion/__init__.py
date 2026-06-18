@@ -1,6 +1,6 @@
 """Agent HERMION — rédaction des réponses aux appels d'offre.
 
-HERMION assemble une réponse en plusieurs étapes via PYTHIA (Mistral 7B local) :
+HERMION assemble une réponse en plusieurs étapes via PYTHIA (Qwen3 8B local) :
 plan structuré (ou workflow utilisateur) puis rédaction section par section. La
 sortie est toujours soumise à validation humaine (StatutReponse.EN_ATTENTE) —
 HERMION ne valide ni ne soumet jamais une réponse.

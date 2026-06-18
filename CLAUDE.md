@@ -36,7 +36,7 @@ Toute proposition d'architecture doit respecter ce triptyque.
 | **KRINOS** | Agent d'analyse / extraction / scoring (pdfplumber + pymupdf + Ollama) |
 | **HERMION** | Agent de rédaction (Ollama + workflow engine) |
 | **MNEMOSYNE** | La base SQLite locale |
-| **PYTHIA** | Le LLM local (Ollama + Mistral 7B Instruct q4_K_M) |
+| **PYTHIA** | Le LLM local (Ollama + Qwen3 8B q4) |
 
 **Toujours utiliser ces noms** dans le code, les commentaires, les noms de
 modules et les logs. C'est l'identité du projet.
@@ -50,7 +50,7 @@ modules et les logs. C'est l'identité du projet.
 - **Desktop** : Tauri 2 (Rust) — wrapper natif
 - **BDD** : SQLite (mode WAL) via SQLModel
 - **Scraping** : Playwright Python + APScheduler
-- **LLM** : Ollama (HTTP local sur 11434) + Mistral 7B Instruct q4_K_M
+- **LLM** : Ollama (HTTP local sur 11434) + Qwen3 8B q4 (override via `HERMES_PYTHIA_MODELE`)
 - **Crypto** : `cryptography` (AES-256, GCM)
 
 ---

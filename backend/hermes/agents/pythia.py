@@ -2,8 +2,8 @@
 
 PYTHIA est le nom mythologique du moteur LLM utilisé par KRINOS (analyse) et
 HERMION (rédaction). Le service Ollama tourne en local sur `127.0.0.1:11434` et
-sert un modèle Mistral 7B Instruct quantisé Q4_K_M (et `nomic-embed-text` pour
-les embeddings).
+sert par défaut Qwen3 8B quantisé (et `nomic-embed-text` pour les embeddings).
+Le modèle est configurable via `HERMES_PYTHIA_MODELE`.
 
 Ce module n'introduit volontairement aucune dépendance lourde : on parle à
 Ollama avec `httpx` directement.
@@ -217,7 +217,7 @@ async def telecharger_modele(
 def parser_json_sortie(texte: str) -> dict[str, Any]:
     """Parse une sortie LLM censée contenir du JSON, tolérant aux entourages.
 
-    Mistral renvoie parfois le JSON encadré de ```json …``` ou précédé d'un
+    Le LLM renvoie parfois le JSON encadré de ```json …``` ou précédé d'un
     préambule. On tente plusieurs stratégies avant d'abandonner.
     """
     candidat = texte.strip()

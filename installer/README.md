@@ -75,7 +75,7 @@ installer/
 2. Vérifie que `Program Files\HERMES\hermes.exe` existe.
 3. Vérifie qu'Ollama est installé (`ollama.exe` accessible).
 4. Lance HERMES depuis le menu Démarrer.
-5. Au premier lancement, le modal de téléchargement du modèle Mistral
+5. Au premier lancement, le modal de téléchargement du modèle Qwen3 8B
    doit apparaître automatiquement.
 6. Ferme HERMES → aucun processus HERMES/backend/ollama zombie.
 7. Désinstalle depuis le Panneau de configuration. L'app doit

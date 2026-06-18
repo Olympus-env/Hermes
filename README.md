@@ -12,7 +12,7 @@ Zéro cloud, zéro coût récurrent, validation humaine obligatoire avant toute 
 | **KRINOS** | pdfplumber + pymupdf + Ollama | Extraction, analyse, scoring |
 | **HERMION** | Ollama + workflow engine | Rédaction des réponses |
 | **MNEMOSYNE** | SQLite + SQLModel | Base de données locale |
-| **PYTHIA** | Ollama + Mistral 7B | LLM local |
+| **PYTHIA** | Ollama + Qwen3 8B | LLM local |
 
 Backend FastAPI sur `127.0.0.1:8000` uniquement — aucun port exposé à l'extérieur.
 
@@ -29,7 +29,7 @@ Backend FastAPI sur `127.0.0.1:8000` uniquement — aucun port exposé à l'ext�
 2. **Double-cliquer** sur le fichier téléchargé → installation guidée →
    raccourci Bureau + entrée menu Démarrer créés.
 3. **Lancer HERMES.** Au tout premier démarrage, l'application télécharge
-   automatiquement le modèle de langage Mistral 7B (**~4,4 Go**, barre de
+   automatiquement le modèle de langage Qwen3 8B (**~5,2 Go**, barre de
    progression). Cette étape nécessite une connexion internet **une seule
    fois** ; ensuite HERMES fonctionne 100 % hors-ligne.
 
@@ -77,7 +77,7 @@ des chemins de développement `E:\Hermes` ou `D:\HermesDeps`.
 - Dans l'environnement Joshua, l'installation autonome et les modèles sont sous
   `D:\HermesDeps\ollama`.
 - Modèles attendus :
-  - `mistral:7b-instruct-q4_K_M`
+  - `qwen3:8b`
   - `nomic-embed-text`
 
 Les téléchargements lourds liés à HERMES doivent rester sur `D:` quand l'outil le
@@ -271,7 +271,7 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
 - **KRINOS extraction documentaire** : socle d'extraction PDF/XLSX/DOCX/HTML et
   téléchargement de documents.
 - **KRINOS analyse IA (PYTHIA)** : résumé, score 0-100, tags métier et critères
-  d'attribution générés en local par Mistral 7B via Ollama. Endpoints
+  d'attribution générés en local par Qwen3 8B via Ollama. Endpoints
   `POST /krinos/appels-offre/{id}/analyser` et `GET …/analyse`.
 - **Pondération KRINOS configurable** : les poids par dimension de scoring sont
   persistés et utilisés au prochain calcul de score. Les analyses stockent les
@@ -293,7 +293,7 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
   édition inline du contenu, actions valider / demander révision / rejeter
   avec propagation au statut de l'AO (`repondu` à la validation). Endpoint
   `GET /hermion/reponses` joint avec les métadonnées AO.
-- **Téléchargement modèle au 1er run** : si le modèle Mistral 7B n'est pas
+- **Téléchargement modèle au 1er run** : si le modèle Qwen3 8B n'est pas
   encore présent, un modal d'onboarding affiche une barre de progression
   `Go / Go` pendant le pull Ollama. Endpoints `/pythia/modele/status` et
   `/pythia/modele/telecharger`.
@@ -312,7 +312,7 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
 - [x] **Phase 2** — ARGOS scraping basique (BOAMP via API DILA, APScheduler)
 - [x] **Phase 3** — ARGOS authentification Playwright (socle credentials chiffrés)
 - [x] **Phase 4** — KRINOS extraction documents
-- [x] **Phase 5** — KRINOS IA (PYTHIA — résumé + score + tags via Mistral 7B)
+- [x] **Phase 5** — KRINOS IA (PYTHIA — résumé + score + tags via Qwen3 8B)
 - [x] **Phase 6** — Interface onglet 1 « Veille » (**MVP**)
 - [x] **Phase 6.1** — Actions Veille persistées (statuts AO + nom portail)
 - [x] **Phase 7** — HERMION rédaction (plan + sections, versionnement, validation humaine)

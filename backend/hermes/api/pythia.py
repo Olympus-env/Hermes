@@ -1,7 +1,7 @@
 """Endpoints REST pour PYTHIA — gestion des modèles Ollama.
 
 Ces routes permettent au frontend de vérifier qu'un modèle est installé
-localement et de lancer son téléchargement (Mistral 7B ~4,4 Go) avec un
+localement et de lancer son téléchargement (Qwen3 8B ~5,2 Go) avec un
 état partagé en mémoire pour suivre la progression via polling.
 """
 

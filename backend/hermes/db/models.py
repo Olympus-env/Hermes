@@ -178,7 +178,7 @@ class AnalyseKrinos(SQLModel, table=True):
     scores_dimensions: Optional[str] = Field(default=None, sa_column=Column(Text))
 
     duree_analyse_ms: Optional[int] = None
-    modele_llm: Optional[str] = None  # ex: mistral:7b-instruct-q4_K_M
+    modele_llm: Optional[str] = None  # ex: qwen3:8b
 
     cree_le: datetime = Field(default_factory=_utcnow, index=True)
 

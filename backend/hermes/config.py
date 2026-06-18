@@ -33,7 +33,11 @@ class Settings(BaseSettings):
 
     # PYTHIA — LLM local via Ollama
     ollama_base_url: str = "http://127.0.0.1:11434"
-    pythia_modele: str = "mistral:7b-instruct-q4_K_M"
+    # Qwen3 8B (q4) : tient entièrement dans 8 Go de VRAM (~72 t/s), bien meilleur
+    # que Mistral 7B en français, respect de structure et résumés (fini le
+    # « résumé = titre »), sans sortir du local. Override possible via
+    # HERMES_PYTHIA_MODELE.
+    pythia_modele: str = "qwen3:8b"
     pythia_modele_embeddings: str = "nomic-embed-text"
     pythia_timeout_secondes: float = 180.0
     pythia_temperature: float = 0.2
