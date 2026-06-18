@@ -40,6 +40,10 @@ def _record(objet: str = "Marché d'envoi de SMS de notification"):
 
 
 class _Resp:
+    # status_code : le helper réseau (retry/backoff) l'inspecte avant de rendre
+    # la réponse — 200 = succès, pas de nouvelle tentative.
+    status_code = 200
+
     def __init__(self, payload):
         self._payload = payload
 

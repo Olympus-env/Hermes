@@ -34,6 +34,7 @@ from typing import Any
 import httpx
 
 from hermes.agents.argos.base import AOCollecte, Scraper
+from hermes.agents.argos.reseau import requeter_avec_retry
 
 _UA = (
     "Mozilla/5.0 (compatible; HERMES/0.1; +https://github.com/local) "
@@ -79,18 +80,21 @@ class TedScraper(Scraper):
             "paginationMode": "PAGE_NUMBER",
             "page": 1,
         }
-        async with httpx.AsyncClient(
-            timeout=self._timeout,
-            headers={
-                "User-Agent": _UA,
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-            follow_redirects=True,
-        ) as client:
-            r = await client.post(API_URL, json=payload)
-            r.raise_for_status()
-            data = r.json()
+        async def envoyer() -> httpx.Response:
+            async with httpx.AsyncClient(
+                timeout=self._timeout,
+                headers={
+                    "User-Agent": _UA,
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                follow_redirects=True,
+            ) as client:
+                return await client.post(API_URL, json=payload)
+
+        r = await requeter_avec_retry(envoyer, nom="TED")
+        r.raise_for_status()
+        data = r.json()
 
         notices = data.get("notices") or data.get("results") or []
         return [_notice_vers_ao(n) for n in notices if _est_valide(n)]

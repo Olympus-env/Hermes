@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 
 from hermes.agents.argos.base import AOCollecte, Scraper
+from hermes.agents.argos.reseau import requeter_avec_retry
 
 _UA = (
     "Mozilla/5.0 (compatible; HERMES/0.1; +https://github.com/local) "
@@ -77,15 +78,19 @@ class BoampScraper(Scraper):
         }
         if where:
             params["where"] = where
-        try:
+
+        async def envoyer() -> httpx.Response:
             async with httpx.AsyncClient(
                 timeout=self._timeout,
                 headers={"User-Agent": _UA, "Accept": "application/json"},
                 follow_redirects=True,
             ) as client:
-                r = await client.get(API_URL, params=params)
-                r.raise_for_status()
-                data = r.json()
+                return await client.get(API_URL, params=params)
+
+        try:
+            r = await requeter_avec_retry(envoyer, nom="BOAMP")
+            r.raise_for_status()
+            data = r.json()
         except httpx.HTTPError:
             return None
         return data.get("results", [])
