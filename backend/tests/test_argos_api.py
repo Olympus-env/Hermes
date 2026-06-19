@@ -64,6 +64,43 @@ def test_endpoint_collecter_tous(monkeypatch):
         )
 
 
+def test_endpoint_collecter_tous_ignore_portails_inactifs(monkeypatch):
+    from sqlmodel import Session
+
+    from hermes.agents.argos.base import ResultatCollecte
+    from hermes.db.models import Portail
+    from hermes.db.session import get_engine, init_db
+    from hermes.main import app
+
+    class FakeScraper:
+        url_base = "https://example.test"
+
+        def __init__(self, nom: str):
+            self.nom = nom
+
+    appeles: list[str] = []
+
+    async def fake_collecte(scraper, session, *, limite=20):
+        appeles.append(scraper.nom)
+        return ResultatCollecte(portail=scraper.nom, ao_trouves=1, ao_nouveaux=1)
+
+    monkeypatch.setattr("hermes.api.argos.scrapers_disponibles", lambda: ["actif", "inactif"])
+    monkeypatch.setattr("hermes.api.argos.creer_scraper", lambda nom: FakeScraper(nom))
+    monkeypatch.setattr("hermes.api.argos.executer_collecte", fake_collecte)
+
+    init_db()
+    with Session(get_engine()) as s:
+        s.add(Portail(nom="inactif", url_base="https://example.test", actif=False))
+        s.commit()
+
+    with TestClient(app) as client:
+        r = client.post("/argos/collecter")
+
+    assert r.status_code == 200
+    assert appeles == ["actif"]
+    assert r.json()["ao_trouves"] == 1
+
+
 def test_endpoint_scheduler_etat():
     from hermes.main import app
 

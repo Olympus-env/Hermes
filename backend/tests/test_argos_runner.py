@@ -118,6 +118,39 @@ async def test_erreur_journalisee():
             select(LogAgent).where(LogAgent.agent == "ARGOS").order_by(LogAgent.id.desc())
         ).all()
         assert logs and "boom" in logs[0].message
+        portail = s.exec(select(Portail).where(Portail.nom == "scraper-ko")).first()
+        assert portail is not None
+        assert portail.derniere_collecte is None
+
+
+@pytest.mark.asyncio
+async def test_collecte_injecte_derniere_collecte_aware_depuis_sqlite():
+    init_db()
+
+    class ScraperIncremental(FakeScraper):
+        nom = "incremental"
+
+        def __init__(self):
+            super().__init__([])
+            self.depuis = None
+
+        async def collecter(self, limite: int = 20) -> list[AOCollecte]:
+            assert self.depuis is not None
+            assert self.depuis.tzinfo is not None
+            return []
+
+    with Session(get_engine()) as s:
+        s.add(
+            Portail(
+                nom="incremental",
+                url_base="https://example.test",
+                derniere_collecte=datetime(2026, 1, 1),
+            )
+        )
+        s.commit()
+        res = await executer_collecte(ScraperIncremental(), s)
+
+    assert res.succes
 
 
 @pytest.mark.asyncio

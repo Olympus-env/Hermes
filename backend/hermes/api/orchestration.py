@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
@@ -56,7 +56,10 @@ def ecrire_config(payload: ConfigIO, session: SessionDep) -> ConfigIO:
 
 
 @router.post("/traiter", response_model=RapportIO)
-async def traiter(session: SessionDep, limite: int | None = None) -> RapportIO:
+async def traiter(
+    session: SessionDep,
+    limite: Annotated[int | None, Query(ge=1, le=50)] = None,
+) -> RapportIO:
     """Déclenche un passage du pipeline à la demande (sinon : scheduler ARGOS)."""
     rapport = await traiter_pipeline(session, limite=limite)
     return RapportIO(

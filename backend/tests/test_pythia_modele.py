@@ -157,3 +157,53 @@ def test_progression_pourcent_calcule():
     )
     p = api_pythia._progression_read(etat)
     assert p.pourcent == 50.0
+
+
+def test_modele_installe_exige_tag_exact(monkeypatch):
+    async def fake_lister():
+        return ["qwen3:4b", "nomic-embed-text:latest"]
+
+    monkeypatch.setattr(pythia, "lister_modeles", fake_lister)
+
+    assert asyncio.run(pythia.modele_installe("qwen3:8b")) is False
+    assert asyncio.run(pythia.modele_installe("qwen3:4b")) is True
+
+
+def test_modele_installe_accepte_latest_sans_suffixe(monkeypatch):
+    async def fake_lister():
+        return ["mistral"]
+
+    monkeypatch.setattr(pythia, "lister_modeles", fake_lister)
+
+    assert asyncio.run(pythia.modele_installe("mistral:latest")) is True
+
+
+def test_telechargement_ndjson_error_passe_en_erreur(monkeypatch):
+    from hermes.api import pythia as api_pythia
+    from hermes.main import app
+
+    async def fake_disponible(*args, **kwargs):
+        return True
+
+    async def fake_telechargement(modele):
+        yield {"status": "pulling manifest"}
+        yield {"error": "modele introuvable"}
+
+    monkeypatch.setattr(pythia, "est_disponible", fake_disponible)
+    monkeypatch.setattr(pythia, "telecharger_modele", fake_telechargement)
+
+    init_db()
+    with TestClient(app) as client:
+        r = client.post("/pythia/modele/telecharger")
+        assert r.status_code == 200
+        for _ in range(20):
+            r = client.get("/pythia/modele/status")
+            if not r.json()["progression"]["en_cours"]:
+                break
+            import time
+
+            time.sleep(0.05)
+
+    etat = api_pythia.etat_global()
+    assert etat.statut == "erreur"
+    assert etat.erreur == "modele introuvable"

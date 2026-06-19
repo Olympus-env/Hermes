@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _est_url_loopback(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and parsed.hostname in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }
 
 
 class Settings(BaseSettings):
@@ -52,6 +62,11 @@ class Settings(BaseSettings):
     hermion_section_timeout_par_100_mots_secondes: float = 45.0
     # Nb max de caractères de contenu documentaire injectés dans le prompt KRINOS
     krinos_contexte_max_caracteres: int = 12000
+
+    def model_post_init(self, __context: object) -> None:
+        self.host = "127.0.0.1"
+        if not _est_url_loopback(self.ollama_base_url):
+            self.ollama_base_url = "http://127.0.0.1:11434"
 
     @property
     def database_url(self) -> str:

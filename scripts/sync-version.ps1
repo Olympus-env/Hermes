@@ -23,6 +23,8 @@ $Cibles = @(
     @{ Path = "backend\hermes\__init__.py";           Pattern = '(?m)^__version__ = "[^"]*"';        Format = '__version__ = "{0}"' },
     @{ Path = "backend\pyproject.toml";                Pattern = '(?m)^version = "[^"]*"';             Format = 'version = "{0}"' },
     @{ Path = "frontend\package.json";                 Pattern = '"version": "[^"]*"';                 Format = '"version": "{0}"' },
+    @{ Path = "frontend\package-lock.json";            Pattern = '(?m)^  "version": "[^"]*"';          Format = '  "version": "{0}"' },
+    @{ Path = "frontend\package-lock.json";            Pattern = '(?m)^      "version": "[^"]*"';      Format = '      "version": "{0}"' },
     @{ Path = "frontend\src-tauri\tauri.conf.json";    Pattern = '"version": "[^"]*"';                 Format = '"version": "{0}"' },
     @{ Path = "frontend\src-tauri\Cargo.toml";         Pattern = '(?m)^version = "[^"]*"';             Format = 'version = "{0}"' },
     @{ Path = "installer\HERMES.iss";                  Pattern = '#define MyAppVersion "[^"]*"';       Format = '#define MyAppVersion "{0}"' }

@@ -21,7 +21,7 @@ from hermes.main import app
 
 
 def main() -> None:
-    host = os.environ.get("HERMES_HOST", "127.0.0.1")
+    host = "127.0.0.1"
     try:
         port = int(os.environ.get("HERMES_PORT", "8000"))
     except ValueError:

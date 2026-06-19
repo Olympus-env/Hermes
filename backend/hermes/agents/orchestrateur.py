@@ -326,9 +326,9 @@ async def _phase_redaction(
                 }
             )
         except ErreurRedactionHermion as exc:
-            # AO laissé en A_REPONDRE : reprenable manuellement ou au prochain
-            # cycle (la garde "déjà une réponse" ne bloque pas tant qu'aucune
-            # version n'a été produite).
+            # Rédaction non produite : on revient à ANALYSE pour que la
+            # sélection du prochain cycle retente le même AO.
+            _restaurer_analyse_si_aucune_reponse(session, ao)
             rapport.ao_echecs += 1
             _journaliser(
                 session,
@@ -337,6 +337,7 @@ async def _phase_redaction(
                 appel_offre_id=ao_id,
             )
         except Exception as exc:  # noqa: BLE001
+            _restaurer_analyse_si_aucune_reponse(session, ao)
             rapport.ao_echecs += 1
             logger.exception("Pipeline : erreur inattendue rédaction AO %s", ao_id)
             _journaliser(
@@ -396,6 +397,19 @@ def _plafond_valide(valeur: object, defaut: int) -> int:
     except (TypeError, ValueError):
         return defaut
     return max(1, min(MAX_PAR_CYCLE_PLAFOND, n))
+
+
+def _restaurer_analyse_si_aucune_reponse(session: Session, ao: AppelOffre) -> None:
+    if ao.id is None:
+        return
+    existe = session.exec(
+        select(ReponseHermion.id).where(ReponseHermion.appel_offre_id == ao.id)
+    ).first()
+    if existe is None and ao.statut == StatutAO.A_REPONDRE:
+        ao.statut = StatutAO.ANALYSE
+        ao.maj_le = datetime.now(UTC)
+        session.add(ao)
+        session.commit()
 
 
 def _journaliser(
