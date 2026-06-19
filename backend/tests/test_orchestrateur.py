@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from hermes.agents import orchestrateur as orch
+from hermes.agents.hermion import ErreurRedactionHermion
 from hermes.agents.krinos import ErreurAnalyseKrinos
 from hermes.db.models import (
     AnalyseKrinos,
@@ -233,6 +234,34 @@ def test_pipeline_resiste_a_echec_analyse(monkeypatch):
         assert s.get(AppelOffre, ao_id).statut == StatutAO.BRUT
 
 
+def test_pipeline_reessaie_redaction_apres_echec(monkeypatch):
+    async def rediger_ko(session, ao, *, profil=None, consignes_supplementaires=None):
+        raise ErreurRedactionHermion("PYTHIA indisponible")
+
+    monkeypatch.setattr(orch, "telecharger_documents_ao", _noop_docs)
+    monkeypatch.setattr(orch, "analyser_ao", _fake_analyser(90.0))
+    monkeypatch.setattr(orch, "rediger_reponse", rediger_ko)
+
+    init_db()
+    with Session(get_engine()) as s:
+        ao_id = _ao_brut(s)
+
+    with Session(get_engine()) as s:
+        rapport = asyncio.run(orch.traiter_pipeline(s))
+
+    assert rapport.ao_echecs == 1
+    with Session(get_engine()) as s:
+        assert s.get(AppelOffre, ao_id).statut == StatutAO.ANALYSE
+
+    monkeypatch.setattr(orch, "rediger_reponse", _fake_rediger)
+    with Session(get_engine()) as s:
+        rapport = asyncio.run(orch.traiter_pipeline(s))
+
+    assert rapport.ao_rediges == 1
+    with Session(get_engine()) as s:
+        assert s.get(AppelOffre, ao_id).statut == StatutAO.EN_REDACTION
+
+
 # --------------------------------------------------------------------------- #
 # Expiration automatique
 # --------------------------------------------------------------------------- #
@@ -357,3 +386,12 @@ def test_endpoints_config_et_traiter(monkeypatch):
         data = r.json()
         assert data["ao_analyses"] == 1
         assert data["ao_rediges"] == 1
+
+
+def test_endpoint_traiter_refuse_limite_negative():
+    from hermes.main import app
+
+    init_db()
+    with TestClient(app) as client:
+        r = client.post("/orchestration/traiter?limite=-1")
+    assert r.status_code == 422

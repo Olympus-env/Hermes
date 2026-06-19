@@ -120,6 +120,9 @@ async def collecter_tous(
     """Déclenche un cycle ARGOS sur tous les scrapers enregistrés."""
     resultats: list[CollecteResponse] = []
     for nom in scrapers_disponibles():
+        portail_config = session.exec(select(Portail).where(Portail.nom == nom)).first()
+        if portail_config is not None and not portail_config.actif:
+            continue
         scraper = creer_scraper(nom)
         resultat = await executer_collecte(scraper, session, limite=limite)
         resultats.append(

@@ -352,12 +352,7 @@ def modifier_statut(
         reponse.commentaire_humain = payload.commentaire_humain
     session.add(reponse)
 
-    # Propage aux statuts de l'AO selon les transitions importantes.
-    if payload.statut == StatutReponse.VALIDEE:
-        ao = session.get(AppelOffre, reponse.appel_offre_id)
-        if ao is not None and ao.statut != StatutAO.REPONDU:
-            ao.statut = StatutAO.REPONDU
-            session.add(ao)
+    _synchroniser_statut_ao(session, reponse)
 
     session.commit()
     session.refresh(reponse)
@@ -398,13 +393,17 @@ def modifier_contenu(
             detail=f"Réponse en statut '{reponse.statut.value}' non modifiable",
         )
 
+    ancien = reponse.statut
     reponse.contenu = payload.contenu
     reponse.longueur_mots = len([m for m in payload.contenu.split() if m.strip()])
     if payload.commentaire_humain is not None:
         reponse.commentaire_humain = payload.commentaire_humain
-    if reponse.statut == StatutReponse.EN_ATTENTE:
+    if reponse.statut in {StatutReponse.EN_ATTENTE, StatutReponse.VALIDEE}:
         reponse.statut = StatutReponse.A_MODIFIER
+        reponse.chemin_export = None
     session.add(reponse)
+    if ancien != reponse.statut:
+        _synchroniser_statut_ao(session, reponse)
     session.commit()
     session.refresh(reponse)
     return _reponse_read(reponse)
@@ -462,6 +461,36 @@ def _reponse_read(reponse: ReponseHermion) -> ReponseRead:
         cree_le=reponse.cree_le,
         maj_le=reponse.maj_le,
     )
+
+
+def _synchroniser_statut_ao(session: Session, reponse: ReponseHermion) -> None:
+    """Aligne le statut AO sur la dernière décision humaine HERMION."""
+    ao = session.get(AppelOffre, reponse.appel_offre_id)
+    if ao is None:
+        return
+
+    if reponse.statut == StatutReponse.VALIDEE:
+        if ao.statut != StatutAO.REPONDU:
+            ao.statut = StatutAO.REPONDU
+            session.add(ao)
+        return
+
+    if reponse.statut in {StatutReponse.EN_ATTENTE, StatutReponse.A_MODIFIER}:
+        if ao.statut == StatutAO.REPONDU and not _autre_reponse_finalisee(
+            session, reponse
+        ):
+            ao.statut = StatutAO.EN_REDACTION
+            session.add(ao)
+
+
+def _autre_reponse_finalisee(session: Session, reponse: ReponseHermion) -> bool:
+    stmt = select(ReponseHermion.id).where(
+        ReponseHermion.appel_offre_id == reponse.appel_offre_id,
+        ReponseHermion.statut.in_({StatutReponse.VALIDEE, StatutReponse.EXPORTEE}),
+    )
+    if reponse.id is not None:
+        stmt = stmt.where(ReponseHermion.id != reponse.id)
+    return session.exec(stmt).first() is not None
 
 
 def _workflow_read(workflow: WorkflowReponse) -> WorkflowRead:

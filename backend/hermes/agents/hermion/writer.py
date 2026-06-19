@@ -173,7 +173,7 @@ async def _rediger_reponse_suivie(
     )
     session.add(reponse)
 
-    if appel_offre.statut == StatutAO.A_REPONDRE:
+    if appel_offre.statut in {StatutAO.A_REPONDRE, StatutAO.ANALYSE}:
         appel_offre.statut = StatutAO.EN_REDACTION
         session.add(appel_offre)
 

@@ -56,9 +56,6 @@ async def executer_collecte(
             message=msg,
             portail_id=portail.id,
         )
-        portail.derniere_collecte = _utcnow()
-        session.add(portail)
-        session.commit()
         return resultat
 
     resultat.items = items
@@ -144,7 +141,10 @@ def _injecter_fenetre(scraper: Scraper, portail: Portail) -> None:
     paginables) l'ignore. `None` à la première collecte → rattrapage complet.
     """
     if hasattr(scraper, "depuis"):
-        scraper.depuis = portail.derniere_collecte
+        depuis = portail.derniere_collecte
+        if depuis is not None and depuis.tzinfo is None:
+            depuis = depuis.replace(tzinfo=UTC)
+        scraper.depuis = depuis
 
 
 def _existe(session: Session, portail_id: int | None, item: AOCollecte) -> bool:

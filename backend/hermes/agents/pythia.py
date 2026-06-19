@@ -15,6 +15,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -181,9 +182,14 @@ async def modele_installe(nom: str | None = None) -> bool:
         modeles = await lister_modeles()
     except ErreurPythia:
         return False
-    # Ollama renvoie parfois "nom" et parfois "nom:latest" — on tolère les deux.
-    cible_court = cible.split(":")[0]
-    return any(m == cible or m.startswith(f"{cible_court}:") for m in modeles)
+    # Ollama renvoie parfois "nom" pour "nom:latest". Pour les autres tags
+    # explicites (ex. qwen3:8b), on exige le tag exact afin de ne pas accepter qwen3:4b.
+    if cible.endswith(":latest"):
+        cible_sans_latest = cible.removesuffix(":latest")
+        return any(m == cible or m == cible_sans_latest for m in modeles)
+    if ":" in cible:
+        return any(m == cible for m in modeles)
+    return any(m == cible or m == f"{cible}:latest" for m in modeles)
 
 
 async def telecharger_modele(
@@ -207,11 +213,28 @@ async def telecharger_modele(
                     if not ligne.strip():
                         continue
                     try:
-                        yield json.loads(ligne)
+                        evenement = json.loads(ligne)
                     except json.JSONDecodeError:
                         continue
+                    if isinstance(evenement, dict) and evenement.get("error"):
+                        raise ErreurPythia(str(evenement["error"]))
+                    yield evenement
     except httpx.HTTPError as exc:
         raise ErreurPythia(f"Téléchargement modèle {cible} : {exc}") from exc
+
+
+def verifier_url_ollama_locale(url: str) -> str:
+    """Retourne l'URL si elle cible une adresse loopback, sinon lève une erreur."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
+        raise ErreurPythia(
+            "HERMES impose un Ollama/PYTHIA local (127.0.0.1, localhost ou ::1)."
+        )
+    return url
 
 
 def parser_json_sortie(texte: str) -> dict[str, Any]:

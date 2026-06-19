@@ -91,3 +91,28 @@ def test_crud_portail():
         assert rec is not None
         assert rec.actif is True
         assert rec.frequence_minutes == 720  # 2 collectes/jour par défaut
+
+
+def test_backend_entry_force_host_loopback(monkeypatch):
+    import hermes_entry
+
+    appel = {}
+
+    def fake_run(app, **kwargs):
+        appel.update(kwargs)
+
+    monkeypatch.setenv("HERMES_HOST", "0.0.0.0")
+    monkeypatch.setattr(hermes_entry.uvicorn, "run", fake_run)
+
+    hermes_entry.main()
+
+    assert appel["host"] == "127.0.0.1"
+
+
+def test_settings_forcent_runtime_local_only():
+    from hermes.config import Settings
+
+    cfg = Settings(host="0.0.0.0", ollama_base_url="http://192.168.1.10:11434")
+
+    assert cfg.host == "127.0.0.1"
+    assert cfg.ollama_base_url == "http://127.0.0.1:11434"

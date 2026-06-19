@@ -138,6 +138,9 @@ async def lancer_telechargement(
 async def _executer_telechargement(etat: EtatTelechargement, modele: str) -> None:
     try:
         async for evt in pythia.telecharger_modele(modele):
+            erreur = evt.get("error")
+            if erreur:
+                raise pythia.ErreurPythia(str(erreur))
             statut = str(evt.get("status") or "").lower()
             etat.statut = statut[:120]
             completed = evt.get("completed")

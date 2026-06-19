@@ -332,6 +332,101 @@ def test_endpoint_modifier_contenu_passe_en_a_modifier(monkeypatch):
     assert data["commentaire_humain"] == "edit"
 
 
+def test_endpoint_modifier_contenu_validee_requiert_revalidation(monkeypatch):
+    from hermes.agents.hermion import writer
+    from hermes.main import app
+
+    monkeypatch.setattr(writer.pythia, "generer", _faux_generateur_complet()[0])
+
+    init_db()
+    with Session(get_engine()) as session:
+        ao = _ao_avec_analyse(session)
+        ao_id = ao.id
+
+    with TestClient(app) as client:
+        client.post(f"/hermion/appels-offre/{ao_id}/rediger")
+        with Session(get_engine()) as s:
+            reponse_id = s.exec(
+                select(ReponseHermion.id).where(ReponseHermion.appel_offre_id == ao_id)
+            ).first()
+        assert client.patch(
+            f"/hermion/reponses/{reponse_id}/statut",
+            json={"statut": "validee"},
+        ).status_code == 200
+
+        r = client.patch(
+            f"/hermion/reponses/{reponse_id}/contenu",
+            json={"contenu": "# Contenu retouche\nA revalider."},
+        )
+        assert r.status_code == 200
+        assert r.json()["statut"] == "a_modifier"
+        assert client.post(f"/hermion/reponses/{reponse_id}/exporter").status_code == 409
+
+    with Session(get_engine()) as session:
+        assert session.get(AppelOffre, ao_id).statut == StatutAO.EN_REDACTION
+
+
+def test_modifier_ancienne_version_ne_definalise_pas_ao_deja_repondu(monkeypatch):
+    from hermes.agents.hermion import writer
+    from hermes.main import app
+
+    monkeypatch.setattr(writer.pythia, "generer", _faux_generateur_complet()[0])
+
+    init_db()
+    with Session(get_engine()) as session:
+        ao = _ao_avec_analyse(session)
+        ao_id = ao.id
+
+    with TestClient(app) as client:
+        client.post(f"/hermion/appels-offre/{ao_id}/rediger")
+        client.post(f"/hermion/appels-offre/{ao_id}/rediger")
+
+        with Session(get_engine()) as s:
+            reponses = s.exec(
+                select(ReponseHermion)
+                .where(ReponseHermion.appel_offre_id == ao_id)
+                .order_by(ReponseHermion.version)
+            ).all()
+            ancienne_id = reponses[0].id
+            retenue_id = reponses[1].id
+
+        r = client.patch(
+            f"/hermion/reponses/{retenue_id}/statut",
+            json={"statut": "validee"},
+        )
+        assert r.status_code == 200
+
+        r = client.patch(
+            f"/hermion/reponses/{ancienne_id}/contenu",
+            json={"contenu": "# Variante non retenue\nA retravailler."},
+        )
+        assert r.status_code == 200
+        assert r.json()["statut"] == "a_modifier"
+
+    with Session(get_engine()) as session:
+        assert session.get(AppelOffre, ao_id).statut == StatutAO.REPONDU
+
+
+def test_endpoint_rediger_depuis_analyse_passe_ao_en_redaction(monkeypatch):
+    from hermes.agents.hermion import writer
+    from hermes.main import app
+
+    monkeypatch.setattr(writer.pythia, "generer", _faux_generateur_complet()[0])
+
+    init_db()
+    with Session(get_engine()) as session:
+        ao = _ao_avec_analyse(session, statut=StatutAO.ANALYSE)
+        ao_id = ao.id
+
+    with TestClient(app) as client:
+        r = client.post(f"/hermion/appels-offre/{ao_id}/rediger")
+
+    assert r.status_code == 200
+    assert r.json()["reponse"]["statut"] == "en_attente"
+    with Session(get_engine()) as session:
+        assert session.get(AppelOffre, ao_id).statut == StatutAO.EN_REDACTION
+
+
 def test_endpoint_liste_toutes_reponses_joint_ao(monkeypatch):
     from hermes.agents.hermion import writer
     from hermes.main import app
