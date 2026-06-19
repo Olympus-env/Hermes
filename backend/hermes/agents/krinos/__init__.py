@@ -6,7 +6,11 @@ from hermes.agents.krinos.analyzer import (
     analyser_ao,
 )
 from hermes.agents.krinos.downloader import DocumentTelecharge, telecharger_documents_ao
-from hermes.agents.krinos.extractor import ExtractionDocument, extraire_document
+from hermes.agents.krinos.extractor import (
+    ExtractionDocument,
+    extraire_document,
+    extraire_documents_appel_offre,
+)
 
 __all__ = [
     "DocumentTelecharge",
@@ -15,5 +19,6 @@ __all__ = [
     "ResultatAnalyse",
     "analyser_ao",
     "extraire_document",
+    "extraire_documents_appel_offre",
     "telecharger_documents_ao",
 ]

@@ -14,7 +14,11 @@ from hermes.agents.krinos.downloader import (
     ErreurTelechargementDocument,
     telecharger_documents_ao,
 )
-from hermes.agents.krinos.extractor import ErreurExtractionDocument, extraire_document
+from hermes.agents.krinos.extractor import (
+    ErreurExtractionDocument,
+    extraire_document,
+    extraire_documents_appel_offre,
+)
 from hermes.agents.krinos.ponderation import (
     Ponderation,
     calculer_score_final,
@@ -237,6 +241,26 @@ async def analyser_appel_offre(
     ao = session.get(AppelOffre, ao_id)
     if ao is None:
         raise HTTPException(status_code=404, detail="Appel d'offre introuvable")
+
+    rapport_extraction = extraire_documents_appel_offre(session, ao, best_effort=True)
+    if rapport_extraction.documents_traites:
+        _journaliser(
+            session,
+            niveau=NiveauLog.INFO,
+            message=(
+                f"Pré-analyse AO {ao_id} : "
+                f"{rapport_extraction.documents_traites} documents extraits, "
+                f"{rapport_extraction.caracteres_extraits} caractères"
+            ),
+            appel_offre_id=ao_id,
+        )
+    for erreur in rapport_extraction.erreurs:
+        _journaliser(
+            session,
+            niveau=NiveauLog.WARNING,
+            message=f"Pré-analyse AO {ao_id} : extraction ignorée — {erreur}",
+            appel_offre_id=ao_id,
+        )
 
     try:
         resultat = await analyser_ao(session, ao, forcer=bool(payload and payload.forcer))
