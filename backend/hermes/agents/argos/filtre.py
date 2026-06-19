@@ -29,7 +29,12 @@ from datetime import UTC, datetime
 from sqlmodel import Session, select
 
 from hermes.agents import pythia
-from hermes.agents.argos.base import AOCollecte
+from hermes.agents.argos.base import (
+    NATURES_CANONIQUES,
+    AOCollecte,
+    CriteresAvances,
+    parse_iso_date,
+)
 from hermes.db.models import (
     AnalyseKrinos,
     AppelOffre,
@@ -81,37 +86,63 @@ class FiltreVeille:
         return False
 
 
-def charger_filtre(session: Session) -> FiltreVeille:
-    """Charge le filtre depuis MNEMOSYNE. Retourne un filtre vide si absent."""
+def _lire_brut(session: Session) -> dict:
+    """Lit le paramètre JSON brut (mots-clés + avancé). {} si absent/corrompu."""
     entree = session.get(Parametre, CLE_PARAMETRE)
     if entree is None or not entree.valeur:
-        return FiltreVeille()
+        return {}
     try:
         data = json.loads(entree.valeur)
     except json.JSONDecodeError:
-        return FiltreVeille()
-    return _filtre_depuis_dict(data)
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
-def enregistrer_filtre(session: Session, filtre: FiltreVeille) -> FiltreVeille:
-    """Persiste le filtre (création ou mise à jour). Normalise les listes."""
-    nettoye = _filtre_normalise(filtre)
-    payload = json.dumps(
-        {"inclus": list(nettoye.inclus), "exclus": list(nettoye.exclus)},
-        ensure_ascii=False,
-    )
+def _ecrire_brut(session: Session, data: dict) -> None:
+    """Écrit le paramètre JSON brut (création ou mise à jour)."""
+    payload = json.dumps(data, ensure_ascii=False)
     entree = session.get(Parametre, CLE_PARAMETRE)
     if entree is None:
         entree = Parametre(
             cle=CLE_PARAMETRE,
             valeur=payload,
-            description="Filtre ARGOS — mots-clés inclus/exclus (JSON)",
+            description="Filtre ARGOS — mots-clés + critères avancés (JSON)",
         )
     else:
         entree.valeur = payload
         entree.maj_le = datetime.now(UTC)
     session.add(entree)
     session.commit()
+
+
+def charger_filtre(session: Session) -> FiltreVeille:
+    """Charge le filtre mots-clés depuis MNEMOSYNE. Filtre vide si absent."""
+    return _filtre_depuis_dict(_lire_brut(session))
+
+
+def enregistrer_filtre(session: Session, filtre: FiltreVeille) -> FiltreVeille:
+    """Persiste le filtre mots-clés. Préserve les critères avancés existants."""
+    nettoye = _filtre_normalise(filtre)
+    data = _lire_brut(session)
+    data["inclus"] = list(nettoye.inclus)
+    data["exclus"] = list(nettoye.exclus)
+    _ecrire_brut(session, data)
+    return nettoye
+
+
+def charger_criteres(session: Session) -> CriteresAvances:
+    """Charge les critères avancés (sous-objet ``avance``). Vide si absent."""
+    return _criteres_depuis_dict(_lire_brut(session).get("avance"))
+
+
+def enregistrer_criteres(
+    session: Session, criteres: CriteresAvances
+) -> CriteresAvances:
+    """Persiste les critères avancés. Préserve les mots-clés existants."""
+    nettoye = _criteres_normalise(criteres)
+    data = _lire_brut(session)
+    data["avance"] = _criteres_en_dict(nettoye)
+    _ecrire_brut(session, data)
     return nettoye
 
 
@@ -197,6 +228,90 @@ def _filtre_depuis_dict(data: object) -> FiltreVeille:
     inclus = _liste_chaines(data.get("inclus"))
     exclus = _liste_chaines(data.get("exclus"))
     return _filtre_normalise(FiltreVeille(inclus=inclus, exclus=exclus))
+
+
+def _criteres_depuis_dict(data: object) -> CriteresAvances:
+    if not isinstance(data, dict):
+        return CriteresAvances()
+    return _criteres_normalise(
+        CriteresAvances(
+            cpv=_liste_chaines(data.get("cpv")),
+            descripteurs=_liste_chaines(data.get("descripteurs")),
+            natures=_liste_chaines(data.get("natures")),
+            pays=_liste_chaines(data.get("pays")),
+            departements=_liste_chaines(data.get("departements")),
+            date_publication_depuis=_str_ou_none(data.get("date_publication_depuis")),
+            deadline_min=_str_ou_none(data.get("deadline_min")),
+            deadline_max=_str_ou_none(data.get("deadline_max")),
+        )
+    )
+
+
+def _criteres_en_dict(criteres: CriteresAvances) -> dict:
+    return {
+        "cpv": list(criteres.cpv),
+        "descripteurs": list(criteres.descripteurs),
+        "natures": list(criteres.natures),
+        "pays": list(criteres.pays),
+        "departements": list(criteres.departements),
+        "date_publication_depuis": criteres.date_publication_depuis,
+        "deadline_min": criteres.deadline_min,
+        "deadline_max": criteres.deadline_max,
+    }
+
+
+def _criteres_normalise(criteres: CriteresAvances) -> CriteresAvances:
+    """Nettoie les listes (dédoublonnage) et valide les dates ISO.
+
+    - `cpv` : chiffres uniquement (codes 8 positions) ; valeurs non numériques
+      écartées (sécurité query eForms `IN`).
+    - `natures` : restreintes aux valeurs canoniques connues.
+    - `pays` : codes ISO3 en majuscules ; `departements` : chaînes brutes.
+    - dates : conservées seulement si ISO `YYYY-MM-DD` valide.
+    """
+    cpv = _dedoublonner_simple(c.strip() for c in criteres.cpv if c.strip().isdigit())
+    natures = _dedoublonner_simple(
+        n.strip().lower()
+        for n in criteres.natures
+        if n.strip().lower() in NATURES_CANONIQUES
+    )
+    pays = _dedoublonner_simple(p.strip().upper() for p in criteres.pays if p.strip())
+    return CriteresAvances(
+        cpv=cpv,
+        descripteurs=_dedoublonner(criteres.descripteurs),
+        natures=natures,
+        pays=pays,
+        departements=_dedoublonner_simple(
+            d.strip() for d in criteres.departements if d.strip()
+        ),
+        date_publication_depuis=_date_valide(criteres.date_publication_depuis),
+        deadline_min=_date_valide(criteres.deadline_min),
+        deadline_max=_date_valide(criteres.deadline_max),
+    )
+
+
+def _date_valide(valeur: str | None) -> str | None:
+    d = parse_iso_date(valeur)
+    return d.isoformat() if d else None
+
+
+def _str_ou_none(valeur: object) -> str | None:
+    if valeur is None:
+        return None
+    s = str(valeur).strip()
+    return s or None
+
+
+def _dedoublonner_simple(valeurs) -> tuple[str, ...]:
+    """Dédoublonne en préservant l'ordre, sans normalisation accent/casse."""
+    vues: set[str] = set()
+    propres: list[str] = []
+    for v in valeurs:
+        if not v or v in vues:
+            continue
+        vues.add(v)
+        propres.append(v)
+    return tuple(propres)
 
 
 def _filtre_normalise(filtre: FiltreVeille) -> FiltreVeille:

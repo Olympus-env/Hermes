@@ -38,6 +38,7 @@ from hermes.agents.argos.base import (
     MAX_PAGES,
     TAILLE_PAGE,
     AOCollecte,
+    CriteresAvances,
     Scraper,
     borne_incrementale,
 )
@@ -81,27 +82,35 @@ class TedScraper(Scraper):
         # été validée, et le garde-fou client re-trie déjà sur le titre.
         self.filtre_inclus: tuple[str, ...] = ()
         self.filtre_exclus: tuple[str, ...] = ()
+        # Critères avancés (CPV, nature, pays, dates) injectés par le runner.
+        self.criteres: CriteresAvances = CriteresAvances()
         # Date de la dernière collecte (injectée par le runner) : borne la
         # pagination incrémentale. None à la première collecte.
         self.depuis: datetime | None = None
 
+    @property
+    def _a_filtre_serveur(self) -> bool:
+        """Vrai si la query porte un filtre serveur au-delà du pays seul."""
+        return bool(self.filtre_inclus) or self.criteres.actif
+
     async def collecter(self, limite: int = 20) -> list[AOCollecte]:
-        query = _construire_query(self.filtre_inclus)
+        query = _construire_query(self.filtre_inclus, self.criteres)
         borne = borne_incrementale(self.depuis)
         try:
             notices = await self._collecter_pagine(query, borne)
         except httpx.HTTPError:
-            # Sans filtre, un échec est une vraie panne : on laisse remonter au
-            # runner pour journalisation. Avec filtre, on tente le repli.
-            if not self.filtre_inclus:
+            # Sans filtre serveur, un échec est une vraie panne : on laisse
+            # remonter au runner. Avec filtre, on tente le repli.
+            if not self._a_filtre_serveur:
                 raise
             notices = None
 
         if notices is None:
-            # Requête filtrée rejetée (query eForms invalide, champ…) : repli sûr
-            # sur la query « France seule ». Le runner re-filtrera côté client.
-            # Un échec ici lève → journalisé par le runner.
-            notices = await self._collecter_pagine(_construire_query(()), borne)
+            # Requête filtrée rejetée (CPV/nature/date invalide…) : repli sûr sur
+            # la query « pays seul » (on conserve le pays, on lâche les filtres
+            # fragiles). Le runner re-filtrera côté client. Un échec ici lève.
+            repli = CriteresAvances(pays=self.criteres.pays)
+            notices = await self._collecter_pagine(_construire_query((), repli), borne)
 
         return [_notice_vers_ao(n) for n in notices if _est_valide(n)]
 
@@ -160,19 +169,52 @@ class TedScraper(Scraper):
 # --------------------------------------------------------------------------- #
 
 
-def _construire_query(inclus: tuple[str, ...]) -> str:
-    """Construit la query eForms : France + mots-clés inclus sur le titre.
+def _construire_query(
+    inclus: tuple[str, ...], criteres: CriteresAvances | None = None
+) -> str:
+    """Construit la query eForms : pays + mots-clés titre + critères avancés.
 
-    Forme : ``(place-of-performance IN (FRA)) AND (notice-title ~ "kw1" OR …)``
-    suivie du tri. Sans mot-clé inclus → query « France seule » (comportement
-    historique).
+    Forme : ``place-of-performance IN (FRA) [AND (notice-title ~ …)] [AND
+    classification-cpv IN (…)] [AND contract-nature IN (…)] [AND publication-date
+    >= YYYYMMDD] [AND deadline-… >= / <= YYYYMMDD]`` suivie du tri.
+
+    Le pays par défaut reste FRA (usage LinkMobility France) mais devient
+    configurable via ``criteres.pays``. Tous les fragments avancés ont été
+    validés en live (2026-06-19).
     """
-    base = "place-of-performance IN (FRA)"
+    criteres = criteres or CriteresAvances()
+    pays = criteres.pays or ("FRA",)
+    clauses = [f"place-of-performance IN ({', '.join(pays)})"]
+
     termes = [_echapper(k) for k in inclus if _echapper(k)]
     if termes:
-        ors = " OR ".join(f'notice-title ~ "{t}"' for t in termes)
-        base = f"({base}) AND ({ors})"
-    return f"{base} {_TRI}"
+        clauses.append("(" + " OR ".join(f'notice-title ~ "{t}"' for t in termes) + ")")
+
+    cpv = [c for c in criteres.cpv if c.isdigit()]
+    if cpv:
+        clauses.append(f"classification-cpv IN ({', '.join(cpv)})")
+
+    nats = criteres.natures_pour("ted")
+    if nats:
+        clauses.append(f"contract-nature IN ({', '.join(nats)})")
+
+    if criteres.date_publication_depuis:
+        clauses.append(f"publication-date >= {_ted_date(criteres.date_publication_depuis)}")
+    if criteres.deadline_min:
+        clauses.append(
+            f"deadline-receipt-tender-date-lot >= {_ted_date(criteres.deadline_min)}"
+        )
+    if criteres.deadline_max:
+        clauses.append(
+            f"deadline-receipt-tender-date-lot <= {_ted_date(criteres.deadline_max)}"
+        )
+
+    return f"{' AND '.join(clauses)} {_TRI}"
+
+
+def _ted_date(iso: str) -> str:
+    """ISO ``YYYY-MM-DD`` → format eForms ``YYYYMMDD`` (validé en live)."""
+    return iso.replace("-", "")
 
 
 def _echapper(terme: str | None) -> str:

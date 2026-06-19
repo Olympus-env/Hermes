@@ -75,9 +75,16 @@ class ProfilCapacites:
 PROFIL_BOAMP = ProfilCapacites(
     portail="boamp",
     filtrage_serveur=True,
-    # Le filtrage serveur cible le champ `objet` via `search()` (full-text par
-    # mot) ; les autres champs servent à la normalisation, pas au filtre.
-    champs_filtrables=("objet",),
+    # Filtres serveur validés en live (2026-06-19) : mots-clés sur `objet`,
+    # descripteurs, département, nature (type_marche) et dates.
+    champs_filtrables=(
+        "objet",
+        "descripteur_libelle",
+        "code_departement",
+        "type_marche",
+        "dateparution",
+        "datelimitereponse",
+    ),
     champs_retournes=CHAMPS_BOAMP,
     pagination=True,
     # L'API `records` n'expose pas de lien DCE direct exploitable : la détection
@@ -88,9 +95,16 @@ PROFIL_BOAMP = ProfilCapacites(
 PROFIL_TED = ProfilCapacites(
     portail="ted",
     filtrage_serveur=True,
-    # Query expert eForms : lieu d'exécution + titre (acronymes exclus du
-    # serveur, voir scraper). CPV/nature seront ajoutés en Boucle 2.
-    champs_filtrables=("place-of-performance", "notice-title"),
+    # Query expert eForms validée en live : lieu d'exécution, titre, CPV,
+    # nature de contrat et dates (publication / deadline).
+    champs_filtrables=(
+        "place-of-performance",
+        "notice-title",
+        "classification-cpv",
+        "contract-nature",
+        "publication-date",
+        "deadline-receipt-tender-date-lot",
+    ),
     champs_retournes=CHAMPS_TED,
     pagination=True,
     # `links` expose HTML/PDF/XML directs (exploités en Boucle 3).

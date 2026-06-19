@@ -26,6 +26,7 @@ from hermes.agents.argos.base import (
     MAX_PAGES,
     TAILLE_PAGE,
     AOCollecte,
+    CriteresAvances,
     Scraper,
     borne_incrementale,
 )
@@ -62,12 +63,14 @@ class BoampScraper(Scraper):
         # étroite — ex. SMS/RCS — donne une veille quasi vide).
         self.filtre_inclus: tuple[str, ...] = ()
         self.filtre_exclus: tuple[str, ...] = ()
+        # Critères avancés (CPV non géré côté BOAMP) injectés par le runner.
+        self.criteres: CriteresAvances = CriteresAvances()
         # Date de la dernière collecte (injectée par le runner) : borne la
         # pagination incrémentale. None à la première collecte.
         self.depuis: datetime | None = None
 
     async def collecter(self, limite: int = 20) -> list[AOCollecte]:
-        where = _construire_where(self.filtre_inclus, self.filtre_exclus)
+        where = _construire_where(self.filtre_inclus, self.filtre_exclus, self.criteres)
         if where is None:
             # Sans filtre : derniers avis seulement (comportement historique ;
             # la veille ciblée passe toujours un filtre, donc pas de pagination).
@@ -140,27 +143,60 @@ class BoampScraper(Scraper):
 
 
 def _construire_where(
-    inclus: tuple[str, ...], exclus: tuple[str, ...]
+    inclus: tuple[str, ...],
+    exclus: tuple[str, ...],
+    criteres: CriteresAvances | None = None,
 ) -> str | None:
-    """Construit une clause ODSQL `where` à partir des mots-clés.
+    """Construit une clause ODSQL `where` à partir des mots-clés + critères avancés.
 
-    Forme : (search(objet,"kw1") OR …) AND NOT (search(objet,"ex1") OR …)
+    Forme : <clauses positives jointes par AND> [AND NOT (exclus…)]
 
     On cible le champ `objet` via la fonction `search()` (full-text par mot).
     C'est volontaire : une recherche plein-texte nue sur tout l'enregistrement
     matche les mentions légales (ex. « RCS » = Registre du Commerce, présent
-    partout) et explose en faux positifs. Renvoie None si aucun mot-clé inclus
-    (on garde alors la collecte des derniers avis).
+    partout) et explose en faux positifs.
+
+    Renvoie None si **aucune** clause positive (mots-clés inclus, descripteurs,
+    départements, natures ou dates) : on garde alors la collecte des derniers
+    avis. Un `exclus` seul ne justifie pas une requête serveur (le NOT seul
+    ramènerait tout le corpus).
     """
+    criteres = criteres or CriteresAvances()
+    clauses: list[str] = []
+
     inc = [_echapper(k) for k in inclus if _echapper(k)]
-    if not inc:
+    if inc:
+        clauses.append("(" + " OR ".join(f'search(objet, "{k}")' for k in inc) + ")")
+
+    desc = [_echapper(d) for d in criteres.descripteurs if _echapper(d)]
+    if desc:
+        clauses.append(
+            "(" + " OR ".join(f'search(descripteur_libelle, "{d}")' for d in desc) + ")"
+        )
+
+    deps = [_echapper(d) for d in criteres.departements if _echapper(d)]
+    if deps:
+        clauses.append("(" + " OR ".join(f'code_departement = "{d}"' for d in deps) + ")")
+
+    nats = criteres.natures_pour("boamp")
+    if nats:
+        clauses.append("(" + " OR ".join(f'type_marche = "{n}"' for n in nats) + ")")
+
+    if criteres.date_publication_depuis:
+        clauses.append(f"dateparution >= date'{criteres.date_publication_depuis}'")
+    if criteres.deadline_min:
+        clauses.append(f"datelimitereponse >= date'{criteres.deadline_min}'")
+    if criteres.deadline_max:
+        clauses.append(f"datelimitereponse <= date'{criteres.deadline_max}'")
+
+    if not clauses:
         return None
-    clause = "(" + " OR ".join(f'search(objet, "{k}")' for k in inc) + ")"
+    where = " AND ".join(clauses)
 
     exc = [_echapper(k) for k in exclus if _echapper(k)]
     if exc:
-        clause += " AND NOT (" + " OR ".join(f'search(objet, "{k}")' for k in exc) + ")"
-    return clause
+        where += " AND NOT (" + " OR ".join(f'search(objet, "{k}")' for k in exc) + ")"
+    return where
 
 
 def _echapper(terme: str | None) -> str:
