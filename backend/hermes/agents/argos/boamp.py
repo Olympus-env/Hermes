@@ -29,6 +29,7 @@ from hermes.agents.argos.base import (
     Scraper,
     borne_incrementale,
 )
+from hermes.agents.argos.capabilities import CHAMPS_BOAMP, PROFIL_BOAMP
 from hermes.agents.argos.reseau import requeter_avec_retry
 
 _UA = (
@@ -41,12 +42,17 @@ API_URL = (
     "catalog/datasets/boamp/records"
 )
 
+# Liste `select` versionnée (champs validés en live) : réduit la taille des
+# payloads quand la pagination monte en volume, sans rien retirer au parseur.
+_SELECT = ",".join(CHAMPS_BOAMP)
+
 
 class BoampScraper(Scraper):
     """Scraper BOAMP via l'API Opendatasoft de la DILA."""
 
     nom = "boamp"
     url_base = "https://www.boamp.fr"
+    capacites = PROFIL_BOAMP
 
     def __init__(self, timeout: float = 30.0):
         self._timeout = timeout
@@ -106,6 +112,7 @@ class BoampScraper(Scraper):
             "limit": limite_api,
             "offset": offset,
             "order_by": "dateparution desc",
+            "select": _SELECT,
         }
         if where:
             params["where"] = where

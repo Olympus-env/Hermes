@@ -21,6 +21,7 @@ proposer une première liste pertinente à partir du profil de l'entreprise.
 from __future__ import annotations
 
 import json
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -69,14 +70,13 @@ class FiltreVeille:
             return not self.inclus
 
         for mot in self.exclus:
-            if _normaliser(mot) and _normaliser(mot) in cible:
+            if _contient(cible, _normaliser(mot)):
                 return False
 
         if not self.inclus:
             return True
         for mot in self.inclus:
-            terme = _normaliser(mot)
-            if terme and terme in cible:
+            if _contient(cible, _normaliser(mot)):
                 return True
         return False
 
@@ -230,6 +230,31 @@ def _normaliser(texte: str | None) -> str:
     decomp = unicodedata.normalize("NFKD", texte)
     sans_accents = "".join(c for c in decomp if not unicodedata.combining(c))
     return sans_accents.casefold().strip()
+
+
+def _est_acronyme_court(terme: str) -> bool:
+    """Terme mono-token court (≤ 4 caractères alphanumériques).
+
+    Ces termes — typiquement des acronymes (SMS, RCS) — sont matchés en **mot
+    entier** pour éviter les faux positifs : en sous-chaîne nue, `RCS` matche
+    les mentions légales (« Registre du Commerce et des Sociétés ») et `SMS`
+    matcherait à l'intérieur d'autres mots.
+    """
+    return len(terme) <= 4 and terme.isalnum()
+
+
+def _contient(cible: str, terme: str) -> bool:
+    """Présence d'un terme (déjà normalisé) dans une cible (déjà normalisée).
+
+    Sous-chaîne pour les expressions métier (souple, ex. « maintenance
+    applicative ») ; mot entier pour les acronymes courts (strict, anti faux
+    positifs SMS/RCS). Voir [[project_hermes_scraping_todo]].
+    """
+    if not terme:
+        return False
+    if _est_acronyme_court(terme):
+        return re.search(rf"\b{re.escape(terme)}\b", cible) is not None
+    return terme in cible
 
 
 # --------------------------------------------------------------------------- #

@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from hermes import onboarding
 from hermes.agents import pythia
+from hermes.agents.argos.capabilities import tous_les_profils
 from hermes.agents.argos.filtre import (
     FiltreVeille,
     charger_filtre,
@@ -107,9 +108,36 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class CapaciteResponse(BaseModel):
+    """Capacités déclarées d'un portail (lecture seule) exposées à l'UI."""
+
+    portail: str
+    filtrage_serveur: bool
+    champs_filtrables: list[str]
+    champs_retournes: list[str]
+    pagination: bool
+    liens_documents: bool
+
+
 @router.get("/scrapers")
 def lister_scrapers() -> dict:
     return {"disponibles": scrapers_disponibles()}
+
+
+@router.get("/capacites", response_model=list[CapaciteResponse])
+def lister_capacites() -> list[CapaciteResponse]:
+    """Expose le profil de capacités de chaque portail (contrat UI Boucle 4)."""
+    return [
+        CapaciteResponse(
+            portail=p.portail,
+            filtrage_serveur=p.filtrage_serveur,
+            champs_filtrables=list(p.champs_filtrables),
+            champs_retournes=list(p.champs_retournes),
+            pagination=p.pagination,
+            liens_documents=p.liens_documents,
+        )
+        for p in tous_les_profils()
+    ]
 
 
 @router.post("/collecter", response_model=CycleCollecteResponse)

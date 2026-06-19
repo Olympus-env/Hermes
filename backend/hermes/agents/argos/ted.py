@@ -41,6 +41,7 @@ from hermes.agents.argos.base import (
     Scraper,
     borne_incrementale,
 )
+from hermes.agents.argos.capabilities import CHAMPS_TED, PROFIL_TED
 from hermes.agents.argos.reseau import requeter_avec_retry
 
 _UA = (
@@ -53,20 +54,12 @@ API_URL = "https://api.ted.europa.eu/v3/notices/search"
 # Langues préférées pour résoudre un champ multilingue eForms.
 _LANGUES_PREFEREES = ("fra", "fr", "FRA", "FR", "eng", "en", "ENG", "EN")
 
-# Champs eForms demandés. `deadline-receipt-tender-date-lot` est le champ de
-# date limite *validé en live* (le plus stable) : `deadline-receipt-tender`
-# provoque des 400 selon le type d'avis. Il revient en liste (un élément par
-# lot), parsé défensivement côté `_date_limite`.
-_FIELDS = [
-    "publication-number",
-    "notice-title",
-    "publication-date",
-    "deadline-receipt-tender-date-lot",
-    "buyer-name",
-    "place-of-performance",
-    "classification-cpv",
-    "links",
-]
+# Champs eForms demandés (source unique versionnée dans `capabilities`).
+# `deadline-receipt-tender-date-lot` est le champ de date limite *validé en
+# live* (le plus stable) : `deadline-receipt-tender` provoque des 400 selon le
+# type d'avis. Il revient en liste (un élément par lot), parsé défensivement
+# côté `_date_limite`.
+_FIELDS = list(CHAMPS_TED)
 
 # Tri appliqué à toutes les requêtes (fait partie de la query expert eForms).
 _TRI = "SORT BY publication-date DESC"
@@ -77,6 +70,7 @@ class TedScraper(Scraper):
 
     nom = "ted"
     url_base = "https://ted.europa.eu"
+    capacites = PROFIL_TED
 
     def __init__(self, timeout: float = 30.0):
         self._timeout = timeout
