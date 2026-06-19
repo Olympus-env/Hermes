@@ -112,3 +112,15 @@ def test_collecte_avec_filtre_envoie_le_where(monkeypatch):
     assert _ClientOk.captured.get("where") == (
         '(search(objet, "SMS")) AND NOT (search(objet, "nettoyage"))'
     )
+
+
+def test_collecte_envoie_le_select(monkeypatch):
+    """Toute requête BOAMP porte la liste `select` versionnée (payloads réduits)."""
+    monkeypatch.setattr(boamp.httpx, "AsyncClient", _ClientOk)
+    scraper = BoampScraper()
+    scraper.filtre_inclus = ("SMS",)
+
+    asyncio.run(scraper.collecter(limite=20))
+
+    assert _ClientOk.captured.get("select") == boamp._SELECT
+    assert "objet" in _ClientOk.captured["select"]

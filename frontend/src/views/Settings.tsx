@@ -10,10 +10,19 @@ import { Icon } from "../components/Icon";
 import { WorkflowEditor, type WorkflowDraft } from "../components/WorkflowEditor";
 import {
   api,
+  type CapaciteArgos,
   type ConfigOrchestration,
+  type CriteresAvances,
+  type NatureMarche,
   type PortailArgos,
   type RapportOrchestration,
 } from "../lib/api";
+
+const NATURES: { id: NatureMarche; label: string }[] = [
+  { id: "services", label: "Services" },
+  { id: "travaux", label: "Travaux" },
+  { id: "fournitures", label: "Fournitures" },
+];
 
 type Props = {
   profile: UserProfile | null;
@@ -234,6 +243,7 @@ const SCRAPER_URLS: Record<string, string> = {
 function PortalsSection() {
   const [scrapers, setScrapers] = useState<string[]>([]);
   const [portails, setPortails] = useState<PortailArgos[]>([]);
+  const [capacites, setCapacites] = useState<CapaciteArgos[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -242,12 +252,14 @@ function PortalsSection() {
     setLoading(true);
     setError(null);
     try {
-      const [scrapersData, portailsData] = await Promise.all([
+      const [scrapersData, portailsData, capacitesData] = await Promise.all([
         api.listerScrapersArgos(),
         api.listerPortailsArgos(),
+        api.listerCapacitesArgos(),
       ]);
       setScrapers(scrapersData.disponibles);
       setPortails(portailsData);
+      setCapacites(capacitesData);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -297,6 +309,7 @@ function PortalsSection() {
           {scrapers.map((nom) => {
             const portail = portails.find((p) => p.nom === nom);
             const actif = portail?.actif ?? true;
+            const cap = capacites.find((c) => c.portail === nom);
             return (
               <div className="portal-row" key={nom}>
                 <div>
@@ -304,6 +317,21 @@ function PortalsSection() {
                   <div className="portal-row__url">
                     {portail?.url_base ?? SCRAPER_URLS[nom] ?? "URL non configurée"}
                   </div>
+                  {cap && (
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        flexWrap: "wrap",
+                        marginTop: 6,
+                      }}
+                    >
+                      {cap.filtrage_serveur && <CapChip label="Filtrage serveur" />}
+                      {cap.pagination && <CapChip label="Pagination" />}
+                      {cap.liens_documents && <CapChip label="Liens documents" />}
+                      <CapChip label={`${cap.champs_filtrables.length} champs filtrables`} />
+                    </div>
+                  )}
                 </div>
                 <span className="portal-row__count">
                   {portail ? (actif ? "Actif" : "Inactif") : "Disponible"}
@@ -378,6 +406,24 @@ function PortalsSection() {
   );
 }
 
+function CapChip({ label }: { label: string }) {
+  return (
+    <span
+      style={{
+        fontSize: 10.5,
+        fontFamily: "var(--font-mono)",
+        color: "var(--fg-3)",
+        border: "1px solid var(--line)",
+        borderRadius: 4,
+        padding: "2px 6px",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 function parseMotsCles(value: string): string[] {
   return value
     .split(/[,\n]/)
@@ -390,6 +436,17 @@ function FilteringSection() {
   const [excluded, setExcluded] = useState("");
   const [savedKeywords, setSavedKeywords] = useState("");
   const [savedExcluded, setSavedExcluded] = useState("");
+  // Critères avancés (filtrage serveur TED/BOAMP). Listes saisies en texte
+  // séparé par des virgules ; natures en cases à cocher ; dates en ISO.
+  const [cpv, setCpv] = useState("");
+  const [descripteurs, setDescripteurs] = useState("");
+  const [natures, setNatures] = useState<Set<NatureMarche>>(new Set());
+  const [pays, setPays] = useState("");
+  const [departements, setDepartements] = useState("");
+  const [datePub, setDatePub] = useState("");
+  const [deadlineMin, setDeadlineMin] = useState("");
+  const [deadlineMax, setDeadlineMax] = useState("");
+  const [savedAvanceJson, setSavedAvanceJson] = useState("");
   const [actif, setActif] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -398,7 +455,54 @@ function FilteringSection() {
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
-  const dirty = keywords !== savedKeywords || excluded !== savedExcluded;
+  const buildAvance = (): CriteresAvances => ({
+    cpv: parseMotsCles(cpv),
+    descripteurs: parseMotsCles(descripteurs),
+    natures: NATURES.filter((n) => natures.has(n.id)).map((n) => n.id),
+    pays: parseMotsCles(pays).map((p) => p.toUpperCase()),
+    departements: parseMotsCles(departements),
+    date_publication_depuis: datePub || null,
+    deadline_min: deadlineMin || null,
+    deadline_max: deadlineMax || null,
+  });
+
+  const appliquerAvance = (a: CriteresAvances) => {
+    setCpv(a.cpv.join(", "));
+    setDescripteurs(a.descripteurs.join(", "));
+    setNatures(new Set(a.natures as NatureMarche[]));
+    setPays(a.pays.join(", "));
+    setDepartements(a.departements.join(", "));
+    setDatePub(a.date_publication_depuis ?? "");
+    setDeadlineMin(a.deadline_min ?? "");
+    setDeadlineMax(a.deadline_max ?? "");
+    // Référence pour `dirty` : sérialisée dans la même forme canonique que
+    // `buildAvance` (natures en ordre NATURES, pays en majuscules) pour éviter
+    // un état « modifié » fantôme juste après chargement.
+    setSavedAvanceJson(
+      JSON.stringify({
+        cpv: a.cpv,
+        descripteurs: a.descripteurs,
+        natures: NATURES.filter((n) => a.natures.includes(n.id)).map((n) => n.id),
+        pays: a.pays.map((p) => p.toUpperCase()),
+        departements: a.departements,
+        date_publication_depuis: a.date_publication_depuis ?? null,
+        deadline_min: a.deadline_min ?? null,
+        deadline_max: a.deadline_max ?? null,
+      }),
+    );
+  };
+
+  const toggleNature = (id: NatureMarche) =>
+    setNatures((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const dirty =
+    keywords !== savedKeywords ||
+    excluded !== savedExcluded ||
+    JSON.stringify(buildAvance()) !== savedAvanceJson;
 
   useEffect(() => {
     let cancelled = false;
@@ -412,6 +516,7 @@ function FilteringSection() {
         setExcluded(exc);
         setSavedKeywords(inc);
         setSavedExcluded(exc);
+        appliquerAvance(f.avance);
         setActif(f.actif);
       })
       .catch((e) => {
@@ -433,6 +538,7 @@ function FilteringSection() {
       const reponse = await api.ecrireFiltreVeille({
         inclus: parseMotsCles(keywords),
         exclus: parseMotsCles(excluded),
+        avance: buildAvance(),
       });
       const inc = reponse.inclus.join(", ");
       const exc = reponse.exclus.join(", ");
@@ -440,6 +546,7 @@ function FilteringSection() {
       setExcluded(exc);
       setSavedKeywords(inc);
       setSavedExcluded(exc);
+      appliquerAvance(reponse.avance);
       setActif(reponse.actif);
       setSavedMessage(
         reponse.actif
@@ -532,6 +639,144 @@ function FilteringSection() {
               value={excluded}
               onChange={(e) => setExcluded(e.target.value)}
             />
+          </div>
+
+          <div
+            style={{
+              marginTop: 20,
+              paddingTop: 16,
+              borderTop: "1px solid var(--line)",
+            }}
+          >
+            <div className="settings-row__label" style={{ marginBottom: 4 }}>
+              Filtres avancés (serveur)
+            </div>
+            <div className="settings-row__hint" style={{ marginBottom: 14 }}>
+              Poussés directement aux API TED/BOAMP pour cibler la collecte. CPV
+              et pays concernent TED ; descripteurs et départements concernent
+              BOAMP ; nature et dates s'appliquent aux deux.
+            </div>
+
+            <div className="settings-row">
+              <div>
+                <div className="settings-row__label">Nature du marché</div>
+                <div className="settings-row__hint">Vide = toutes natures</div>
+              </div>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                {NATURES.map((n) => (
+                  <label
+                    key={n.id}
+                    style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={natures.has(n.id)}
+                      onChange={() => toggleNature(n.id)}
+                    />
+                    {n.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div>
+                <div className="settings-row__label">Codes CPV (TED)</div>
+                <div className="settings-row__hint">
+                  Codes à 8 chiffres, séparés par des virgules. ex : 64200000
+                </div>
+              </div>
+              <input
+                className="input"
+                placeholder="ex : 64200000, 72000000"
+                value={cpv}
+                onChange={(e) => setCpv(e.target.value)}
+              />
+            </div>
+
+            <div className="settings-row">
+              <div>
+                <div className="settings-row__label">Pays / zone (TED)</div>
+                <div className="settings-row__hint">
+                  Codes pays ISO3, séparés par des virgules. Défaut : FRA
+                </div>
+              </div>
+              <input
+                className="input"
+                placeholder="ex : FRA, ESP"
+                value={pays}
+                onChange={(e) => setPays(e.target.value)}
+              />
+            </div>
+
+            <div className="settings-row">
+              <div>
+                <div className="settings-row__label">Descripteurs (BOAMP)</div>
+                <div className="settings-row__hint">
+                  Termes métier recherchés dans les descripteurs BOAMP
+                </div>
+              </div>
+              <input
+                className="input"
+                placeholder="ex : informatique, télécommunications"
+                value={descripteurs}
+                onChange={(e) => setDescripteurs(e.target.value)}
+              />
+            </div>
+
+            <div className="settings-row">
+              <div>
+                <div className="settings-row__label">Départements (BOAMP)</div>
+                <div className="settings-row__hint">
+                  Codes département, séparés par des virgules
+                </div>
+              </div>
+              <input
+                className="input"
+                placeholder="ex : 75, 92, 69"
+                value={departements}
+                onChange={(e) => setDepartements(e.target.value)}
+              />
+            </div>
+
+            <div className="settings-row">
+              <div>
+                <div className="settings-row__label">Publié depuis</div>
+                <div className="settings-row__hint">
+                  N'inclut que les avis publiés à partir de cette date
+                </div>
+              </div>
+              <input
+                className="input"
+                type="date"
+                value={datePub}
+                onChange={(e) => setDatePub(e.target.value)}
+              />
+            </div>
+
+            <div className="settings-row">
+              <div>
+                <div className="settings-row__label">Date limite — entre</div>
+                <div className="settings-row__hint">
+                  Fenêtre de date limite de réponse (deadline)
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <input
+                  className="input"
+                  type="date"
+                  value={deadlineMin}
+                  onChange={(e) => setDeadlineMin(e.target.value)}
+                />
+                <span style={{ color: "var(--fg-3)", fontSize: 12 }}>et</span>
+                <input
+                  className="input"
+                  type="date"
+                  value={deadlineMax}
+                  onChange={(e) => setDeadlineMax(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
 
           <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>

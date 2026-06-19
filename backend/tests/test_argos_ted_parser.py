@@ -133,7 +133,7 @@ def test_query_france_seule_sans_filtre():
 def test_query_inclus_pousses_sur_notice_title():
     q = _construire_query(("SMS", "RCS"))
     assert q == (
-        '(place-of-performance IN (FRA)) AND '
+        "place-of-performance IN (FRA) AND "
         '(notice-title ~ "SMS" OR notice-title ~ "RCS") '
         "SORT BY publication-date DESC"
     )

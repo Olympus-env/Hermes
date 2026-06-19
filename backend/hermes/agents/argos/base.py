@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 # Pagination des collectes (incrémental réalisé côté client).
 TAILLE_PAGE = 100  # plafond par requête des deux APIs (BOAMP, TED)
@@ -52,12 +52,109 @@ class AOCollecte:
     zone_geographique: str | None = None
     code_naf: str | None = None
 
+    # Liens vers les documents/avis publics exposés par le portail (TED :
+    # HTML/PDF/XML). Vide si le portail n'expose pas de lien exploitable
+    # (BOAMP records) — le téléchargement se rabat alors sur `url_source`.
+    liens_documents: list[str] = field(default_factory=list)
+
     def cle_unicite(self) -> str:
         """Clé utilisée pour dédoublonner.
 
         Priorité : référence externe officielle > url_source.
         """
         return self.reference_externe or self.url_source
+
+
+# --------------------------------------------------------------------------- #
+# Critères de filtrage avancé (contrat partagé scrapers ↔ runner ↔ persistance)
+# --------------------------------------------------------------------------- #
+
+# Natures de marché canoniques (français) → représentation par portail.
+# Mapping validé en live (2026-06-19) : BOAMP `type_marche`, TED `contract-nature`.
+NATURES_CANONIQUES: tuple[str, ...] = ("services", "travaux", "fournitures")
+_NATURE_BOAMP = {"services": "SERVICES", "travaux": "TRAVAUX", "fournitures": "FOURNITURES"}
+_NATURE_TED = {"services": "services", "travaux": "works", "fournitures": "supplies"}
+
+
+def parse_iso_date(valeur: str | None) -> date | None:
+    """Parse une date ISO ``YYYY-MM-DD`` ; None si vide ou invalide."""
+    if not valeur:
+        return None
+    try:
+        return date.fromisoformat(str(valeur).strip()[:10])
+    except (ValueError, TypeError):
+        return None
+
+
+def _date_only(valeur: datetime | None) -> date | None:
+    return valeur.date() if isinstance(valeur, datetime) else None
+
+
+@dataclass(frozen=True)
+class CriteresAvances:
+    """Filtres avancés poussés côté serveur (best-effort) puis re-vérifiés.
+
+    Tous optionnels, persistés avec le filtre mots-clés (sous-objet ``avance``).
+    Les dates sont en ISO ``YYYY-MM-DD`` et converties au format de chaque
+    portail par les query builders (TED ``YYYYMMDD``, BOAMP ``date'…'``).
+
+    Répartition par portail :
+    - ``cpv`` → TED (``classification-cpv IN``) ; non exposé par BOAMP.
+    - ``descripteurs`` → BOAMP (``search(descripteur_libelle, …)``).
+    - ``natures`` → les deux (canonique mappé via NATURES_CANONIQUES).
+    - ``pays`` → TED (``place-of-performance IN``, ISO3) ; défaut FRA.
+    - ``departements`` → BOAMP (``code_departement``).
+    - dates → les deux portails.
+    """
+
+    cpv: tuple[str, ...] = field(default_factory=tuple)
+    descripteurs: tuple[str, ...] = field(default_factory=tuple)
+    natures: tuple[str, ...] = field(default_factory=tuple)
+    pays: tuple[str, ...] = field(default_factory=tuple)
+    departements: tuple[str, ...] = field(default_factory=tuple)
+    date_publication_depuis: str | None = None
+    deadline_min: str | None = None
+    deadline_max: str | None = None
+
+    @property
+    def actif(self) -> bool:
+        return bool(
+            self.cpv
+            or self.descripteurs
+            or self.natures
+            or self.pays
+            or self.departements
+            or self.date_publication_depuis
+            or self.deadline_min
+            or self.deadline_max
+        )
+
+    def natures_pour(self, portail: str) -> tuple[str, ...]:
+        """Traduit les natures canoniques dans le vocabulaire d'un portail."""
+        table = _NATURE_BOAMP if portail == "boamp" else _NATURE_TED
+        return tuple(table[n] for n in self.natures if n in table)
+
+    def correspond_client(self, item: AOCollecte) -> bool:
+        """Garde-fou client sur les dates (best-effort, jamais sur zone/CPV).
+
+        Le filtrage serveur reste autoritaire ; ce garde-fou rattrape les cas où
+        la requête serveur a été rejetée (repli sur collecte non filtrée). On ne
+        rejette **que** sur une date présente et clairement hors borne — un AO
+        sans date n'est jamais écarté ici.
+        """
+        pub = _date_only(item.date_publication)
+        depuis = parse_iso_date(self.date_publication_depuis)
+        if depuis and pub and pub < depuis:
+            return False
+
+        fin = _date_only(item.date_limite)
+        dmin = parse_iso_date(self.deadline_min)
+        dmax = parse_iso_date(self.deadline_max)
+        if dmin and fin and fin < dmin:
+            return False
+        if dmax and fin and fin > dmax:
+            return False
+        return True
 
 
 @dataclass

@@ -38,9 +38,11 @@ from hermes.agents.argos.base import (
     MAX_PAGES,
     TAILLE_PAGE,
     AOCollecte,
+    CriteresAvances,
     Scraper,
     borne_incrementale,
 )
+from hermes.agents.argos.capabilities import CHAMPS_TED, PROFIL_TED
 from hermes.agents.argos.reseau import requeter_avec_retry
 
 _UA = (
@@ -53,20 +55,12 @@ API_URL = "https://api.ted.europa.eu/v3/notices/search"
 # Langues préférées pour résoudre un champ multilingue eForms.
 _LANGUES_PREFEREES = ("fra", "fr", "FRA", "FR", "eng", "en", "ENG", "EN")
 
-# Champs eForms demandés. `deadline-receipt-tender-date-lot` est le champ de
-# date limite *validé en live* (le plus stable) : `deadline-receipt-tender`
-# provoque des 400 selon le type d'avis. Il revient en liste (un élément par
-# lot), parsé défensivement côté `_date_limite`.
-_FIELDS = [
-    "publication-number",
-    "notice-title",
-    "publication-date",
-    "deadline-receipt-tender-date-lot",
-    "buyer-name",
-    "place-of-performance",
-    "classification-cpv",
-    "links",
-]
+# Champs eForms demandés (source unique versionnée dans `capabilities`).
+# `deadline-receipt-tender-date-lot` est le champ de date limite *validé en
+# live* (le plus stable) : `deadline-receipt-tender` provoque des 400 selon le
+# type d'avis. Il revient en liste (un élément par lot), parsé défensivement
+# côté `_date_limite`.
+_FIELDS = list(CHAMPS_TED)
 
 # Tri appliqué à toutes les requêtes (fait partie de la query expert eForms).
 _TRI = "SORT BY publication-date DESC"
@@ -77,6 +71,7 @@ class TedScraper(Scraper):
 
     nom = "ted"
     url_base = "https://ted.europa.eu"
+    capacites = PROFIL_TED
 
     def __init__(self, timeout: float = 30.0):
         self._timeout = timeout
@@ -87,27 +82,35 @@ class TedScraper(Scraper):
         # été validée, et le garde-fou client re-trie déjà sur le titre.
         self.filtre_inclus: tuple[str, ...] = ()
         self.filtre_exclus: tuple[str, ...] = ()
+        # Critères avancés (CPV, nature, pays, dates) injectés par le runner.
+        self.criteres: CriteresAvances = CriteresAvances()
         # Date de la dernière collecte (injectée par le runner) : borne la
         # pagination incrémentale. None à la première collecte.
         self.depuis: datetime | None = None
 
+    @property
+    def _a_filtre_serveur(self) -> bool:
+        """Vrai si la query porte un filtre serveur au-delà du pays seul."""
+        return bool(self.filtre_inclus) or self.criteres.actif
+
     async def collecter(self, limite: int = 20) -> list[AOCollecte]:
-        query = _construire_query(self.filtre_inclus)
+        query = _construire_query(self.filtre_inclus, self.criteres)
         borne = borne_incrementale(self.depuis)
         try:
             notices = await self._collecter_pagine(query, borne)
         except httpx.HTTPError:
-            # Sans filtre, un échec est une vraie panne : on laisse remonter au
-            # runner pour journalisation. Avec filtre, on tente le repli.
-            if not self.filtre_inclus:
+            # Sans filtre serveur, un échec est une vraie panne : on laisse
+            # remonter au runner. Avec filtre, on tente le repli.
+            if not self._a_filtre_serveur:
                 raise
             notices = None
 
         if notices is None:
-            # Requête filtrée rejetée (query eForms invalide, champ…) : repli sûr
-            # sur la query « France seule ». Le runner re-filtrera côté client.
-            # Un échec ici lève → journalisé par le runner.
-            notices = await self._collecter_pagine(_construire_query(()), borne)
+            # Requête filtrée rejetée (CPV/nature/date invalide…) : repli sûr sur
+            # la query « pays seul » (on conserve le pays, on lâche les filtres
+            # fragiles). Le runner re-filtrera côté client. Un échec ici lève.
+            repli = CriteresAvances(pays=self.criteres.pays)
+            notices = await self._collecter_pagine(_construire_query((), repli), borne)
 
         return [_notice_vers_ao(n) for n in notices if _est_valide(n)]
 
@@ -166,19 +169,52 @@ class TedScraper(Scraper):
 # --------------------------------------------------------------------------- #
 
 
-def _construire_query(inclus: tuple[str, ...]) -> str:
-    """Construit la query eForms : France + mots-clés inclus sur le titre.
+def _construire_query(
+    inclus: tuple[str, ...], criteres: CriteresAvances | None = None
+) -> str:
+    """Construit la query eForms : pays + mots-clés titre + critères avancés.
 
-    Forme : ``(place-of-performance IN (FRA)) AND (notice-title ~ "kw1" OR …)``
-    suivie du tri. Sans mot-clé inclus → query « France seule » (comportement
-    historique).
+    Forme : ``place-of-performance IN (FRA) [AND (notice-title ~ …)] [AND
+    classification-cpv IN (…)] [AND contract-nature IN (…)] [AND publication-date
+    >= YYYYMMDD] [AND deadline-… >= / <= YYYYMMDD]`` suivie du tri.
+
+    Le pays par défaut reste FRA (usage LinkMobility France) mais devient
+    configurable via ``criteres.pays``. Tous les fragments avancés ont été
+    validés en live (2026-06-19).
     """
-    base = "place-of-performance IN (FRA)"
+    criteres = criteres or CriteresAvances()
+    pays = criteres.pays or ("FRA",)
+    clauses = [f"place-of-performance IN ({', '.join(pays)})"]
+
     termes = [_echapper(k) for k in inclus if _echapper(k)]
     if termes:
-        ors = " OR ".join(f'notice-title ~ "{t}"' for t in termes)
-        base = f"({base}) AND ({ors})"
-    return f"{base} {_TRI}"
+        clauses.append("(" + " OR ".join(f'notice-title ~ "{t}"' for t in termes) + ")")
+
+    cpv = [c for c in criteres.cpv if c.isdigit()]
+    if cpv:
+        clauses.append(f"classification-cpv IN ({', '.join(cpv)})")
+
+    nats = criteres.natures_pour("ted")
+    if nats:
+        clauses.append(f"contract-nature IN ({', '.join(nats)})")
+
+    if criteres.date_publication_depuis:
+        clauses.append(f"publication-date >= {_ted_date(criteres.date_publication_depuis)}")
+    if criteres.deadline_min:
+        clauses.append(
+            f"deadline-receipt-tender-date-lot >= {_ted_date(criteres.deadline_min)}"
+        )
+    if criteres.deadline_max:
+        clauses.append(
+            f"deadline-receipt-tender-date-lot <= {_ted_date(criteres.deadline_max)}"
+        )
+
+    return f"{' AND '.join(clauses)} {_TRI}"
+
+
+def _ted_date(iso: str) -> str:
+    """ISO ``YYYY-MM-DD`` → format eForms ``YYYYMMDD`` (validé en live)."""
+    return iso.replace("-", "")
 
 
 def _echapper(terme: str | None) -> str:
@@ -219,7 +255,9 @@ def _notice_vers_ao(notice: dict[str, Any]) -> AOCollecte:
         titre = titre[:497] + "…"
 
     reference = _texte_simple(notice.get("publication-number"))
-    url = _premier_lien(notice.get("links")) or _url_par_defaut(reference)
+    liens = _tous_les_liens(notice.get("links"))
+    url = _premier_lien(notice.get("links")) or (liens[0] if liens else None) \
+        or _url_par_defaut(reference)
     emetteur = _texte_multi(notice.get("buyer-name"))
 
     return AOCollecte(
@@ -233,6 +271,7 @@ def _notice_vers_ao(notice: dict[str, Any]) -> AOCollecte:
         type_marche=_texte_multi(notice.get("notice-type")),
         zone_geographique=_zone(notice.get("place-of-performance")),
         code_naf=_premier(notice.get("classification-cpv")),
+        liens_documents=liens,
     )
 
 
@@ -310,6 +349,30 @@ def _premier_lien(links: Any) -> str | None:
     # Dernier recours : n'importe quelle valeur ressemblant à une URL.
     url = _texte_multi(links)
     return url if url and url.startswith("http") else None
+
+
+# Familles de liens TED collectées pour KRINOS, par ordre d'intérêt pour
+# l'extraction de texte : PDF (meilleur), puis HTML, puis XML (structuré).
+_FAMILLES_LIENS = ("pdf", "pdfDirect", "html", "htmlDirect", "xml")
+
+
+def _tous_les_liens(links: Any) -> list[str]:
+    """Liste dédoublonnée des liens documents publics (un par famille).
+
+    Une seule URL par famille (langue préférée via `_texte_multi`) pour éviter
+    de télécharger toutes les variantes linguistiques du même avis. PDF en tête
+    (meilleure extraction). Renvoie [] si aucun lien exploitable.
+    """
+    if not isinstance(links, dict):
+        url = _texte_simple(links)
+        return [url] if url and url.startswith("http") else []
+
+    urls: list[str] = []
+    for famille in _FAMILLES_LIENS:
+        url = _texte_multi(links.get(famille))
+        if url and url.startswith("http") and url not in urls:
+            urls.append(url)
+    return urls
 
 
 def _url_par_defaut(reference: str | None) -> str:

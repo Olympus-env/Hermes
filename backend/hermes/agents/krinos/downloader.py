@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,13 +42,33 @@ async def telecharger_documents_ao(
     *,
     urls: list[str] | None = None,
 ) -> list[DocumentTelecharge]:
-    """Télécharge les documents depuis les URLs fournies, ou `url_source` par défaut."""
-    cibles = urls or [appel_offre.url_source]
+    """Télécharge les documents de l'AO.
+
+    Cibles, par ordre de priorité : `urls` explicites, sinon les liens
+    documents détectés par ARGOS (`liens_documents`, ex. TED HTML/PDF/XML),
+    sinon `url_source` en dernier recours. Chaque cible est best-effort
+    indépendante : un échec sur une URL n'empêche pas les autres.
+    """
+    cibles = urls or liens_documents_ao(appel_offre)
     resultats: list[DocumentTelecharge] = []
     for url in cibles:
         reponse = await _telecharger_url(url)
         resultats.append(_persister_document(session, appel_offre, url, reponse))
     return resultats
+
+
+def liens_documents_ao(appel_offre: AppelOffre) -> list[str]:
+    """Liens à télécharger pour un AO : détectés par ARGOS, sinon `url_source`."""
+    if appel_offre.liens_documents:
+        try:
+            liens = json.loads(appel_offre.liens_documents)
+        except json.JSONDecodeError:
+            liens = None
+        if isinstance(liens, list):
+            propres = [str(u).strip() for u in liens if str(u).strip()]
+            if propres:
+                return propres
+    return [appel_offre.url_source]
 
 
 async def _telecharger_url(url: str) -> ReponseDocument:

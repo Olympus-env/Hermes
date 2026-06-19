@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime
 
 from loguru import logger
 from sqlmodel import Session, select
 
-from hermes.agents.argos.base import AOCollecte, ResultatCollecte, Scraper
-from hermes.agents.argos.filtre import charger_filtre
+from hermes.agents.argos.base import AOCollecte, CriteresAvances, ResultatCollecte, Scraper
+from hermes.agents.argos.filtre import charger_criteres, charger_filtre
 from hermes.db.models import AppelOffre, LogAgent, NiveauLog, Portail, StatutAO
 from hermes.securite.credentials import ErreurCredentials, dechiffrer_credentials
 
@@ -37,6 +38,11 @@ async def executer_collecte(
     filtre = charger_filtre(session)
     _injecter_filtre(scraper, filtre)
 
+    # Critères avancés (CPV, nature, zone, dates) : poussés au scraper pour le
+    # filtrage serveur, et re-vérifiés côté client (dates) en garde-fou.
+    criteres = charger_criteres(session)
+    _injecter_criteres(scraper, criteres)
+
     # Fenêtre incrémentale : on pousse la date de la collecte précédente pour
     # que le scraper arrête de paginer une fois la fenêtre dépassée (la valeur
     # courante n'est mise à jour qu'en fin de collecte, plus bas).
@@ -63,6 +69,9 @@ async def executer_collecte(
 
     for item in items:
         if filtre.actif and not filtre.correspond(item):
+            resultat.ao_filtres += 1
+            continue
+        if criteres.actif and not criteres.correspond_client(item):
             resultat.ao_filtres += 1
             continue
         if _existe(session, portail.id, item):
@@ -134,6 +143,15 @@ def _injecter_filtre(scraper: Scraper, filtre) -> None:
         scraper.filtre_exclus = tuple(filtre.exclus)
 
 
+def _injecter_criteres(scraper: Scraper, criteres: CriteresAvances) -> None:
+    """Pousse les critères avancés au scraper pour le filtrage serveur.
+
+    Best-effort : un scraper sans cet attribut (factices de test) l'ignore.
+    """
+    if hasattr(scraper, "criteres"):
+        scraper.criteres = criteres
+
+
 def _injecter_fenetre(scraper: Scraper, portail: Portail) -> None:
     """Pousse la date de dernière collecte au scraper pour l'incrémental.
 
@@ -180,6 +198,11 @@ def _en_modele(item: AOCollecte, portail_id: int | None) -> AppelOffre:
         type_marche=item.type_marche,
         zone_geographique=item.zone_geographique,
         code_naf=item.code_naf,
+        liens_documents=(
+            json.dumps(item.liens_documents, ensure_ascii=False)
+            if item.liens_documents
+            else None
+        ),
         statut=StatutAO.BRUT,
     )
 

@@ -37,6 +37,7 @@ def _migrer_colonnes(conn) -> None:
     migrations: list[tuple[str, str, str]] = [
         # (table, colonne, definition SQL)
         ("analyses_krinos", "scores_dimensions", "TEXT"),
+        ("appels_offre", "liens_documents", "TEXT"),
     ]
     for table, colonne, definition in migrations:
         cols = {

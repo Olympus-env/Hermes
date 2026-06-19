@@ -194,10 +194,14 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
                     </span>
                   </div>
                   <h3 className="tender-card__title">{t.title}</h3>
-                  <div className="tender-card__tags">
+                  <div
+                    className="tender-card__tags"
+                    style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}
+                  >
                     {t.tags.map((tg) => (
                       <Tag key={tg.label} label={tg.label} tone={tg.tone} />
                     ))}
+                    <DocumentsBadge tender={t} />
                   </div>
                 </div>
                 <div className="tender-card__right">
@@ -274,9 +278,44 @@ function mapAppelOffre(ao: AppelOffre): Tender {
       `Statut MNEMOSYNE : ${statutLabel(ao.statut)}`,
       ao.date_publication ? `Publication : ${formatDate(ao.date_publication)}` : "Publication non renseignée",
       ao.url_source ? `Source : ${ao.url_source}` : "URL source non renseignée",
+      `Documents : ${ao.documents_telecharges}/${ao.documents_detectes} téléchargé(s)`,
     ],
     status: statutLabel(ao.statut),
+    documentsDetectes: ao.documents_detectes,
+    documentsTelecharges: ao.documents_telecharges,
   };
+}
+
+/** Badge synthétique de l'état documents d'un AO (détectés / téléchargés). */
+function DocumentsBadge({ tender }: { tender: Tender }) {
+  const detectes = tender.documentsDetectes ?? 0;
+  const telecharges = tender.documentsTelecharges ?? 0;
+  if (detectes === 0) return null;
+  const complet = telecharges >= detectes;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 10.5,
+        fontFamily: "var(--font-mono)",
+        color: complet ? "var(--argos)" : "var(--fg-3)",
+        border: `1px solid ${complet ? "rgba(29,158,117,0.35)" : "var(--line)"}`,
+        borderRadius: 4,
+        padding: "2px 6px",
+        whiteSpace: "nowrap",
+      }}
+      title={
+        complet
+          ? "Tous les documents détectés sont téléchargés en local"
+          : "Des documents détectés ne sont pas encore téléchargés"
+      }
+    >
+      <Icon.document size={11} />
+      {telecharges}/{detectes}
+    </span>
+  );
 }
 
 function formatBudget(value: number | null, devise: string): string {
@@ -345,6 +384,7 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
   const [analyseLoading, setAnalyseLoading] = useState(true);
   const [recalculEnCours, setRecalculEnCours] = useState(false);
   const [relanceEnCours, setRelanceEnCours] = useState(false);
+  const [dceEnCours, setDceEnCours] = useState(false);
   const aAnalyse = analyse !== null || tender.analyzed === true;
   const aDimensions = !!analyse && Object.keys(analyse.scores_dimensions).length > 0;
   const scoreAffiche = analyse?.score ?? tender.score;
@@ -501,6 +541,40 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
     }
   };
 
+  // Télécharge en local les documents publics détectés (TED HTML/PDF/XML,
+  // sinon url_source). Best-effort côté backend ; on remonte le bilan.
+  const telechargerDce = async () => {
+    setDceEnCours(true);
+    onToast({
+      title: "KRINOS",
+      app: "Téléchargement des documents",
+      msg: "Récupération des avis/documents publics détectés…",
+      agent: "krinos",
+    });
+    try {
+      const res = await api.telechargerDocumentsAO(Number(tender.id));
+      onToast({
+        title: "KRINOS",
+        app: "Documents téléchargés",
+        msg:
+          res.documents.length === 0
+            ? "Aucun document public exploitable pour cet AO."
+            : `${res.documents.length} document(s) en local (${res.nouveaux} nouveau(x)).`,
+        agent: "krinos",
+      });
+      onChanged();
+    } catch (error) {
+      onToast({
+        title: "KRINOS",
+        app: "Téléchargement impossible",
+        msg: error instanceof Error ? error.message : "Erreur inconnue.",
+        agent: "krinos",
+      });
+    } finally {
+      setDceEnCours(false);
+    }
+  };
+
   return (
     <aside className="tender-panel">
       <div className="tender-panel__head">
@@ -653,8 +727,14 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
             {relanceEnCours ? "Analyse…" : "Lancer l'analyse"}
           </button>
         )}
-        <button className="btn">
-          <Icon.download size={13} /> Télécharger DCE
+        <button
+          className="btn"
+          onClick={() => void telechargerDce()}
+          disabled={dceEnCours}
+          title="Télécharge en local les documents/avis publics détectés (best-effort)"
+        >
+          <Icon.download size={13} />
+          {dceEnCours ? "Téléchargement…" : "Télécharger DCE"}
         </button>
       </div>
     </aside>

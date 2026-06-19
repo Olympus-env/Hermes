@@ -102,11 +102,15 @@ def test_endpoint_get_put_filtre():
 
     init_db()
     with TestClient(app) as client:
-        # GET initial : vide
+        # GET initial : vide (mots-clés + critères avancés vides)
         r = client.get("/argos/filtre")
         assert r.status_code == 200
         data = r.json()
-        assert data == {"inclus": [], "exclus": [], "actif": False}
+        assert data["inclus"] == []
+        assert data["exclus"] == []
+        assert data["actif"] is False
+        assert data["avance"]["cpv"] == []
+        assert data["avance"]["date_publication_depuis"] is None
 
         # PUT : enregistre
         r = client.put(

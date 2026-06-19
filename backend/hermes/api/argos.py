@@ -8,9 +8,13 @@ from sqlmodel import Session, select
 
 from hermes import onboarding
 from hermes.agents import pythia
+from hermes.agents.argos.base import CriteresAvances
+from hermes.agents.argos.capabilities import tous_les_profils
 from hermes.agents.argos.filtre import (
     FiltreVeille,
+    charger_criteres,
     charger_filtre,
+    enregistrer_criteres,
     enregistrer_filtre,
     refiltrer_existants,
     suggerer_mots_cles,
@@ -45,10 +49,24 @@ class CycleCollecteResponse(BaseModel):
     succes: bool
 
 
+class CriteresAvancesIO(BaseModel):
+    """Critères de filtrage avancés (tous optionnels)."""
+
+    cpv: list[str] = Field(default_factory=list)
+    descripteurs: list[str] = Field(default_factory=list)
+    natures: list[str] = Field(default_factory=list)
+    pays: list[str] = Field(default_factory=list)
+    departements: list[str] = Field(default_factory=list)
+    date_publication_depuis: str | None = None
+    deadline_min: str | None = None
+    deadline_max: str | None = None
+
+
 class FiltreVeilleIO(BaseModel):
     inclus: list[str] = Field(default_factory=list)
     exclus: list[str] = Field(default_factory=list)
     actif: bool = False
+    avance: CriteresAvancesIO = Field(default_factory=CriteresAvancesIO)
 
 
 class RefiltrageResume(BaseModel):
@@ -107,9 +125,36 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class CapaciteResponse(BaseModel):
+    """Capacités déclarées d'un portail (lecture seule) exposées à l'UI."""
+
+    portail: str
+    filtrage_serveur: bool
+    champs_filtrables: list[str]
+    champs_retournes: list[str]
+    pagination: bool
+    liens_documents: bool
+
+
 @router.get("/scrapers")
 def lister_scrapers() -> dict:
     return {"disponibles": scrapers_disponibles()}
+
+
+@router.get("/capacites", response_model=list[CapaciteResponse])
+def lister_capacites() -> list[CapaciteResponse]:
+    """Expose le profil de capacités de chaque portail (contrat UI Boucle 4)."""
+    return [
+        CapaciteResponse(
+            portail=p.portail,
+            filtrage_serveur=p.filtrage_serveur,
+            champs_filtrables=list(p.champs_filtrables),
+            champs_retournes=list(p.champs_retournes),
+            pagination=p.pagination,
+            liens_documents=p.liens_documents,
+        )
+        for p in tous_les_profils()
+    ]
 
 
 @router.post("/collecter", response_model=CycleCollecteResponse)
@@ -173,14 +218,42 @@ async def collecter(
     )
 
 
+def _criteres_io(c: CriteresAvances) -> CriteresAvancesIO:
+    return CriteresAvancesIO(
+        cpv=list(c.cpv),
+        descripteurs=list(c.descripteurs),
+        natures=list(c.natures),
+        pays=list(c.pays),
+        departements=list(c.departements),
+        date_publication_depuis=c.date_publication_depuis,
+        deadline_min=c.deadline_min,
+        deadline_max=c.deadline_max,
+    )
+
+
+def _io_vers_criteres(io: CriteresAvancesIO) -> CriteresAvances:
+    return CriteresAvances(
+        cpv=tuple(io.cpv),
+        descripteurs=tuple(io.descripteurs),
+        natures=tuple(io.natures),
+        pays=tuple(io.pays),
+        departements=tuple(io.departements),
+        date_publication_depuis=io.date_publication_depuis,
+        deadline_min=io.deadline_min,
+        deadline_max=io.deadline_max,
+    )
+
+
 @router.get("/filtre", response_model=FiltreVeilleIO)
 def lire_filtre(session: Session = Depends(get_session)) -> FiltreVeilleIO:
-    """Retourne le filtre mots-clés appliqué aux collectes ARGOS."""
+    """Retourne le filtre mots-clés + critères avancés appliqués aux collectes."""
     filtre = charger_filtre(session)
+    criteres = charger_criteres(session)
     return FiltreVeilleIO(
         inclus=list(filtre.inclus),
         exclus=list(filtre.exclus),
-        actif=filtre.actif,
+        actif=filtre.actif or criteres.actif,
+        avance=_criteres_io(criteres),
     )
 
 
@@ -189,21 +262,24 @@ def ecrire_filtre(
     payload: FiltreVeilleIO,
     session: Session = Depends(get_session),
 ) -> FiltreVeilleResponse:
-    """Met à jour le filtre mots-clés et re-filtre les AO déjà collectés.
+    """Met à jour le filtre (mots-clés + critères avancés) et re-filtre les AO.
 
-    Les listes sont normalisées et dédupliquées. Les AO précoces ne
-    correspondant plus aux critères passent en `hors_filtre` ; ceux redevenus
-    pertinents sont réintégrés (issue #6).
+    Les listes mots-clés sont normalisées et dédupliquées. Les AO précoces ne
+    correspondant plus aux critères mots-clés passent en `hors_filtre` ; ceux
+    redevenus pertinents sont réintégrés (issue #6). Les critères avancés
+    s'appliquent aux **prochaines** collectes (filtrage serveur).
     """
     nettoye = enregistrer_filtre(
         session,
         FiltreVeille(inclus=tuple(payload.inclus), exclus=tuple(payload.exclus)),
     )
+    criteres = enregistrer_criteres(session, _io_vers_criteres(payload.avance))
     bilan = refiltrer_existants(session, nettoye)
     return FiltreVeilleResponse(
         inclus=list(nettoye.inclus),
         exclus=list(nettoye.exclus),
-        actif=nettoye.actif,
+        actif=nettoye.actif or criteres.actif,
+        avance=_criteres_io(criteres),
         refiltrage=RefiltrageResume(**bilan.en_dict()),
     )
 

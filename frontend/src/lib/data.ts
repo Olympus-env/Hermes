@@ -26,6 +26,9 @@ export type Tender = {
   summary: string;
   keypoints: string[];
   status: string;
+  // État documents (Boucle 3/4) : liens détectés par ARGOS vs téléchargés.
+  documentsDetectes?: number;
+  documentsTelecharges?: number;
 };
 
 export type ResponseStatus =
