@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from hermes.agents import pythia
+from hermes.config import settings
 from hermes.db.models import (
     AnalyseKrinos,
     AppelOffre,
@@ -234,6 +235,65 @@ def test_endpoint_analyser_renvoie_resultat(monkeypatch):
         r2 = client.get(f"/krinos/appels-offre/{ao_id}/analyse")
     assert r2.status_code == 200
     assert r2.json()["score"] == 65
+
+
+def test_endpoint_analyser_extrait_document_deja_attache(monkeypatch):
+    from hermes.agents.krinos import analyzer
+    from hermes.main import app
+
+    async def fake_generer(prompt, *, system=None, format_json=False, **_):
+        assert format_json is True
+        assert "CCTP notifications SMS prioritaire" in prompt
+        return _faux_pythia_reponse(
+            {
+                "resume": "AO SMS avec exigences techniques disponibles.",
+                "score": 74,
+                "justification": "Le CCTP attaché est exploité.",
+                "tags": ["sms", "notifications"],
+                "criteres": "Valeur technique et prix",
+            }
+        )
+
+    monkeypatch.setattr(analyzer.pythia, "generer", fake_generer)
+
+    init_db()
+    chemin = settings.storage_path / "docs/cctp-sms.txt"
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    chemin.write_text("CCTP notifications SMS prioritaire", encoding="utf-8")
+
+    with Session(get_engine()) as session:
+        ao = AppelOffre(
+            titre="Mise à disposition solution SMS",
+            url_source="https://example.test/ao/sms",
+            statut=StatutAO.BRUT,
+        )
+        session.add(ao)
+        session.commit()
+        session.refresh(ao)
+        document = Document(
+            appel_offre_id=ao.id,  # type: ignore[arg-type]
+            nom_fichier="cctp-sms.txt",
+            chemin_local="docs/cctp-sms.txt",
+            type=TypeDocument.AUTRE,
+            taille_octets=0,
+            checksum_sha256="pending",
+        )
+        session.add(document)
+        session.commit()
+        session.refresh(document)
+        ao_id = ao.id
+        document_id = document.id
+
+    with TestClient(app) as client:
+        r = client.post(f"/krinos/appels-offre/{ao_id}/analyser")
+
+    assert r.status_code == 200
+    assert r.json()["analyse"]["score"] == 74
+
+    with Session(get_engine()) as session:
+        document = session.get(Document, document_id)
+        assert document is not None
+        assert document.contenu_extrait == "CCTP notifications SMS prioritaire"
 
 
 def test_endpoint_analyse_404_si_absente():

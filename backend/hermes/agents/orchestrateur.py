@@ -31,7 +31,7 @@ from hermes.agents.krinos import (
     analyser_ao,
     telecharger_documents_ao,
 )
-from hermes.agents.krinos.extractor import ErreurExtractionDocument, extraire_document
+from hermes.agents.krinos.extractor import extraire_documents_appel_offre
 from hermes.db.models import (
     AnalyseKrinos,
     AppelOffre,
@@ -355,27 +355,13 @@ async def _documents_best_effort(session: Session, ao: AppelOffre) -> None:
     exploitable : le téléchargement est un bonus, pas un prérequis.
     """
     try:
-        resultats = await telecharger_documents_ao(session, ao)
+        await telecharger_documents_ao(session, ao)
     except Exception as exc:  # noqa: BLE001
         logger.debug("Pipeline : téléchargement docs AO %s ignoré — %s", ao.id, exc)
-        return
 
-    for resultat in resultats:
-        if not resultat.nouveau:
-            continue
-        document = resultat.document
-        try:
-            extraction = extraire_document(document)
-        except ErreurExtractionDocument as exc:
-            logger.debug(
-                "Pipeline : extraction doc %s ignorée — %s", document.id, exc
-            )
-            continue
-        document.contenu_extrait = extraction.texte
-        document.checksum_sha256 = extraction.checksum_sha256
-        document.taille_octets = extraction.taille_octets
-        session.add(document)
-        session.commit()
+    rapport = extraire_documents_appel_offre(session, ao, best_effort=True)
+    for erreur in rapport.erreurs:
+        logger.debug("Pipeline : extraction AO %s ignorée — %s", ao.id, erreur)
 
 
 # --------------------------------------------------------------------------- #

@@ -11,9 +11,10 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup
+from sqlmodel import Session, select
 
 from hermes.config import settings
-from hermes.db.models import Document, TypeDocument
+from hermes.db.models import AppelOffre, Document, TypeDocument
 
 
 class ErreurExtractionDocument(RuntimeError):
@@ -25,6 +26,13 @@ class ExtractionDocument:
     texte: str
     checksum_sha256: str
     taille_octets: int
+
+
+@dataclass(frozen=True)
+class RapportExtractionDocuments:
+    documents_traites: int
+    caracteres_extraits: int
+    erreurs: tuple[str, ...] = ()
 
 
 def extraire_document(document: Document) -> ExtractionDocument:
@@ -40,6 +48,58 @@ def extraire_document(document: Document) -> ExtractionDocument:
         texte=_normaliser_texte(texte),
         checksum_sha256=checksum,
         taille_octets=len(brut),
+    )
+
+
+def extraire_documents_appel_offre(
+    session: Session,
+    appel_offre: AppelOffre,
+    *,
+    seulement_non_extraits: bool = True,
+    best_effort: bool = False,
+) -> RapportExtractionDocuments:
+    """Extrait les documents locaux attachés à un AO et persiste le résultat.
+
+    Utilisé avant une analyse KRINOS pour éviter qu'un document déjà téléchargé,
+    mais jamais extrait, soit ignoré par le contexte envoyé à PYTHIA.
+    """
+    if appel_offre.id is None:
+        return RapportExtractionDocuments(documents_traites=0, caracteres_extraits=0)
+
+    documents = session.exec(
+        select(Document)
+        .where(Document.appel_offre_id == appel_offre.id)
+        .order_by(Document.id)
+    ).all()
+
+    traites = 0
+    caracteres = 0
+    erreurs: list[str] = []
+    for document in documents:
+        if seulement_non_extraits and document.contenu_extrait:
+            continue
+        try:
+            extraction = extraire_document(document)
+        except ErreurExtractionDocument as exc:
+            if not best_effort:
+                raise
+            erreurs.append(f"Document {document.id}: {exc}")
+            continue
+
+        document.contenu_extrait = extraction.texte
+        document.checksum_sha256 = extraction.checksum_sha256
+        document.taille_octets = extraction.taille_octets
+        session.add(document)
+        traites += 1
+        caracteres += len(extraction.texte)
+
+    if traites:
+        session.commit()
+
+    return RapportExtractionDocuments(
+        documents_traites=traites,
+        caracteres_extraits=caracteres,
+        erreurs=tuple(erreurs),
     )
 
 
