@@ -124,6 +124,10 @@ class AppelOffre(SQLModel, table=True):
     zone_geographique: Optional[str] = None
     code_naf: Optional[str] = Field(default=None, index=True)
 
+    # Liens documents publics détectés par ARGOS (JSON list d'URLs). Sert au
+    # téléchargement KRINOS et à l'état « documents détectés » de la fiche AO.
+    liens_documents: Optional[str] = Field(default=None, sa_column=Column(Text))
+
     statut: StatutAO = Field(default=StatutAO.BRUT, index=True)
 
     cree_le: datetime = Field(default_factory=_utcnow, index=True)

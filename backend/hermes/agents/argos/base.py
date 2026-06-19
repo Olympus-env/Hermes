@@ -52,6 +52,11 @@ class AOCollecte:
     zone_geographique: str | None = None
     code_naf: str | None = None
 
+    # Liens vers les documents/avis publics exposés par le portail (TED :
+    # HTML/PDF/XML). Vide si le portail n'expose pas de lien exploitable
+    # (BOAMP records) — le téléchargement se rabat alors sur `url_source`.
+    liens_documents: list[str] = field(default_factory=list)
+
     def cle_unicite(self) -> str:
         """Clé utilisée pour dédoublonner.
 

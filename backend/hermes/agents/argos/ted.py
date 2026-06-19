@@ -255,7 +255,9 @@ def _notice_vers_ao(notice: dict[str, Any]) -> AOCollecte:
         titre = titre[:497] + "…"
 
     reference = _texte_simple(notice.get("publication-number"))
-    url = _premier_lien(notice.get("links")) or _url_par_defaut(reference)
+    liens = _tous_les_liens(notice.get("links"))
+    url = _premier_lien(notice.get("links")) or (liens[0] if liens else None) \
+        or _url_par_defaut(reference)
     emetteur = _texte_multi(notice.get("buyer-name"))
 
     return AOCollecte(
@@ -269,6 +271,7 @@ def _notice_vers_ao(notice: dict[str, Any]) -> AOCollecte:
         type_marche=_texte_multi(notice.get("notice-type")),
         zone_geographique=_zone(notice.get("place-of-performance")),
         code_naf=_premier(notice.get("classification-cpv")),
+        liens_documents=liens,
     )
 
 
@@ -346,6 +349,30 @@ def _premier_lien(links: Any) -> str | None:
     # Dernier recours : n'importe quelle valeur ressemblant à une URL.
     url = _texte_multi(links)
     return url if url and url.startswith("http") else None
+
+
+# Familles de liens TED collectées pour KRINOS, par ordre d'intérêt pour
+# l'extraction de texte : PDF (meilleur), puis HTML, puis XML (structuré).
+_FAMILLES_LIENS = ("pdf", "pdfDirect", "html", "htmlDirect", "xml")
+
+
+def _tous_les_liens(links: Any) -> list[str]:
+    """Liste dédoublonnée des liens documents publics (un par famille).
+
+    Une seule URL par famille (langue préférée via `_texte_multi`) pour éviter
+    de télécharger toutes les variantes linguistiques du même avis. PDF en tête
+    (meilleure extraction). Renvoie [] si aucun lien exploitable.
+    """
+    if not isinstance(links, dict):
+        url = _texte_simple(links)
+        return [url] if url and url.startswith("http") else []
+
+    urls: list[str] = []
+    for famille in _FAMILLES_LIENS:
+        url = _texte_multi(links.get(famille))
+        if url and url.startswith("http") and url not in urls:
+            urls.append(url)
+    return urls
 
 
 def _url_par_defaut(reference: str | None) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime
 
@@ -197,6 +198,11 @@ def _en_modele(item: AOCollecte, portail_id: int | None) -> AppelOffre:
         type_marche=item.type_marche,
         zone_geographique=item.zone_geographique,
         code_naf=item.code_naf,
+        liens_documents=(
+            json.dumps(item.liens_documents, ensure_ascii=False)
+            if item.liens_documents
+            else None
+        ),
         statut=StatutAO.BRUT,
     )
 

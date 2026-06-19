@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, func, select
 
-from hermes.db.models import AnalyseKrinos, AppelOffre, Portail, StatutAO
+from hermes.agents.krinos.downloader import liens_documents_ao
+from hermes.db.models import AnalyseKrinos, AppelOffre, Document, Portail, StatutAO
 from hermes.db.session import get_session
 
 router = APIRouter(prefix="/appels-offre", tags=["appels-offre"])
@@ -37,6 +38,12 @@ class AppelOffreRead(BaseModel):
     # (distinct d'un score réel de 0 — issue #2).
     score: float | None = None
     analyse_disponible: bool = False
+    # État documents (Boucle 3) : liens détectés par ARGOS vs fichiers
+    # effectivement téléchargés en local. `documents_manquants` = détectés non
+    # encore récupérés (best-effort).
+    documents_detectes: int = 0
+    documents_telecharges: int = 0
+    documents_manquants: int = 0
 
 
 class AppelsOffrePage(BaseModel):
@@ -70,10 +77,15 @@ def lister(
 
     stmt = stmt.order_by(AppelOffre.cree_le.desc()).offset(offset).limit(limit)
     rows = session.exec(stmt).all()
-    scores = _scores_recents(session, [ao.id for ao, _ in rows])
+    ao_ids = [ao.id for ao, _ in rows]
+    scores = _scores_recents(session, ao_ids)
+    docs = _docs_telecharges(session, ao_ids)
     return AppelsOffrePage(
         total=total,
-        items=[_ao_read(ao, portail_nom, scores.get(ao.id)) for ao, portail_nom in rows],
+        items=[
+            _ao_read(ao, portail_nom, scores.get(ao.id), docs.get(ao.id, 0))
+            for ao, portail_nom in rows
+        ],
         limit=limit,
         offset=offset,
     )
@@ -90,7 +102,8 @@ def detail(ao_id: int, session: Session = Depends(get_session)) -> AppelOffreRea
         raise HTTPException(status_code=404, detail="Appel d'offre introuvable")
     ao, portail_nom = row
     scores = _scores_recents(session, [ao.id])
-    return _ao_read(ao, portail_nom, scores.get(ao.id))
+    docs = _docs_telecharges(session, [ao.id])
+    return _ao_read(ao, portail_nom, scores.get(ao.id), docs.get(ao.id, 0))
 
 
 def _scores_recents(
@@ -109,6 +122,19 @@ def _scores_recents(
     for ao_id, score in lignes:
         scores.setdefault(ao_id, score)  # premier = le plus récent (tri desc)
     return scores
+
+
+def _docs_telecharges(session: Session, ao_ids: list[int | None]) -> dict[int, int]:
+    """Nombre de documents téléchargés en local par AO, pour les ids fournis."""
+    ids = [i for i in ao_ids if i is not None]
+    if not ids:
+        return {}
+    lignes = session.exec(
+        select(Document.appel_offre_id, func.count())
+        .where(Document.appel_offre_id.in_(ids))
+        .group_by(Document.appel_offre_id)
+    ).all()
+    return {ao_id: nb for ao_id, nb in lignes}
 
 
 @router.patch("/{ao_id}/statut", response_model=AppelOffreRead)
@@ -135,8 +161,12 @@ def modifier_statut(
 
 
 def _ao_read(
-    ao: AppelOffre, portail_nom: str | None, score: float | None = None
+    ao: AppelOffre,
+    portail_nom: str | None,
+    score: float | None = None,
+    docs_telecharges: int = 0,
 ) -> AppelOffreRead:
+    detectes = len(liens_documents_ao(ao))
     return AppelOffreRead(
         id=ao.id,  # type: ignore[arg-type]
         portail_id=ao.portail_id,
@@ -158,4 +188,7 @@ def _ao_read(
         maj_le=ao.maj_le,
         score=score,
         analyse_disponible=score is not None,
+        documents_detectes=detectes,
+        documents_telecharges=docs_telecharges,
+        documents_manquants=max(detectes - docs_telecharges, 0),
     )
