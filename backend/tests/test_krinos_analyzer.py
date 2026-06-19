@@ -200,6 +200,90 @@ def test_analyser_ao_force_recalcul(monkeypatch):
         assert len(analyses) == 2
 
 
+def test_analyser_ao_retente_sortie_pythia_incomplete(monkeypatch):
+    from hermes.agents.krinos import analyzer
+
+    init_db()
+    with Session(get_engine()) as session:
+        ao = _ao_avec_document(session, "CCTP SMS prioritaire")
+        ao_id = ao.id
+
+    reponses = iter(
+        [
+            pythia.ReponsePythia(
+                texte=json.dumps({"score": 70, "tags": ["sms"]}),
+                modele="mistral:7b-instruct-q4_K_M",
+                duree_ms=20,
+            ),
+            _faux_pythia_reponse(
+                {
+                    "resume": "AO SMS analysé après relance.",
+                    "score": 82,
+                    "justification": "La sortie initiale était incomplète.",
+                    "tags": ["sms"],
+                    "criteres": "Valeur technique",
+                }
+            ),
+        ]
+    )
+
+    async def fake_generer(*args, **kwargs):
+        return next(reponses)
+
+    monkeypatch.setattr(analyzer.pythia, "generer", fake_generer)
+    import asyncio
+
+    with Session(get_engine()) as session:
+        ao = session.get(AppelOffre, ao_id)
+        assert ao is not None
+        resultat = asyncio.run(analyzer.analyser_ao(session, ao))
+        assert resultat.analyse.score == 82
+        logs = session.exec(select(LogAgent).where(LogAgent.agent == "KRINOS")).all()
+        assert any("tentative 1/2" in log.message for log in logs)
+
+
+def test_analyser_ao_retente_sortie_pythia_non_json(monkeypatch):
+    from hermes.agents.krinos import analyzer
+
+    init_db()
+    with Session(get_engine()) as session:
+        ao = _ao_avec_document(session, "CCTP télécommunications")
+        ao_id = ao.id
+
+    reponses = iter(
+        [
+            pythia.ReponsePythia(
+                texte="Je ne peux pas produire de JSON.",
+                modele="mistral:7b-instruct-q4_K_M",
+                duree_ms=20,
+            ),
+            _faux_pythia_reponse(
+                {
+                    "resume": "AO télécom analysé après relance.",
+                    "score": 76,
+                    "justification": "La seconde sortie est valide.",
+                    "tags": ["télécommunications"],
+                    "criteres": "Valeur technique",
+                }
+            ),
+        ]
+    )
+
+    async def fake_generer(*args, **kwargs):
+        return next(reponses)
+
+    monkeypatch.setattr(analyzer.pythia, "generer", fake_generer)
+    import asyncio
+
+    with Session(get_engine()) as session:
+        ao = session.get(AppelOffre, ao_id)
+        assert ao is not None
+        resultat = asyncio.run(analyzer.analyser_ao(session, ao))
+        assert resultat.analyse.score == 76
+        logs = session.exec(select(LogAgent).where(LogAgent.agent == "KRINOS")).all()
+        assert any("Sortie PYTHIA non-JSON" in log.message for log in logs)
+
+
 def test_endpoint_analyser_renvoie_resultat(monkeypatch):
     from hermes.agents.krinos import analyzer
     from hermes.main import app

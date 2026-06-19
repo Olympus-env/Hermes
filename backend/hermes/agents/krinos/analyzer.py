@@ -41,6 +41,7 @@ SYSTEM_PROMPT = (
     "Tu ne fais aucune hypothèse non étayée par le texte fourni. "
     "Tu produis EXCLUSIVEMENT un objet JSON valide conforme au schéma demandé."
 )
+MAX_TENTATIVES_SORTIE = 2
 
 
 class ErreurAnalyseKrinos(RuntimeError):
@@ -79,29 +80,7 @@ async def analyser_ao(
     prompt = _construire_prompt(contexte, ponderation)
 
     debut = time.perf_counter()
-    try:
-        reponse = await pythia.generer(prompt, system=SYSTEM_PROMPT, format_json=True)
-    except pythia.ErreurPythia as exc:
-        _journaliser(
-            session,
-            niveau=NiveauLog.ERROR,
-            message=f"PYTHIA indisponible pour AO {appel_offre.id} : {exc}",
-            appel_offre_id=appel_offre.id,
-        )
-        raise ErreurAnalyseKrinos(str(exc)) from exc
-
-    try:
-        payload = pythia.parser_json_sortie(reponse.texte)
-    except pythia.ErreurPythia as exc:
-        _journaliser(
-            session,
-            niveau=NiveauLog.ERROR,
-            message=f"Sortie PYTHIA inexploitable pour AO {appel_offre.id} : {exc}",
-            appel_offre_id=appel_offre.id,
-        )
-        raise ErreurAnalyseKrinos("Sortie PYTHIA invalide") from exc
-
-    champs = _normaliser_payload(payload)
+    reponse, champs = await _generer_analyse_valide(session, appel_offre, prompt)
     # Score pondéré final si on a les dimensions, sinon fallback sur le score
     # global renvoyé par PYTHIA (rétrocompat).
     if champs["scores_dimensions"]:
@@ -148,6 +127,54 @@ async def analyser_ao(
     session.refresh(analyse)
 
     return ResultatAnalyse(analyse=analyse, nouveau=True)
+
+
+async def _generer_analyse_valide(
+    session: Session,
+    appel_offre: AppelOffre,
+    prompt: str,
+) -> tuple[pythia.ReponsePythia, dict[str, Any]]:
+    derniere_erreur: Exception | None = None
+    for tentative in range(1, MAX_TENTATIVES_SORTIE + 1):
+        try:
+            reponse = await pythia.generer(prompt, system=SYSTEM_PROMPT, format_json=True)
+        except pythia.ErreurPythia as exc:
+            _journaliser(
+                session,
+                niveau=NiveauLog.ERROR,
+                message=f"PYTHIA indisponible pour AO {appel_offre.id} : {exc}",
+                appel_offre_id=appel_offre.id,  # type: ignore[arg-type]
+            )
+            raise ErreurAnalyseKrinos(str(exc)) from exc
+
+        try:
+            payload = pythia.parser_json_sortie(reponse.texte)
+            return reponse, _normaliser_payload(payload)
+        except pythia.ErreurPythia as exc:
+            derniere_erreur = exc
+            message = f"Sortie PYTHIA non-JSON pour AO {appel_offre.id} : {exc}"
+        except ErreurAnalyseKrinos as exc:
+            derniere_erreur = exc
+            message = f"Sortie PYTHIA incomplète pour AO {appel_offre.id} : {exc}"
+
+        niveau = NiveauLog.WARNING if tentative < MAX_TENTATIVES_SORTIE else NiveauLog.ERROR
+        suffixe = (
+            f"tentative {tentative}/{MAX_TENTATIVES_SORTIE}"
+            if tentative < MAX_TENTATIVES_SORTIE
+            else "abandon"
+        )
+        _journaliser(
+            session,
+            niveau=niveau,
+            message=f"{message} ({suffixe})",
+            appel_offre_id=appel_offre.id,  # type: ignore[arg-type]
+        )
+
+    if isinstance(derniere_erreur, pythia.ErreurPythia):
+        raise ErreurAnalyseKrinos("Sortie PYTHIA invalide") from derniere_erreur
+    if isinstance(derniere_erreur, ErreurAnalyseKrinos):
+        raise derniere_erreur
+    raise ErreurAnalyseKrinos("Sortie PYTHIA invalide")
 
 
 def _construire_contexte(session: Session, appel_offre: AppelOffre) -> dict[str, Any]:
