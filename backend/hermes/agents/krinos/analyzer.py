@@ -81,7 +81,7 @@ async def analyser_ao(
     prompt = _construire_prompt(contexte, ponderation)
 
     debut = time.perf_counter()
-    reponse, champs = await _generer_analyse_valide(session, appel_offre, prompt)
+    reponse, champs = await _generer_analyse_valide(session, appel_offre, prompt, contexte)
     # Score pondéré final si on a les dimensions, sinon fallback sur le score
     # global renvoyé par PYTHIA (rétrocompat).
     if champs["scores_dimensions"]:
@@ -134,8 +134,8 @@ async def _generer_analyse_valide(
     session: Session,
     appel_offre: AppelOffre,
     prompt: str,
+    contexte: dict[str, Any],
 ) -> tuple[pythia.ReponsePythia, dict[str, Any]]:
-    derniere_erreur: Exception | None = None
     for tentative in range(1, MAX_TENTATIVES_SORTIE + 1):
         try:
             reponse = await pythia.generer(
@@ -157,10 +157,8 @@ async def _generer_analyse_valide(
             payload = pythia.parser_json_sortie(reponse.texte)
             return reponse, _normaliser_payload(payload)
         except pythia.ErreurPythia as exc:
-            derniere_erreur = exc
             message = f"Sortie PYTHIA non-JSON pour AO {appel_offre.id} : {exc}"
         except ErreurAnalyseKrinos as exc:
-            derniere_erreur = exc
             message = f"Sortie PYTHIA incomplète pour AO {appel_offre.id} : {exc}"
 
         niveau = NiveauLog.WARNING if tentative < MAX_TENTATIVES_SORTIE else NiveauLog.ERROR
@@ -176,11 +174,105 @@ async def _generer_analyse_valide(
             appel_offre_id=appel_offre.id,  # type: ignore[arg-type]
         )
 
-    if isinstance(derniere_erreur, pythia.ErreurPythia):
-        raise ErreurAnalyseKrinos("Sortie PYTHIA invalide") from derniere_erreur
-    if isinstance(derniere_erreur, ErreurAnalyseKrinos):
-        raise derniere_erreur
-    raise ErreurAnalyseKrinos("Sortie PYTHIA invalide")
+    _journaliser(
+        session,
+        niveau=NiveauLog.WARNING,
+        message=(
+            f"Fallback KRINOS local pour AO {appel_offre.id} "
+            f"après sortie PYTHIA invalide"
+        ),
+        appel_offre_id=appel_offre.id,  # type: ignore[arg-type]
+    )
+    return (
+        pythia.ReponsePythia(
+            texte="fallback-local",
+            modele=f"{settings.pythia_modele}+fallback-local",
+            duree_ms=0,
+        ),
+        _analyse_fallback_locale(contexte),
+    )
+
+
+def _analyse_fallback_locale(contexte: dict[str, Any]) -> dict[str, Any]:
+    corpus = " ".join(
+        str(contexte.get(cle) or "")
+        for cle in ("titre", "objet", "emetteur", "type_marche", "code_naf", "documents")
+    )
+    corpus_min = corpus.lower()
+    tags = _tags_fallback(corpus_min)
+    score_metier = 80.0 if tags else 45.0
+    if any(tag in tags for tag in ("sms", "rcs", "notifications", "messagerie")):
+        score_metier = 88.0
+
+    documents = str(contexte.get("documents") or "").strip()
+    documents_disponibles = bool(documents and documents != "(aucun document extrait)")
+    resume = _resume_fallback(contexte, documents_disponibles)
+    criteres = _criteres_fallback(documents if documents_disponibles else "")
+    scores_dimensions = {
+        "affinite_metier": score_metier,
+        "references": 55.0,
+        "adequation_budget": 50.0 if contexte.get("budget") is None else 65.0,
+        "capacite_equipe": 60.0,
+        "calendrier": 55.0 if contexte.get("date_limite") else 45.0,
+    }
+    return {
+        "resume": resume,
+        "score": score_metier,
+        "scores_dimensions": scores_dimensions,
+        "justification": (
+            "Analyse locale de secours produite car PYTHIA n'a pas fourni de JSON "
+            "exploitable après relance."
+        ),
+        "tags": tags or ["appel d'offre", "analyse locale"],
+        "criteres": criteres,
+    }
+
+
+def _resume_fallback(contexte: dict[str, Any], documents_disponibles: bool) -> str:
+    titre = str(contexte.get("titre") or "Appel d'offre sans titre").strip()
+    emetteur = str(contexte.get("emetteur") or "acheteur non précisé").strip()
+    date_limite = str(contexte.get("date_limite") or "date limite non précisée").strip()
+    phrase_docs = (
+        "Des documents ont été extraits et doivent être relus pour confirmer les exigences."
+        if documents_disponibles
+        else "Aucun contenu documentaire exploitable n'a été extrait."
+    )
+    return (
+        f"{titre}. L'acheteur identifié est {emetteur}. "
+        f"La date limite indiquée est {date_limite}. {phrase_docs}"
+    )
+
+
+def _tags_fallback(corpus_min: str) -> list[str]:
+    correspondances = [
+        ("sms", ("sms", "messages courts")),
+        ("rcs", ("rcs",)),
+        ("notifications", ("notification", "notifications")),
+        ("messagerie", ("messagerie", "mail", "email", "e-mail")),
+        ("téléphonie mobile", ("téléphonie mobile", "telephonie mobile", "mobile")),
+        ("télécommunications", ("télécommunication", "telecommunication", "642")),
+        ("interconnexion", ("interconnexion", "datacenter")),
+        ("centre de contacts", ("centre de contacts", "contacts citoyens")),
+    ]
+    tags: list[str] = []
+    for tag, termes in correspondances:
+        if any(terme in corpus_min for terme in termes):
+            tags.append(tag)
+    return tags[:8]
+
+
+def _criteres_fallback(documents: str) -> str:
+    lignes = []
+    for ligne in documents.splitlines():
+        ligne_propre = ligne.strip()
+        ligne_min = ligne_propre.lower()
+        if not ligne_propre or len(ligne_propre) > 240:
+            continue
+        if any(mot in ligne_min for mot in ("critère", "critere", "prix", "valeur technique")):
+            lignes.append(ligne_propre)
+        if len(lignes) >= 6:
+            break
+    return "\n".join(lignes)
 
 
 def _construire_contexte(session: Session, appel_offre: AppelOffre) -> dict[str, Any]:
