@@ -44,6 +44,10 @@ export type AppelOffre = {
   // Score KRINOS pondéré ; null si l'AO n'a jamais été analysé (≠ score 0).
   score: number | null;
   analyse_disponible: boolean;
+  // État documents (Boucle 3) : liens détectés par ARGOS vs fichiers téléchargés.
+  documents_detectes: number;
+  documents_telecharges: number;
+  documents_manquants: number;
 };
 
 export type AppelsOffrePage = {
@@ -87,10 +91,61 @@ export type PortailArgos = {
   credentials_configures: boolean;
 };
 
+// Natures de marché canoniques (mappées par portail côté backend).
+export type NatureMarche = "services" | "travaux" | "fournitures";
+
+export type CriteresAvances = {
+  cpv: string[];
+  descripteurs: string[];
+  natures: string[];
+  pays: string[];
+  departements: string[];
+  date_publication_depuis: string | null;
+  deadline_min: string | null;
+  deadline_max: string | null;
+};
+
 export type FiltreVeille = {
   inclus: string[];
   exclus: string[];
   actif: boolean;
+  avance: CriteresAvances;
+};
+
+export type CapaciteArgos = {
+  portail: string;
+  filtrage_serveur: boolean;
+  champs_filtrables: string[];
+  champs_retournes: string[];
+  pagination: boolean;
+  liens_documents: boolean;
+};
+
+export type DocumentKrinos = {
+  id: number;
+  nom_fichier: string;
+  chemin_local: string;
+  type: string;
+  taille_octets: number;
+  checksum_sha256: string;
+  contenu_extrait: boolean;
+};
+
+export type TelechargementDocuments = {
+  appel_offre_id: number;
+  documents: DocumentKrinos[];
+  nouveaux: number;
+};
+
+export const CRITERES_AVANCES_VIDE: CriteresAvances = {
+  cpv: [],
+  descripteurs: [],
+  natures: [],
+  pays: [],
+  departements: [],
+  date_publication_depuis: null,
+  deadline_min: null,
+  deadline_max: null,
 };
 
 export type SuggestionMotsCles = {
@@ -265,9 +320,31 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!r.ok) {
-    throw new Error(`${r.status} ${r.statusText} sur ${path}`);
+    // Remonte le `detail` FastAPI quand il est présent : message bien plus
+    // lisible que le seul code HTTP (ex. « PYTHIA est down » sur un 502).
+    const detail = await lireDetailErreur(r);
+    throw new Error(detail ?? `${r.status} ${r.statusText} sur ${path}`);
   }
   return (await r.json()) as T;
+}
+
+/** Extrait un message lisible du corps d'une réponse d'erreur (best-effort). */
+async function lireDetailErreur(r: Response): Promise<string | null> {
+  try {
+    const data = await r.clone().json();
+    const detail = (data as { detail?: unknown }).detail;
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      // Erreurs de validation FastAPI : liste d'objets {msg, loc}.
+      const msgs = detail
+        .map((d) => (typeof d?.msg === "string" ? d.msg : null))
+        .filter(Boolean);
+      if (msgs.length > 0) return msgs.join(" · ");
+    }
+  } catch {
+    /* corps non-JSON : on retombe sur le message HTTP générique */
+  }
+  return null;
 }
 
 export const api = {
@@ -303,12 +380,22 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ statut }),
     }),
+  listerCapacitesArgos: () => fetchJson<CapaciteArgos[]>("/argos/capacites"),
   lireFiltreVeille: () => fetchJson<FiltreVeille>("/argos/filtre"),
-  ecrireFiltreVeille: (filtre: { inclus: string[]; exclus: string[] }) =>
+  ecrireFiltreVeille: (filtre: {
+    inclus: string[];
+    exclus: string[];
+    avance?: CriteresAvances;
+  }) =>
     fetchJson<FiltreVeille>("/argos/filtre", {
       method: "PUT",
       body: JSON.stringify(filtre),
     }),
+  telechargerDocumentsAO: (aoId: number) =>
+    fetchJson<TelechargementDocuments>(
+      `/krinos/appels-offre/${aoId}/documents/telecharger`,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
   // Déverrouille ARGOS en fin d'onboarding : les collectes ne démarrent
   // qu'après cet appel, une fois les filtres métier persistés.
   initialiserArgos: () =>
