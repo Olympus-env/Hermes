@@ -448,7 +448,7 @@ def test_endpoint_analyser_502_si_pythia_indisponible(monkeypatch):
     assert "connexion refusée" in r.json()["detail"]
 
 
-def test_analyser_ao_rejette_sortie_sans_resume(monkeypatch):
+def test_analyser_ao_fallback_local_si_sortie_sans_resume(monkeypatch):
     from hermes.agents.krinos import analyzer
 
     async def fake_generer(*args, **kwargs):
@@ -465,5 +465,29 @@ def test_analyser_ao_rejette_sortie_sans_resume(monkeypatch):
 
     with Session(get_engine()) as session:
         ao = session.get(AppelOffre, ao_id)
-        with pytest.raises(analyzer.ErreurAnalyseKrinos):
-            asyncio.run(analyzer.analyser_ao(session, ao))
+        resultat = asyncio.run(analyzer.analyser_ao(session, ao))
+        assert resultat.analyse.modele_llm == f"{settings.pythia_modele}+fallback-local"
+        assert "Analyse locale de secours" in resultat.analyse.justification_score
+        logs = session.exec(select(LogAgent).where(LogAgent.agent == "KRINOS")).all()
+        assert any("Fallback KRINOS local" in log.message for log in logs)
+
+
+def test_analyser_ao_fallback_local_sans_document(monkeypatch):
+    from hermes.agents.krinos import analyzer
+
+    async def fake_generer(*args, **kwargs):
+        return _faux_pythia_reponse({"score": 50, "tags": []})
+
+    monkeypatch.setattr(analyzer.pythia, "generer", fake_generer)
+
+    init_db()
+    with Session(get_engine()) as session:
+        ao = _ao_avec_document(session, None)
+        ao_id = ao.id
+
+    import asyncio
+
+    with Session(get_engine()) as session:
+        ao = session.get(AppelOffre, ao_id)
+        resultat = asyncio.run(analyzer.analyser_ao(session, ao))
+        assert "Aucun contenu documentaire exploitable" in resultat.analyse.resume
