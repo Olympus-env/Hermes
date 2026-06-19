@@ -69,6 +69,7 @@ async def generer(
     system: str | None = None,
     format_json: bool = False,
     modele: str | None = None,
+    options: dict[str, Any] | None = None,
     timeout: float | None = None,
 ) -> ReponsePythia:
     """Appelle `/api/generate` d'Ollama et renvoie la sortie textuelle.
@@ -83,6 +84,8 @@ async def generer(
         "stream": False,
         "options": _options(),
     }
+    if options:
+        payload["options"].update(options)
     if system:
         payload["system"] = system
     if format_json:

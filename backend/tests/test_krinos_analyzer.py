@@ -120,6 +120,38 @@ def test_analyser_ao_persiste_resultat_et_passe_en_analyse(monkeypatch):
         assert any("Analyse KRINOS terminée" in log.message for log in logs)
 
 
+def test_analyser_ao_accepte_alias_json_francais(monkeypatch):
+    from hermes.agents.krinos import analyzer
+
+    init_db()
+    with Session(get_engine()) as session:
+        ao = _ao_avec_document(session, "CCTP notifications")
+        ao_id = ao.id
+
+    async def fake_generer(prompt, *, options=None, **kwargs):
+        assert options == {"num_predict": 900}
+        return _faux_pythia_reponse(
+            {
+                "résumé": "AO notifications avec clés JSON francisées.",
+                "score": 73,
+                "justification_score": "Alias de justification accepté.",
+                "mots_clés": ["notifications"],
+                "critères": "Prix et valeur technique",
+            }
+        )
+
+    monkeypatch.setattr(analyzer.pythia, "generer", fake_generer)
+    import asyncio
+
+    with Session(get_engine()) as session:
+        ao = session.get(AppelOffre, ao_id)
+        assert ao is not None
+        resultat = asyncio.run(analyzer.analyser_ao(session, ao))
+        assert resultat.analyse.score == 73
+        assert "francisées" in resultat.analyse.resume
+        assert resultat.analyse.criteres_extraits == "Prix et valeur technique"
+
+
 def test_analyser_ao_idempotent_sans_forcer(monkeypatch):
     from hermes.agents.krinos import analyzer
 

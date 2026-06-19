@@ -42,6 +42,7 @@ SYSTEM_PROMPT = (
     "Tu produis EXCLUSIVEMENT un objet JSON valide conforme au schéma demandé."
 )
 MAX_TENTATIVES_SORTIE = 2
+OPTIONS_GENERATION = {"num_predict": 900}
 
 
 class ErreurAnalyseKrinos(RuntimeError):
@@ -137,7 +138,12 @@ async def _generer_analyse_valide(
     derniere_erreur: Exception | None = None
     for tentative in range(1, MAX_TENTATIVES_SORTIE + 1):
         try:
-            reponse = await pythia.generer(prompt, system=SYSTEM_PROMPT, format_json=True)
+            reponse = await pythia.generer(
+                prompt,
+                system=SYSTEM_PROMPT,
+                format_json=True,
+                options=OPTIONS_GENERATION,
+            )
         except pythia.ErreurPythia as exc:
             _journaliser(
                 session,
@@ -256,7 +262,7 @@ def _normaliser_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ErreurAnalyseKrinos("Réponse PYTHIA n'est pas un objet JSON")
 
-    resume = str(payload.get("resume") or "").strip()
+    resume = _texte(payload, "resume", "résumé", "summary", "synthese", "synthèse")
     if not resume:
         raise ErreurAnalyseKrinos("Résumé manquant dans la réponse PYTHIA")
 
@@ -280,9 +286,15 @@ def _normaliser_payload(payload: dict[str, Any]) -> dict[str, Any]:
             except (TypeError, ValueError):
                 continue
 
-    justification = str(payload.get("justification") or "").strip()
+    justification = _texte(
+        payload,
+        "justification",
+        "justification_score",
+        "justification_du_score",
+        "explication",
+    )
 
-    tags_brut = payload.get("tags") or []
+    tags_brut = _valeur(payload, "tags", "mots_cles", "mots-clés", "mots_clés") or []
     if isinstance(tags_brut, str):
         tags_brut = [tags_brut]
     tags: list[str] = []
@@ -293,7 +305,7 @@ def _normaliser_payload(payload: dict[str, Any]) -> dict[str, Any]:
         if valeur and valeur not in tags:
             tags.append(valeur)
 
-    criteres = payload.get("criteres")
+    criteres = _valeur(payload, "criteres", "critères", "criteres_extraits")
     if isinstance(criteres, list):
         criteres = "\n".join(str(c).strip() for c in criteres if str(c).strip())
     criteres_str = str(criteres or "").strip()
@@ -306,6 +318,18 @@ def _normaliser_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "tags": tags,
         "criteres": criteres_str,
     }
+
+
+def _valeur(payload: dict[str, Any], *cles: str) -> Any:
+    for cle in cles:
+        if cle in payload and payload[cle] not in (None, ""):
+            return payload[cle]
+    return None
+
+
+def _texte(payload: dict[str, Any], *cles: str) -> str:
+    valeur = _valeur(payload, *cles)
+    return str(valeur or "").strip()
 
 
 def _journaliser(
