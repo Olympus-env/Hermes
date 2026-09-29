@@ -51,6 +51,18 @@ class Settings(BaseSettings):
     # HERMES_PYTHIA_MODELE.
     pythia_modele: str = "qwen3:8b"
     pythia_modele_embeddings: str = "nomic-embed-text"
+    # Modèles que l'utilisateur peut choisir de télécharger, avec une taille
+    # INDICATIVE en octets (aucun appel au registre Ollama : local-first).
+    # Un nom hors liste est refusé, sauf `pythia_modele_libre` (option avancée).
+    pythia_modeles_proposes: dict[str, int] = {
+        "qwen3:8b": 5_200_000_000,
+        "qwen3:4b": 2_600_000_000,
+        "mistral:7b": 4_400_000_000,
+    }
+    pythia_modele_libre: bool = False
+    # Renseigné à l'init : vrai si HERMES_PYTHIA_MODELE (ou .env) a été fourni
+    # explicitement. Dans ce cas il prime sur le modèle choisi en base.
+    pythia_modele_explicite: bool = False
     pythia_timeout_secondes: float = 180.0
     pythia_temperature: float = 0.2
     # Fenêtre de contexte demandée à Ollama (`options.num_ctx`). Son défaut
@@ -77,6 +89,7 @@ class Settings(BaseSettings):
 
     def model_post_init(self, __context: object) -> None:
         self.host = "127.0.0.1"
+        self.pythia_modele_explicite = "pythia_modele" in self.model_fields_set
         if not _est_url_loopback(self.ollama_base_url):
             self.ollama_base_url = "http://127.0.0.1:11434"
 

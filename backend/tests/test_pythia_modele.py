@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 from hermes.agents import pythia
 from hermes.db.session import init_db
 
+CORPS = {"modele": "qwen3:8b", "confirme": True}
+
 
 @pytest.fixture(autouse=True)
 def _reset_etat():
@@ -71,7 +73,7 @@ def test_telecharger_refuse_si_ollama_down(monkeypatch):
 
     init_db()
     with TestClient(app) as client:
-        r = client.post("/pythia/modele/telecharger")
+        r = client.post("/pythia/modele/telecharger", json=CORPS)
 
     assert r.status_code == 502
 
@@ -94,7 +96,7 @@ def test_telecharger_demarre_et_suit_progression(monkeypatch):
 
     init_db()
     with TestClient(app) as client:
-        r = client.post("/pythia/modele/telecharger")
+        r = client.post("/pythia/modele/telecharger", json=CORPS)
         assert r.status_code == 200
         # Le téléchargement tourne en background — on attend qu'il finisse
         # en pollant l'état.
@@ -135,10 +137,10 @@ def test_telecharger_idempotent(monkeypatch):
 
     init_db()
     with TestClient(app) as client:
-        r1 = client.post("/pythia/modele/telecharger")
+        r1 = client.post("/pythia/modele/telecharger", json=CORPS)
         assert r1.status_code == 200
         # Deuxième POST — doit renvoyer l'état en cours sans démarrer un 2e job
-        r2 = client.post("/pythia/modele/telecharger")
+        r2 = client.post("/pythia/modele/telecharger", json=CORPS)
         assert r2.status_code == 200
 
         # Débloque le faux téléchargement
@@ -194,7 +196,7 @@ def test_telechargement_ndjson_error_passe_en_erreur(monkeypatch):
 
     init_db()
     with TestClient(app) as client:
-        r = client.post("/pythia/modele/telecharger")
+        r = client.post("/pythia/modele/telecharger", json=CORPS)
         assert r.status_code == 200
         for _ in range(20):
             r = client.get("/pythia/modele/status")
@@ -207,3 +209,142 @@ def test_telechargement_ndjson_error_passe_en_erreur(monkeypatch):
     etat = api_pythia.etat_global()
     assert etat.statut == "erreur"
     assert etat.erreur == "modele introuvable"
+
+
+def _espion_pull(monkeypatch):
+    appels = []
+
+    async def fake_disponible(*args, **kwargs):
+        return True
+
+    async def fake_telechargement(modele):
+        appels.append(modele)
+        yield {"status": "success"}
+
+    monkeypatch.setattr(pythia, "est_disponible", fake_disponible)
+    monkeypatch.setattr(pythia, "telecharger_modele", fake_telechargement)
+    return appels
+
+
+def test_telecharger_sans_confirmation_refuse(monkeypatch):
+    from hermes.main import app
+
+    appels = _espion_pull(monkeypatch)
+    init_db()
+    with TestClient(app) as client:
+        url = "/pythia/modele/telecharger"
+        assert client.post(url, json={"modele": "qwen3:8b"}).status_code == 400
+        r = client.post(url, json={"modele": "qwen3:8b", "confirme": False})
+        assert r.status_code == 400
+        # Ancien appel sans corps : plus de téléchargement implicite.
+        assert client.post(url).status_code == 422
+    assert appels == []
+
+
+def test_telecharger_hors_liste_blanche_refuse(monkeypatch):
+    from hermes.config import settings
+    from hermes.main import app
+
+    appels = _espion_pull(monkeypatch)
+    corps = {"modele": "gros/modele:70b", "confirme": True}
+    init_db()
+    with TestClient(app) as client:
+        r = client.post("/pythia/modele/telecharger", json=corps)
+        assert r.status_code == 403
+        assert appels == []
+
+        monkeypatch.setattr(settings, "pythia_modele_libre", True)
+        r = client.post("/pythia/modele/telecharger", json=corps)
+        assert r.status_code == 200
+
+
+def test_options_et_choix_modele_installe(monkeypatch):
+    from hermes.config import settings
+    from hermes.main import app
+
+    async def fake_disponible(*args, **kwargs):
+        return True
+
+    async def fake_lister():
+        return ["gemma2:9b", "qwen3:4b"]
+
+    monkeypatch.setattr(pythia, "est_disponible", fake_disponible)
+    monkeypatch.setattr(pythia, "lister_modeles", fake_lister)
+    monkeypatch.setattr(settings, "pythia_modele", "qwen3:8b")
+
+    init_db()
+    with TestClient(app) as client:
+        o = client.get("/pythia/modele/options").json()
+        assert "gemma2:9b" in o["installes"]
+        assert {p["nom"]: p["installe"] for p in o["proposes"]}["qwen3:4b"] is True
+        assert o["espace_disque_libre_octets"] > 0
+
+        r = client.post("/pythia/modele/choisir", json={"modele": "absent:1b"})
+        assert r.status_code == 404
+        r = client.post("/pythia/modele/choisir", json={"modele": "gemma2:9b"})
+        assert r.status_code == 200
+        assert r.json()["installe"] is True
+        assert settings.pythia_modele == "gemma2:9b"
+
+
+def test_annuler_telechargement_en_cours(monkeypatch):
+    from hermes.api import pythia as api_pythia
+    from hermes.main import app
+
+    async def fake_disponible(*args, **kwargs):
+        return True
+
+    async def fake_telechargement(modele):
+        yield {"status": "downloading", "completed": 1, "total": 1000}
+        await asyncio.sleep(60)
+        yield {"status": "success"}
+
+    monkeypatch.setattr(pythia, "est_disponible", fake_disponible)
+    monkeypatch.setattr(pythia, "telecharger_modele", fake_telechargement)
+
+    init_db()
+    with TestClient(app) as client:
+        assert client.post("/pythia/modele/telecharger", json=CORPS).status_code == 200
+        r = client.post("/pythia/modele/annuler")
+        assert r.status_code == 200
+        assert r.json()["en_cours"] is False
+        assert r.json()["statut"] == "annule"
+
+    assert api_pythia.etat_global().en_cours is False
+
+
+def test_choix_modele_persiste_apres_redemarrage(monkeypatch):
+    from hermes.api import pythia as api_pythia
+    from hermes.config import settings
+    from hermes.main import app
+
+    async def fake_disponible(*args, **kwargs):
+        return True
+
+    async def fake_installe(nom=None):
+        return True
+
+    monkeypatch.setattr(pythia, "est_disponible", fake_disponible)
+    monkeypatch.setattr(pythia, "modele_installe", fake_installe)
+    monkeypatch.setattr(settings, "pythia_modele", "qwen3:8b")
+    monkeypatch.setattr(settings, "pythia_modele_explicite", False)
+
+    init_db()
+    with TestClient(app) as client:
+        r = client.post("/pythia/modele/choisir", json={"modele": "gemma2:9b"})
+        assert r.status_code == 200
+
+    # « Redémarrage » : défaut restauré, nouvelle instance (lifespan) sur la même base.
+    monkeypatch.setattr(settings, "pythia_modele", "qwen3:8b")
+    api_pythia._etat = api_pythia.EtatTelechargement()
+    with TestClient(app) as client:
+        s = client.get("/pythia/modele/status").json()
+    assert s["modele"] == "gemma2:9b"
+    assert s["installe"] is True
+
+    # Variable d'env explicite : elle prime sur la base.
+    monkeypatch.setattr(settings, "pythia_modele", "qwen3:8b")
+    monkeypatch.setattr(settings, "pythia_modele_explicite", True)
+    api_pythia._etat = api_pythia.EtatTelechargement()
+    with TestClient(app) as client:
+        assert client.get("/pythia/modele/status").json()["modele"] == "qwen3:8b"

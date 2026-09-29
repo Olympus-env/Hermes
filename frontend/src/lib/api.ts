@@ -202,6 +202,20 @@ export type StatutModele = {
   progression: ProgressionModele;
 };
 
+export type ModelePropose = {
+  nom: string;
+  taille_octets: number;
+  installe: boolean;
+};
+
+export type OptionsModeles = {
+  modele_actuel: string;
+  proposes: ModelePropose[];
+  installes: string[];
+  espace_disque_libre_octets: number;
+  modele_libre: boolean;
+};
+
 export type StatutReponseHermion =
   | "en_generation"
   | "en_attente"
@@ -480,10 +494,19 @@ export const api = {
       method: "POST",
     }),
   statutModele: () => fetchJson<StatutModele>("/pythia/modele/status"),
-  telechargerModele: (modele?: string) =>
+  optionsModeles: () => fetchJson<OptionsModeles>("/pythia/modele/options"),
+  // Le téléchargement exige un consentement explicite (`confirme: true`).
+  telechargerModele: (modele: string) =>
     fetchJson<ProgressionModele>("/pythia/modele/telecharger", {
       method: "POST",
-      body: JSON.stringify(modele ? { modele } : {}),
+      body: JSON.stringify({ modele, confirme: true }),
+    }),
+  annulerTelechargementModele: () =>
+    fetchJson<ProgressionModele>("/pythia/modele/annuler", { method: "POST" }),
+  choisirModeleInstalle: (modele: string) =>
+    fetchJson<StatutModele>("/pythia/modele/choisir", {
+      method: "POST",
+      body: JSON.stringify({ modele }),
     }),
   listerLogs: (params: {
     agent?: string;

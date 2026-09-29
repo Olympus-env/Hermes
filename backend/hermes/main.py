@@ -30,6 +30,7 @@ from hermes.api import (
     orchestration,
     pythia,
 )
+from hermes.api import pythia as pythia_api
 from hermes.config import settings
 from hermes.db.models import LogAgent, NiveauLog
 from hermes.db.session import get_engine, init_db
@@ -40,6 +41,8 @@ async def lifespan(_app: FastAPI):
     settings.ensure_dirs()
     init_db()
     _migrer_onboarding()
+    with Session(get_engine()) as session:
+        pythia_api.appliquer_modele_persiste(session)
     # Marqueur de session uniquement en runtime réel (pas en debug/tests/reload) :
     # garantit qu'au lancement sur le poste utilisateur le journal reçoit une
     # entrée datée de la session réelle et expose la BDD résolue (issue #8).
