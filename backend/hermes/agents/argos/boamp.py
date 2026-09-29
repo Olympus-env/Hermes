@@ -17,6 +17,8 @@ C'est le canal légitime de consommation prévu par la DILA pour les éditeurs.
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -291,6 +293,7 @@ def _record_vers_ao(rec: dict[str, Any]) -> AOCollecte:
         emetteur = str(emetteur).strip()
 
     zone = _format_zone(rec.get("code_departement"), rec.get("code_departement_prestation"))
+    siret, cpv = extraire_identifiants(rec.get("donnees"))
 
     return AOCollecte(
         titre=titre,
@@ -303,7 +306,119 @@ def _record_vers_ao(rec: dict[str, Any]) -> AOCollecte:
         type_marche=rec.get("nature_libelle") or rec.get("type_marche"),
         zone_geographique=zone,
         code_naf=_premier_descripteur(rec.get("descripteur_code")),
+        emetteur_siret=siret,
+        code_cpv=cpv,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Identifiants acheteur / CPV dans le JSON `donnees` (liaison DECP)
+# --------------------------------------------------------------------------- #
+
+_RE_SIRET = re.compile(r"\d{14}")
+_RE_CPV = re.compile(r"\d{8}")
+
+
+def _chercher(obj: Any, cle: str) -> Any:
+    """Première valeur de la clé `cle`, en profondeur d'abord (None sinon)."""
+    if isinstance(obj, dict):
+        if cle in obj:
+            return obj[cle]
+        for v in obj.values():
+            trouve = _chercher(v, cle)
+            if trouve is not None:
+                return trouve
+    elif isinstance(obj, list):
+        for v in obj:
+            trouve = _chercher(v, cle)
+            if trouve is not None:
+                return trouve
+    return None
+
+
+def _texte_ubl(v: Any) -> str | None:
+    """Valeur texte d'un nœud eForms (str ou {'#text': …})."""
+    if isinstance(v, dict):
+        v = v.get("#text")
+    return str(v).strip() if v is not None else None
+
+
+def _siret_eforms(donnees: dict[str, Any]) -> str | None:
+    """SIRET de l'acheteur d'un avis eForms (organisation liée au ContractingParty)."""
+    partie = _chercher(donnees, "cac:ContractingParty")
+    id_acheteur = None
+    if isinstance(partie, dict):
+        identification = (partie.get("cac:Party") or {}).get("cac:PartyIdentification") or {}
+        id_acheteur = _texte_ubl(identification.get("cbc:ID"))
+    orgs = _chercher(donnees, "efac:Organization")
+    if isinstance(orgs, dict):
+        orgs = [orgs]
+    for org in orgs or []:
+        societe = org.get("efac:Company") or {}
+        ident = _texte_ubl((societe.get("cac:PartyIdentification") or {}).get("cbc:ID"))
+        if id_acheteur and ident == id_acheteur:
+            return _texte_ubl((societe.get("cac:PartyLegalEntity") or {}).get("cbc:CompanyID"))
+    return None
+
+
+def extraire_identifiants(donnees: Any) -> tuple[str | None, str | None]:
+    """(SIRET acheteur, CPV principal) extraits du JSON `donnees` d'un avis BOAMP.
+
+    Trois formats coexistent : eForms (depuis 2024), FNSimple (MAPA récents) et
+    l'ancien format (IDENTITE/OBJET). Best-effort : (None, None) si absent ou
+    illisible — jamais d'exception.
+    """
+    if isinstance(donnees, str):
+        try:
+            donnees = json.loads(donnees)
+        except ValueError:
+            return None, None
+    if not isinstance(donnees, dict):
+        return None, None
+
+    siret: str | None = None
+    cpv: str | None = None
+    if "EFORMS" in donnees:
+        siret = _siret_eforms(donnees)
+        noeud = _chercher(donnees, "cbc:ItemClassificationCode")
+        if isinstance(noeud, dict) and noeud.get("@listName") == "cpv":
+            cpv = _texte_ubl(noeud)
+    else:
+        siret = _texte_ubl(
+            _chercher(donnees, "codeIdentificationNational")
+            or _chercher(donnees, "CODE_IDENT_NATIONAL")
+        )
+        cpv = _texte_ubl(
+            _chercher(donnees, "classPrincipale")
+            or _chercher(_chercher(donnees, "CPV") or {}, "PRINCIPAL")
+        )
+    siret = re.sub(r"\s", "", siret) if siret else None
+    return (
+        siret if siret and _RE_SIRET.fullmatch(siret) else None,
+        cpv if cpv and _RE_CPV.fullmatch(cpv) else None,
+    )
+
+
+async def recuperer_identifiants(
+    idweb: str, timeout: float = 30.0
+) -> tuple[str | None, str | None]:
+    """Relit un avis BOAMP par `idweb` et en extrait (SIRET, CPV) — lecture seule.
+
+    Sert au rattrapage des AO collectés avant l'ajout de ces colonnes. Lève
+    `httpx.HTTPError` en cas de panne (à l'appelant de décider).
+    """
+    params = {"limit": 1, "select": "donnees", "where": f'idweb = "{_echapper(idweb)}"'}
+
+    async def envoyer() -> httpx.Response:
+        async with httpx.AsyncClient(
+            timeout=timeout, headers={"User-Agent": _UA, "Accept": "application/json"}
+        ) as client:
+            return await client.get(API_URL, params=params)
+
+    r = await requeter_avec_retry(envoyer, nom="BOAMP")
+    r.raise_for_status()
+    resultats = r.json().get("results", [])
+    return extraire_identifiants(resultats[0].get("donnees")) if resultats else (None, None)
 
 
 def _url_par_defaut(rec: dict[str, Any]) -> str:

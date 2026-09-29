@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     master_key: str | None = None
     master_key_path: Path = Field(default=Path("./data/master.key"))
 
+    # ARGOS — DECP : API tabulaire officielle (data.gouv.fr) du jeu consolidé.
+    # Surchargeable (HERMES_DECP_URL) si l'identifiant de ressource change.
+    decp_url: str = (
+        "https://tabular-api.data.gouv.fr/api/resources/"
+        "22847056-61df-452d-837d-8b8ceadbfc52/data/"
+    )
+
     # PYTHIA — LLM local via Ollama
     ollama_base_url: str = "http://127.0.0.1:11434"
     # Qwen3 8B (q4) : tient entièrement dans 8 Go de VRAM (~72 t/s), bien meilleur

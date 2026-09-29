@@ -23,6 +23,7 @@ from hermes.agents.argos.scheduler import scheduler_global
 from hermes.api import (
     appels_offre,
     argos,
+    concurrence,
     health,
     hermion,
     krinos,
@@ -131,6 +132,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(appels_offre.router)
+app.include_router(concurrence.router)
 app.include_router(argos.router)
 app.include_router(krinos.router)
 app.include_router(hermion.router)

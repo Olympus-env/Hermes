@@ -6,6 +6,7 @@ import {
   type PonderationKrinos,
   type ProgressionHermion,
 } from "../lib/api";
+import { ConcurrenceDecp } from "../components/ConcurrenceDecp";
 import { useApi } from "../lib/useApi";
 import { deadlineInfo, type Tender, type TenderTag } from "../lib/data";
 import { AgentChip } from "../components/AgentChip";
@@ -642,6 +643,8 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
             </dd>
           </dl>
         </div>
+
+        <ConcurrenceDecp aoId={Number(tender.id)} />
 
         <div className="tender-panel__section">
           <div className="tender-panel__section-title">Points d'attention</div>

@@ -50,6 +50,45 @@ export type AppelOffre = {
   documents_manquants: number;
 };
 
+// Analyse concurrentielle DECP (GET /appels-offre/{id}/concurrence).
+export type AnalyseConcurrence = {
+  nb_marches: number;
+  montant_median: number | null;
+  montant_total: number | null;
+  offres_moyennes: number | null;
+  titulaires: {
+    nom: string;
+    siret: string | null;
+    nb_marches: number;
+    montant_total: number;
+    part: number;
+  }[];
+  tendance: {
+    sens: "hausse" | "baisse" | "stable" | "indeterminee";
+    // false : échantillon plafonné ne remontant pas à la période précédente.
+    precedent_couvert: boolean;
+    nb_recent: number;
+    nb_precedent: number;
+    montant_median_recent: number | null;
+    montant_median_precedent: number | null;
+  };
+  periode_annees: number;
+  echantillon_plafonne: boolean;
+  total_reel: number | null;
+  periode_debut: string | null;
+  periode_fin: string | null;
+};
+
+export type ConcurrenceAO = {
+  siret: string | null;
+  cpv: string | null;
+  acheteur: AnalyseConcurrence | null;
+  secteur: AnalyseConcurrence | null;
+  maj_le: string | null;
+  depuis_cache: boolean;
+  message: string | null;
+};
+
 export type AppelsOffrePage = {
   total: number;
   items: AppelOffre[];
@@ -441,6 +480,12 @@ export const api = {
   etatSchedulerArgos: (signal?: AbortSignal) =>
     fetchJson<EtatSchedulerArgos>("/argos/scheduler", { signal }),
   detailAO: (id: number) => fetchJson<AppelOffre>(`/appels-offre/${id}`),
+  // Premier appel : jusqu'à ~3 requêtes espacées vers data.gouv.fr, d'où le délai large.
+  concurrenceAO: (id: number, actualiser = false, signal?: AbortSignal) =>
+    fetchJson<ConcurrenceAO>(
+      `/appels-offre/${id}/concurrence${actualiser ? "?actualiser=true" : ""}`,
+      { signal, timeoutMs: 90_000 },
+    ),
   modifierStatutAO: (id: number, statut: string) =>
     fetchJson<AppelOffre>(`/appels-offre/${id}/statut`, {
       method: "PATCH",

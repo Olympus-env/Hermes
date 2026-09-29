@@ -131,6 +131,12 @@ class AppelOffre(SQLModel, table=True):
     zone_geographique: Optional[str] = None
     code_naf: Optional[str] = Field(default=None, index=True)
 
+    # Identifiants de l'acheteur / de l'objet, pour relier l'AO aux DECP
+    # (analyse concurrentielle) : SIRET (14 chiffres) et CPV principal (8 chiffres).
+    # NULL quand la source ne les expose pas (TED : pas de SIRET dans la recherche).
+    emetteur_siret: Optional[str] = Field(default=None, index=True)
+    code_cpv: Optional[str] = None
+
     # Liens documents publics détectés par ARGOS (JSON list d'URLs). Sert au
     # téléchargement KRINOS et à l'état « documents détectés » de la fiche AO.
     liens_documents: Optional[str] = Field(default=None, sa_column=Column(Text))
@@ -281,3 +287,19 @@ class LogAgent(SQLModel, table=True):
     portail_id: Optional[int] = Field(default=None, foreign_key="portails.id", index=True)
 
     cree_le: datetime = Field(default_factory=_utcnow, index=True)
+
+
+class CacheDecp(SQLModel, table=True):
+    """Cache local des requêtes DECP (open data) — MNEMOSYNE.
+
+    Une ligne par requête normalisée (`cle` : acheteur + CPV + période). Le
+    contenu est la liste JSON des marchés déjà réduite aux champs utiles ;
+    `recupere_le` (UTC) sert au TTL. Aucune donnée personnelle : open data.
+    """
+
+    __tablename__ = "cache_decp"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cle: str = Field(index=True, unique=True)
+    marches: str = Field(sa_column=Column(Text))
+    recupere_le: datetime = Field(default_factory=_utcnow)

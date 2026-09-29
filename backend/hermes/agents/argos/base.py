@@ -52,6 +52,9 @@ class AOCollecte:
     type_marche: str | None = None
     zone_geographique: str | None = None
     code_naf: str | None = None
+    # Acheteur (SIRET 14 chiffres) et CPV principal, si la source les expose.
+    emetteur_siret: str | None = None
+    code_cpv: str | None = None
 
     # Liens vers les documents/avis publics exposés par le portail (TED :
     # HTML/PDF/XML). Vide si le portail n'expose pas de lien exploitable
