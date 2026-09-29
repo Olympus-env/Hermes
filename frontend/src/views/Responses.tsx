@@ -13,7 +13,7 @@ import { type ResponseStatus } from "../lib/data";
 import type { ToastInput } from "../lib/toast";
 import { loadUserProfile } from "../lib/userProfile";
 
-type Props = { onToast: (t: ToastInput) => void };
+type Props = { onToast: (t: ToastInput) => void; externalRefreshKey?: number };
 
 const STATUS_FILTERS: { id: StatutReponseHermion | "all"; label: string }[] = [
   { id: "all",          label: "Toutes" },
@@ -53,7 +53,7 @@ function formatDuree(ms: number | null): string {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
-export function Responses({ onToast }: Props) {
+export function Responses({ onToast, externalRefreshKey = 0 }: Props) {
   const [filter, setFilter] = useState<StatutReponseHermion | "all">("all");
   const [reponses, setReponses] = useState<ReponseAvecAO[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -87,7 +87,7 @@ export function Responses({ onToast }: Props) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [refreshKey, externalRefreshKey]);
 
   // Charge le détail de la réponse sélectionnée
   useEffect(() => {
@@ -146,6 +146,33 @@ export function Responses({ onToast }: Props) {
     }
   };
 
+  /** Télécharge le PDF via blob + <a download> (window.open est bloqué dans la webview Tauri). */
+  const telechargerPdf = async (id: number, version: number) => {
+    const blob = await api.telechargerExportReponse(id);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `reponse_${id}_v${version}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  };
+
+  const onDownload = async () => {
+    if (!detail) return;
+    try {
+      await telechargerPdf(detail.id, detail.version);
+    } catch (e) {
+      onToast({
+        title: "HERMION",
+        app: "Erreur de téléchargement",
+        msg: e instanceof Error ? e.message : String(e),
+        agent: "hermion",
+      });
+    }
+  };
+
   const onExport = async () => {
     if (selectedId === null) return;
     try {
@@ -160,7 +187,7 @@ export function Responses({ onToast }: Props) {
         msg: `PDF généré pour la réponse v${updated.version}.`,
         agent: "hermion",
       });
-      window.open(api.urlExportReponse(selectedId), "_blank");
+      await telechargerPdf(updated.id, updated.version);
     } catch (e) {
       onToast({
         title: "HERMION",
@@ -171,8 +198,8 @@ export function Responses({ onToast }: Props) {
     }
   };
 
-  const onSaveContent = async (contenu: string, commentaire?: string) => {
-    if (selectedId === null) return;
+  const onSaveContent = async (contenu: string, commentaire?: string): Promise<boolean> => {
+    if (selectedId === null) return false;
     try {
       const updated = await api.modifierContenuReponse(selectedId, contenu, commentaire);
       setDetail(updated);
@@ -193,6 +220,7 @@ export function Responses({ onToast }: Props) {
         msg: "Contenu enregistré, statut passé à « à modifier ».",
         agent: "hermion",
       });
+      return true;
     } catch (e) {
       onToast({
         title: "HERMION",
@@ -200,6 +228,7 @@ export function Responses({ onToast }: Props) {
         msg: e instanceof Error ? e.message : String(e),
         agent: "hermion",
       });
+      return false;
     }
   };
 
@@ -301,6 +330,7 @@ export function Responses({ onToast }: Props) {
             onStatusChange={onStatusChange}
             onSaveContent={onSaveContent}
             onExport={onExport}
+            onDownload={() => void onDownload()}
           />
         )}
         {!selectedSummary && !loadingList && reponses.length > 0 && (
@@ -322,8 +352,9 @@ type DetailProps = {
     commentaire?: string,
     toast?: ToastInput,
   ) => void;
-  onSaveContent: (contenu: string, commentaire?: string) => void;
+  onSaveContent: (contenu: string, commentaire?: string) => Promise<boolean>;
   onExport: () => void;
+  onDownload: () => void;
 };
 
 function ResponseDetail({
@@ -333,16 +364,27 @@ function ResponseDetail({
   onStatusChange,
   onSaveContent,
   onExport,
+  onDownload,
 }: DetailProps) {
   const [editing, setEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(detail.contenu);
   const [comment, setComment] = useState(detail.commentaire_humain ?? "");
 
+  // Changement de réponse : on repart de zéro.
   useEffect(() => {
     setEditedContent(detail.contenu);
     setComment(detail.commentaire_humain ?? "");
     setEditing(false);
-  }, [detail.id, detail.contenu, detail.commentaire_humain]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.id]);
+
+  // Même réponse rafraîchie (polling, sauvegarde) : ne pas écraser la saisie en cours.
+  useEffect(() => {
+    if (editing) return;
+    setEditedContent(detail.contenu);
+    setComment(detail.commentaire_humain ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.contenu, detail.commentaire_humain]);
 
   const uiStatus = toUiStatus(detail.statut);
   const verrouille = detail.statut === "exportee" || detail.statut === "rejetee";
@@ -456,7 +498,7 @@ function ResponseDetail({
           {detail.statut === "exportee" ? (
             <button
               className="btn btn--ok"
-              onClick={() => window.open(api.urlExportReponse(detail.id), "_blank")}
+              onClick={onDownload}
             >
               <Icon.download size={13} /> Télécharger le PDF
             </button>
@@ -478,7 +520,9 @@ function ResponseDetail({
           <button
             className="btn"
             disabled={!editing}
-            onClick={() => onSaveContent(editedContent, comment)}
+            onClick={async () => {
+              if (await onSaveContent(editedContent, comment)) setEditing(false);
+            }}
           >
             <Icon.check size={13} /> Enregistrer les modifications
           </button>

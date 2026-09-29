@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../components/Icon";
 import { api, type LogAgentEntry, type NiveauLog } from "../lib/api";
 
@@ -40,7 +40,7 @@ function formatDate(iso: string): string {
   }
 }
 
-export function Journal() {
+export function Journal({ refreshKey = 0 }: { refreshKey?: number }) {
   const [agent, setAgent] = useState<string | "all">("all");
   const [niveau, setNiveau] = useState<NiveauLog | "all">("all");
   const [items, setItems] = useState<LogAgentEntry[]>([]);
@@ -48,23 +48,35 @@ export function Journal() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const ctrl = useRef<AbortController | null>(null);
+
   const load = useCallback(
     async (offset: number, append: boolean) => {
+      // Annule la requête précédente : une réponse tardive ne doit pas écraser la récente.
+      ctrl.current?.abort();
+      const c = new AbortController();
+      ctrl.current = c;
       setLoading(true);
       setError(null);
       try {
-        const page = await api.listerLogs({
-          agent: agent === "all" ? undefined : agent,
-          niveau: niveau === "all" ? undefined : niveau,
-          limit: PAGE,
-          offset,
-        });
+        const page = await api.listerLogs(
+          {
+            agent: agent === "all" ? undefined : agent,
+            niveau: niveau === "all" ? undefined : niveau,
+            limit: PAGE,
+            offset,
+          },
+          c.signal,
+        );
+        if (c.signal.aborted) return;
         setTotal(page.total);
         setItems((prev) => (append ? [...prev, ...page.items] : page.items));
       } catch (e) {
+        if (c.signal.aborted) return;
+        // On garde les entrées déjà affichées : l'erreur ne vide ni liste ni compteur.
         setError(e instanceof Error ? e.message : String(e));
       } finally {
-        setLoading(false);
+        if (ctrl.current === c) setLoading(false);
       }
     },
     [agent, niveau],
@@ -72,7 +84,8 @@ export function Journal() {
 
   useEffect(() => {
     void load(0, false);
-  }, [load]);
+    return () => ctrl.current?.abort();
+  }, [load, refreshKey]);
 
   return (
     <div className="view">

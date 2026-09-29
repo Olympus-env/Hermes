@@ -76,6 +76,11 @@ export type CycleCollecteArgos = {
   succes: boolean;
 };
 
+export type EtatSchedulerArgos = {
+  en_marche: boolean;
+  jobs: { id: string; prochaine_execution: string | null }[];
+};
+
 export type ScrapersArgos = {
   disponibles: string[];
 };
@@ -310,7 +315,47 @@ export type RedactionResponse = {
   plan: { titre: string; brief: string }[];
 };
 
-async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+/** Délai par défaut des lectures (GET). Les écritures/traitements longs
+ * (collecte, génération PYTHIA) n'ont pas de délai sauf `timeoutMs` explicite. */
+const TIMEOUT_LECTURE_MS = 30_000;
+
+type FetchOptions = RequestInit & { timeoutMs?: number };
+
+/** Combine le signal de l'appelant et un délai maximal en un seul signal. */
+function signalAvecTimeout(
+  signal: AbortSignal | null | undefined,
+  timeoutMs: number | undefined,
+): { signal: AbortSignal | undefined; nettoyer: () => void } {
+  if (!timeoutMs) return { signal: signal ?? undefined, nettoyer: () => {} };
+  const ctrl = new AbortController();
+  const surAbandon = () => ctrl.abort(signal?.reason);
+  if (signal?.aborted) ctrl.abort(signal.reason);
+  else signal?.addEventListener("abort", surAbandon, { once: true });
+  const timer = setTimeout(
+    () => ctrl.abort(new Error(`Délai dépassé (${Math.round(timeoutMs / 1000)} s)`)),
+    timeoutMs,
+  );
+  return {
+    signal: ctrl.signal,
+    nettoyer: () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", surAbandon);
+    },
+  };
+}
+
+async function fetchJson<T>(path: string, options?: FetchOptions): Promise<T> {
+  const { timeoutMs, ...init } = options ?? {};
+  const delai = timeoutMs ?? (!init.method || init.method === "GET" ? TIMEOUT_LECTURE_MS : 0);
+  const { signal, nettoyer } = signalAvecTimeout(init.signal, delai);
+  try {
+    return await fetchJsonBrut<T>(path, { ...init, signal });
+  } finally {
+    nettoyer();
+  }
+}
+
+async function fetchJsonBrut<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
@@ -372,10 +417,13 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(portail),
     }),
-  listerAO: (statut?: string) =>
+  listerAO: (statut?: string, signal?: AbortSignal) =>
     fetchJson<AppelsOffrePage>(
       `/appels-offre${statut ? `?statut=${encodeURIComponent(statut)}` : ""}`,
+      { signal },
     ),
+  etatSchedulerArgos: (signal?: AbortSignal) =>
+    fetchJson<EtatSchedulerArgos>("/argos/scheduler", { signal }),
   detailAO: (id: number) => fetchJson<AppelOffre>(`/appels-offre/${id}`),
   modifierStatutAO: (id: number, statut: string) =>
     fetchJson<AppelOffre>(`/appels-offre/${id}/statut`, {
@@ -440,13 +488,13 @@ export const api = {
     niveau?: NiveauLog;
     limit?: number;
     offset?: number;
-  } = {}) => {
+  } = {}, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params.agent) q.set("agent", params.agent);
     if (params.niveau) q.set("niveau", params.niveau);
     q.set("limit", String(params.limit ?? 100));
     q.set("offset", String(params.offset ?? 0));
-    return fetchJson<LogsPage>(`/logs?${q.toString()}`);
+    return fetchJson<LogsPage>(`/logs?${q.toString()}`, { signal });
   },
   lireConfigOrchestration: () =>
     fetchJson<ConfigOrchestration>("/orchestration/config"),
@@ -505,8 +553,15 @@ export const api = {
     fetchJson<ReponseHermion>(`/hermion/reponses/${id}/exporter`, {
       method: "POST",
     }),
-  urlExportReponse: (id: number) =>
-    `${API_BASE}/hermion/reponses/${id}/export`,
+  /** Télécharge le PDF exporté (blob) — `window.open` est bloqué dans la webview Tauri. */
+  telechargerExportReponse: async (id: number): Promise<Blob> => {
+    const r = await fetch(`${API_BASE}/hermion/reponses/${id}/export`);
+    if (!r.ok) {
+      const detail = await lireDetailErreur(r);
+      throw new Error(detail ?? `${r.status} ${r.statusText} sur l'export`);
+    }
+    return r.blob();
+  },
   modifierContenuReponse: (id: number, contenu: string, commentaire?: string) =>
     fetchJson<ReponseHermion>(`/hermion/reponses/${id}/contenu`, {
       method: "PATCH",

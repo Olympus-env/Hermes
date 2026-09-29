@@ -6,6 +6,7 @@ import {
   type PonderationKrinos,
   type ProgressionHermion,
 } from "../lib/api";
+import { useApi } from "../lib/useApi";
 import { deadlineInfo, type Tender, type TenderTag } from "../lib/data";
 import { AgentChip } from "../components/AgentChip";
 import { Deadline } from "../components/Deadline";
@@ -28,29 +29,20 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
   const [minScore, setMinScore] = useState(0);
   const [portal, setPortal] = useState("all");
   const [tag, setTag] = useState("all");
-  const [tenders, setTenders] = useState<Tender[]>([]);
-  const [apiLoading, setApiLoading] = useState(false);
-  const [apiError, setApiError] = useState<string | null>(null);
+  const {
+    data: page,
+    error: apiError,
+    loading: apiLoading,
+    reload,
+  } = useApi((signal) => api.listerAO(undefined, signal), [refreshKey]);
 
-  const loadTenders = async () => {
-    setApiLoading(true);
-    setApiError(null);
-    try {
-      const page = await api.listerAO();
-      setTenders(page.items.map(mapAppelOffre));
-      onCountChange(page.total);
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : "Erreur inconnue");
-      setTenders([]);
-      onCountChange(0);
-    } finally {
-      setApiLoading(false);
-    }
-  };
+  // Données précédentes conservées si une requête échoue (pas de liste vidée).
+  const tenders = useMemo(() => (page ? page.items.map(mapAppelOffre) : []), [page]);
 
   useEffect(() => {
-    void loadTenders();
-  }, [refreshKey]);
+    if (page) onCountChange(page.total);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -141,7 +133,7 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
           <strong>{minScore}</strong>
         </div>
         <div style={{ flex: 1 }} />
-        <button className="btn btn--ghost btn--sm" onClick={() => void loadTenders()}>
+        <button className="btn btn--ghost btn--sm" onClick={() => void reload()}>
           <Icon.refresh size={11} /> Rafraîchir
         </button>
       </div>
@@ -241,7 +233,7 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
             onClose={() => setSelectedId(null)}
             onChanged={() => {
               setSelectedId(null);
-              void loadTenders();
+              void reload();
             }}
             onToast={onToast}
           />
