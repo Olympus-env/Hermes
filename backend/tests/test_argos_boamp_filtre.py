@@ -67,7 +67,7 @@ class _ClientReposFiltre:
         return None
 
     async def get(self, _url, params=None):
-        if params and "where" in params:
+        if params and "search(" in params.get("where", ""):
             raise httpx.HTTPError("400 — clause where rejetée")
         return _Resp({"results": [_record()]})
 
@@ -110,6 +110,7 @@ def test_collecte_avec_filtre_envoie_le_where(monkeypatch):
     asyncio.run(scraper.collecter(limite=20))
 
     assert _ClientOk.captured.get("where") == (
+        'nature = "APPEL_OFFRE" AND etat = "INITIAL" AND '
         '(search(objet, "SMS")) AND NOT (search(objet, "nettoyage"))'
     )
 

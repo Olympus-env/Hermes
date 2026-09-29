@@ -7,6 +7,7 @@ import time
 from datetime import UTC, datetime
 
 from loguru import logger
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from hermes.agents.argos.base import AOCollecte, CriteresAvances, ResultatCollecte, Scraper
@@ -66,6 +67,8 @@ async def executer_collecte(
 
     resultat.items = items
     resultat.ao_trouves = len(items)
+    resultat.partielle = bool(getattr(scraper, "collecte_partielle", False))
+    portail_id = portail.id
 
     for item in items:
         if filtre.actif and not filtre.correspond(item):
@@ -74,14 +77,26 @@ async def executer_collecte(
         if criteres.actif and not criteres.correspond_client(item):
             resultat.ao_filtres += 1
             continue
-        if _existe(session, portail.id, item):
+        if _existe(session, portail_id, item):
             resultat.ao_dedoublonnes += 1
             continue
-        ao = _en_modele(item, portail.id)
+        ao = _en_modele(item, portail_id)
         session.add(ao)
+        try:
+            # Commit par avis : l'index unique (portail, référence) peut rejeter
+            # un doublon né d'une collecte concurrente ; on l'ignore sans perdre
+            # le reste du lot.
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            resultat.ao_dedoublonnes += 1
+            continue
         resultat.ao_nouveaux += 1
 
-    portail.derniere_collecte = _utcnow()
+    # Pagination interrompue : la fenêtre n'est pas couverte, on garde l'ancienne
+    # `derniere_collecte` pour que le prochain cycle rattrape les avis manqués.
+    if not resultat.partielle:
+        portail.derniere_collecte = _utcnow()
     portail.maj_le = _utcnow()
     session.add(portail)
     session.commit()
@@ -91,13 +106,19 @@ async def executer_collecte(
     _journaliser(
         session,
         agent="ARGOS",
-        niveau=NiveauLog.INFO,
+        niveau=NiveauLog.WARNING if resultat.partielle else NiveauLog.INFO,
         message=(
             f"Collecte {scraper.nom} : {resultat.ao_nouveaux} nouveaux / "
             f"{resultat.ao_trouves} trouvés "
             f"(dédoublonnés : {resultat.ao_dedoublonnes}, "
             f"filtrés : {resultat.ao_filtres}) "
             f"en {resultat.duree_ms} ms"
+            + (
+                " — PARTIELLE : erreur en cours de pagination, "
+                "fenêtre incrémentale non avancée"
+                if resultat.partielle
+                else ""
+            )
         ),
         portail_id=portail.id,
     )

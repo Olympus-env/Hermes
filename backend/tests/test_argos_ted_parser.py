@@ -126,7 +126,9 @@ def test_titre_tronque_si_long():
 
 def test_query_france_seule_sans_filtre():
     assert _construire_query(()) == (
-        "place-of-performance IN (FRA) SORT BY publication-date DESC"
+        "place-of-performance IN (FRA) AND "
+        "notice-type NOT IN (can-standard can-social can-desg can-modif veat) "
+        "SORT BY publication-date DESC"
     )
 
 
@@ -134,6 +136,7 @@ def test_query_inclus_pousses_sur_notice_title():
     q = _construire_query(("SMS", "RCS"))
     assert q == (
         "place-of-performance IN (FRA) AND "
+        "notice-type NOT IN (can-standard can-social can-desg can-modif veat) AND "
         '(notice-title ~ "SMS" OR notice-title ~ "RCS") '
         "SORT BY publication-date DESC"
     )

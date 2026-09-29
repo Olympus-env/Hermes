@@ -29,6 +29,7 @@ from hermes.agents.argos.base import (
     CriteresAvances,
     Scraper,
     borne_incrementale,
+    departement_valide,
 )
 from hermes.agents.argos.capabilities import CHAMPS_BOAMP, PROFIL_BOAMP
 from hermes.agents.argos.reseau import requeter_avec_retry
@@ -70,36 +71,50 @@ class BoampScraper(Scraper):
         self.depuis: datetime | None = None
 
     async def collecter(self, limite: int = 20) -> list[AOCollecte]:
+        self.collecte_partielle = False
         where = _construire_where(self.filtre_inclus, self.filtre_exclus, self.criteres)
+        # Restriction « avis ouverts » : toujours appliquée, y compris au repli.
+        where_ouvert = _restreindre_aux_avis_ouverts(where)
+
         if where is None:
             # Sans filtre : derniers avis seulement (comportement historique ;
             # la veille ciblée passe toujours un filtre, donc pas de pagination).
-            records = await self._requeter(min(limite, 100), 0, None)
-            return _vers_aos(records or [])
+            # Une panne lève : ne jamais la confondre avec « aucun avis ».
+            records = await self._requeter(min(limite, 100), 0, where_ouvert)
+            return _vers_aos(records)
 
         # Avec filtre serveur : les avis pertinents sont rares et dispersés —
         # on pagine jusqu'à la fenêtre incrémentale ou au plafond de pages.
-        records = await self._collecter_pagine(where, borne_incrementale(self.depuis))
-        if records is None:
+        borne = borne_incrementale(self.depuis)
+        try:
+            records = await self._collecter_pagine(where_ouvert, borne)
+        except httpx.HTTPError:
             # Requête filtrée rejetée par l'API (ODSQL invalide, champ, etc.) :
-            # repli sûr sur une collecte non filtrée — le runner re-filtrera
-            # côté client. On ne perd jamais un cycle à cause du filtre.
-            records = await self._requeter(min(limite, 100), 0, None) or []
+            # repli sûr sur les avis ouverts non filtrés — le runner re-filtrera
+            # côté client. Si le repli échoue aussi, l'erreur remonte au runner
+            # (journalisée, `derniere_collecte` inchangée : aucun avis perdu).
+            repli = _restreindre_aux_avis_ouverts(None)
+            records = await self._requeter(min(limite, 100), 0, repli)
         return _vers_aos(records)
 
     async def _collecter_pagine(
         self, where: str, borne: datetime | None
-    ) -> list[dict[str, Any]] | None:
+    ) -> list[dict[str, Any]]:
         """Pagine via `offset` jusqu'à la borne incrémentale ou au plafond.
 
-        Renvoie None si la *première* page échoue (déclenche le repli) ; sinon
-        renvoie ce qui a pu être collecté.
+        Lève si la *première* page échoue (déclenche le repli). Un échec sur une
+        page suivante renvoie ce qui a été collecté et marque la collecte comme
+        partielle : le runner n'avancera pas `derniere_collecte`.
         """
         cumul: list[dict[str, Any]] = []
         for page in range(MAX_PAGES):
-            lot = await self._requeter(TAILLE_PAGE, page * TAILLE_PAGE, where)
-            if lot is None:
-                return None if page == 0 else cumul
+            try:
+                lot = await self._requeter(TAILLE_PAGE, page * TAILLE_PAGE, where)
+            except httpx.HTTPError:
+                if page == 0:
+                    raise
+                self.collecte_partielle = True
+                break
             cumul.extend(lot)
             if len(lot) < TAILLE_PAGE:
                 break  # dernière page disponible
@@ -109,12 +124,14 @@ class BoampScraper(Scraper):
 
     async def _requeter(
         self, limite_api: int, offset: int, where: str | None
-    ) -> list[dict[str, Any]] | None:
-        """Exécute une requête Opendatasoft. Renvoie None en cas d'échec HTTP."""
+    ) -> list[dict[str, Any]]:
+        """Exécute une requête Opendatasoft. Lève `httpx.HTTPError` en cas d'échec."""
         params: dict[str, Any] = {
             "limit": limite_api,
             "offset": offset,
-            "order_by": "dateparution desc",
+            # Clé secondaire `idweb` : sans elle, les avis d'un même jour peuvent
+            # changer de page entre deux requêtes (offset) et être sautés/doublés.
+            "order_by": "dateparution desc, idweb desc",
             "select": _SELECT,
         }
         if where:
@@ -128,12 +145,9 @@ class BoampScraper(Scraper):
             ) as client:
                 return await client.get(API_URL, params=params)
 
-        try:
-            r = await requeter_avec_retry(envoyer, nom="BOAMP")
-            r.raise_for_status()
-            data = r.json()
-        except httpx.HTTPError:
-            return None
+        r = await requeter_avec_retry(envoyer, nom="BOAMP")
+        r.raise_for_status()
+        data = r.json()
         return data.get("results", [])
 
 
@@ -174,7 +188,8 @@ def _construire_where(
             "(" + " OR ".join(f'search(descripteur_libelle, "{d}")' for d in desc) + ")"
         )
 
-    deps = [_echapper(d) for d in criteres.departements if _echapper(d)]
+    # Départements : format validé avant interpolation (jamais de texte libre).
+    deps = [d for d in criteres.departements if departement_valide(d)]
     if deps:
         clauses.append("(" + " OR ".join(f'code_departement = "{d}"' for d in deps) + ")")
 
@@ -199,12 +214,26 @@ def _construire_where(
     return where
 
 
+# Avis d'appel à concurrence initiaux uniquement. Valeurs vérifiées en live
+# (2026-09-29) : `nature` ∈ {APPEL_OFFRE, ATTRIBUTION, RECTIFICATIF, MODIFICATION,
+# ANNULATION, PRE-INFORMATION, EX_ANTE_VOLONTAIRE, PERIODIQUE} et `etat` ∈
+# {INITIAL, RECTIFICATIF, MODIFICATION, ANNULATION}. Un rectificatif ou une
+# attribution n'est pas un AO à traiter (doublon ou marché déjà attribué).
+_AVIS_OUVERT = 'nature = "APPEL_OFFRE" AND etat = "INITIAL"'
+
+
+def _restreindre_aux_avis_ouverts(where: str | None) -> str:
+    """Ajoute la restriction « avis d'appel initial » à une clause utilisateur."""
+    return _AVIS_OUVERT if where is None else f"{_AVIS_OUVERT} AND {where}"
+
+
 def _echapper(terme: str | None) -> str:
     """Nettoie un mot-clé pour l'insérer entre guillemets dans une clause ODSQL."""
     if not terme:
         return ""
-    # On retire les guillemets pour ne pas casser la chaîne ODSQL.
-    return terme.replace('"', "").strip()
+    # On retire les guillemets et on double les antislashs pour ne pas casser
+    # (ni détourner) la chaîne ODSQL.
+    return terme.replace('"', "").replace("\\", "\\\\").strip()
 
 
 # --------------------------------------------------------------------------- #
@@ -217,19 +246,29 @@ def _vers_aos(records: list[dict[str, Any]]) -> list[AOCollecte]:
 
 
 def _page_anterieure(records: list[dict[str, Any]], borne: datetime) -> bool:
-    """Vrai si le record le plus ancien de la page est antérieur à la borne.
+    """Vrai si le record daté le plus ancien de la page est antérieur à la borne.
 
     Les résultats sont triés par `dateparution` décroissante : si le dernier
-    élément est déjà avant la borne, les pages suivantes le sont aussi.
+    élément daté est déjà avant la borne, les pages suivantes le sont aussi.
+    Une page sans aucune date exploitable ne permet pas de poursuivre (on
+    s'arrête plutôt que de paginer jusqu'au plafond pour rien).
     """
-    if not records:
-        return True
-    d = _parse_iso(records[-1].get("dateparution"))
-    return d is not None and d < borne
+    for rec in reversed(records):
+        d = _parse_iso(rec.get("dateparution"))
+        if d is not None:
+            return d < borne
+    return True
 
 
 def _est_valide(rec: dict[str, Any]) -> bool:
-    """Filtre les records inexploitables (sans titre ni objet)."""
+    """Filtre les records inexploitables (sans titre ni objet) ou non initiaux.
+
+    Garde-fou client de la restriction serveur : un avis dont `nature`/`etat`
+    est renseigné et n'est pas un appel d'offre initial est écarté.
+    """
+    nature, etat = rec.get("nature"), rec.get("etat")
+    if (nature and nature != "APPEL_OFFRE") or (etat and etat != "INITIAL"):
+        return False
     return bool(rec.get("objet") or rec.get("titre_marche") or rec.get("nomacheteur"))
 
 

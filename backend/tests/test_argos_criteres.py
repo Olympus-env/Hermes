@@ -129,6 +129,9 @@ def test_where_sans_clause_positive_reste_none():
 # --------------------------------------------------------------------------- #
 
 
+_SANS_ATTRIBUTIONS = "notice-type NOT IN (can-standard can-social can-desg can-modif veat)"
+
+
 def test_query_cpv_nature_dates():
     c = CriteresAvances(
         cpv=("64200000",),
@@ -138,7 +141,7 @@ def test_query_cpv_nature_dates():
     )
     query = _construire_query(("sms",), c)
     assert query == (
-        'place-of-performance IN (FRA) AND (notice-title ~ "sms") AND '
+        f'place-of-performance IN (FRA) AND {_SANS_ATTRIBUTIONS} AND (notice-title ~ "sms") AND '
         "classification-cpv IN (64200000) AND contract-nature IN (services) AND "
         "publication-date >= 20260601 AND "
         "deadline-receipt-tender-date-lot >= 20260701 "
@@ -149,12 +152,15 @@ def test_query_cpv_nature_dates():
 def test_query_pays_configurable():
     c = CriteresAvances(pays=("FRA", "ESP"))
     query = _construire_query((), c)
-    assert query == "place-of-performance IN (FRA, ESP) SORT BY publication-date DESC"
+    assert query == (
+        f"place-of-performance IN (FRA, ESP) AND {_SANS_ATTRIBUTIONS} "
+        "SORT BY publication-date DESC"
+    )
 
 
 def test_query_defaut_france_sans_criteres():
     assert _construire_query(()) == (
-        "place-of-performance IN (FRA) SORT BY publication-date DESC"
+        f"place-of-performance IN (FRA) AND {_SANS_ATTRIBUTIONS} SORT BY publication-date DESC"
     )
 
 

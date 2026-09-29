@@ -33,7 +33,9 @@ from hermes.agents.argos.base import (
     NATURES_CANONIQUES,
     AOCollecte,
     CriteresAvances,
+    departement_valide,
     parse_iso_date,
+    pays_valide,
 )
 from hermes.db.models import (
     AnalyseKrinos,
@@ -275,14 +277,18 @@ def _criteres_normalise(criteres: CriteresAvances) -> CriteresAvances:
         for n in criteres.natures
         if n.strip().lower() in NATURES_CANONIQUES
     )
-    pays = _dedoublonner_simple(p.strip().upper() for p in criteres.pays if p.strip())
+    pays = _dedoublonner_simple(
+        p.strip().upper() for p in criteres.pays if pays_valide(p.strip().upper())
+    )
     return CriteresAvances(
         cpv=cpv,
         descripteurs=_dedoublonner(criteres.descripteurs),
         natures=natures,
         pays=pays,
         departements=_dedoublonner_simple(
-            d.strip() for d in criteres.departements if d.strip()
+            d.strip().upper()
+            for d in criteres.departements
+            if departement_valide(d.strip().upper())
         ),
         date_publication_depuis=_date_valide(criteres.date_publication_depuis),
         deadline_min=_date_valide(criteres.deadline_min),

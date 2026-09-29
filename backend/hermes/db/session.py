@@ -30,6 +30,8 @@ def init_db() -> None:
         conn.exec_driver_sql("PRAGMA journal_mode=WAL")
         conn.exec_driver_sql("PRAGMA foreign_keys=ON")
         _migrer_colonnes(conn)
+        _dedoublonner_appels_offre(conn)
+        conn.commit()
 
 
 def _migrer_colonnes(conn) -> None:
@@ -48,6 +50,63 @@ def _migrer_colonnes(conn) -> None:
             conn.exec_driver_sql(
                 f"ALTER TABLE {table} ADD COLUMN {colonne} {definition}"
             )
+
+
+def _dedoublonner_appels_offre(conn) -> None:
+    """Dédoublonne (portail, référence) puis crée l'index unique (bases existantes).
+
+    On garde l'AO le plus ancien de chaque groupe. Un doublon sans donnée liée
+    (documents, analyses, réponses, échanges) est supprimé ; un doublon déjà
+    exploité voit sa référence externe vidée (donnée conservée, contrainte
+    satisfaite) plutôt que de casser des clés étrangères.
+    """
+    conn.exec_driver_sql(
+        """
+        CREATE TEMP TABLE _ao_doublons AS
+        SELECT id FROM appels_offre a
+        WHERE reference_externe IS NOT NULL AND id > (
+            SELECT MIN(b.id) FROM appels_offre b
+            WHERE b.portail_id IS a.portail_id
+              AND b.reference_externe = a.reference_externe
+        )
+        """
+    )
+    lies = [
+        row[0]
+        for row in conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+        if row[0] != "appels_offre"
+        and any(
+            fk[2] == "appels_offre"
+            for fk in conn.exec_driver_sql(f"PRAGMA foreign_key_list('{row[0]}')").fetchall()
+        )
+    ]
+    conn.exec_driver_sql("CREATE TEMP TABLE _ao_utilises (id INTEGER)")
+    for table in lies:
+        colonnes = [
+            fk[3]
+            for fk in conn.exec_driver_sql(f"PRAGMA foreign_key_list('{table}')").fetchall()
+            if fk[2] == "appels_offre"
+        ]
+        for col in colonnes:
+            conn.exec_driver_sql(
+                f"INSERT INTO _ao_utilises SELECT {col} FROM {table} WHERE {col} IS NOT NULL"
+            )
+    conn.exec_driver_sql(
+        "DELETE FROM appels_offre WHERE id IN (SELECT id FROM _ao_doublons) "
+        "AND id NOT IN (SELECT id FROM _ao_utilises)"
+    )
+    conn.exec_driver_sql(
+        "UPDATE appels_offre SET reference_externe = NULL "
+        "WHERE id IN (SELECT id FROM _ao_doublons)"
+    )
+    conn.exec_driver_sql("DROP TABLE _ao_doublons")
+    conn.exec_driver_sql("DROP TABLE _ao_utilises")
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_appels_offre_portail_reference "
+        "ON appels_offre (portail_id, reference_externe)"
+    )
 
 
 def get_session() -> Iterator[Session]:

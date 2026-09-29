@@ -41,6 +41,7 @@ from hermes.agents.argos.base import (
     CriteresAvances,
     Scraper,
     borne_incrementale,
+    pays_valide,
 )
 from hermes.agents.argos.capabilities import CHAMPS_TED, PROFIL_TED
 from hermes.agents.argos.reseau import requeter_avec_retry
@@ -61,6 +62,11 @@ _LANGUES_PREFEREES = ("fra", "fr", "FRA", "FR", "eng", "en", "ENG", "EN")
 # type d'avis. Il revient en liste (un élément par lot), parsé défensivement
 # côté `_date_limite`.
 _FIELDS = list(CHAMPS_TED)
+
+# Avis d'attribution/résultat (`can-*`, `veat`) : marchés déjà attribués, à ne
+# pas ingérer comme appels d'offre. Types vérifiés en live (2026-09-29) :
+# `cn-standard` (appel à concurrence) vs `can-standard`/`can-social` (résultat).
+_TYPES_AVIS_ATTRIBUTION = ("can-standard", "can-social", "can-desg", "can-modif", "veat")
 
 # Tri appliqué à toutes les requêtes (fait partie de la query expert eForms).
 _TRI = "SORT BY publication-date DESC"
@@ -94,6 +100,7 @@ class TedScraper(Scraper):
         return bool(self.filtre_inclus) or self.criteres.actif
 
     async def collecter(self, limite: int = 20) -> list[AOCollecte]:
+        self.collecte_partielle = False
         query = _construire_query(self.filtre_inclus, self.criteres)
         borne = borne_incrementale(self.depuis)
         try:
@@ -119,14 +126,32 @@ class TedScraper(Scraper):
     ) -> list[dict[str, Any]]:
         """Pagine via `page` jusqu'à la borne incrémentale ou au plafond.
 
-        Propage les erreurs HTTP : `collecter` décide du repli selon le filtre.
+        Lève si la *première* page échoue (`collecter` décide du repli). Un
+        échec sur une page suivante renvoie ce qui a été collecté et marque la
+        collecte comme partielle : le runner n'avancera pas `derniere_collecte`.
+        Les notices sont dédoublonnées par `publication-number` : le tri TED ne
+        peut pas porter de clé secondaire (une seule clause SORT BY acceptée),
+        donc une notice peut réapparaître d'une page à l'autre.
         """
         cumul: list[dict[str, Any]] = []
+        vues: set[str] = set()
         for page in range(1, MAX_PAGES + 1):
-            lot = await self._requeter(query, TAILLE_PAGE, page)
+            try:
+                lot = await self._requeter(query, TAILLE_PAGE, page)
+            except httpx.HTTPError:
+                if page == 1:
+                    raise
+                self.collecte_partielle = True
+                break
             if not lot:
                 break
-            cumul.extend(lot)
+            for notice in lot:
+                num = _texte_simple(notice.get("publication-number"))
+                if num is not None:
+                    if num in vues:
+                        continue
+                    vues.add(num)
+                cumul.append(notice)
             if len(lot) < TAILLE_PAGE:
                 break  # dernière page disponible
             if borne is not None and _page_anterieure(lot, borne):
@@ -183,8 +208,12 @@ def _construire_query(
     validés en live (2026-06-19).
     """
     criteres = criteres or CriteresAvances()
-    pays = criteres.pays or ("FRA",)
-    clauses = [f"place-of-performance IN ({', '.join(pays)})"]
+    # Pays : ISO3 validé avant interpolation ; défaut FRA si rien d'exploitable.
+    pays = tuple(p for p in criteres.pays if pays_valide(p)) or ("FRA",)
+    clauses = [
+        f"place-of-performance IN ({', '.join(pays)})",
+        f"notice-type NOT IN ({' '.join(_TYPES_AVIS_ATTRIBUTION)})",
+    ]
 
     termes = [_echapper(k) for k in inclus if _echapper(k)]
     if termes:
@@ -221,7 +250,7 @@ def _echapper(terme: str | None) -> str:
     """Nettoie un mot-clé pour l'insérer entre guillemets dans une query eForms."""
     if not terme:
         return ""
-    return terme.replace('"', "").strip()
+    return terme.replace('"', "").replace("\\", "\\\\").strip()
 
 
 # --------------------------------------------------------------------------- #
@@ -230,7 +259,12 @@ def _echapper(terme: str | None) -> str:
 
 
 def _est_valide(notice: dict[str, Any]) -> bool:
-    """Filtre les notices inexploitables (ni titre ni acheteur)."""
+    """Filtre les notices inexploitables (ni titre ni acheteur) ou d'attribution.
+
+    Garde-fou client de la restriction serveur sur `notice-type`.
+    """
+    if _texte_simple(notice.get("notice-type")) in _TYPES_AVIS_ATTRIBUTION:
+        return False
     return bool(
         _texte_multi(notice.get("notice-title"))
         or _texte_multi(notice.get("buyer-name"))
@@ -238,15 +272,17 @@ def _est_valide(notice: dict[str, Any]) -> bool:
 
 
 def _page_anterieure(notices: list[dict[str, Any]], borne: datetime) -> bool:
-    """Vrai si la notice la plus ancienne de la page est antérieure à la borne.
+    """Vrai si la notice datée la plus ancienne de la page est antérieure à la borne.
 
-    Résultats triés par `publication-date` décroissante : si la dernière est
-    déjà avant la borne, les pages suivantes le sont aussi.
+    Résultats triés par `publication-date` décroissante : si la dernière notice
+    datée est déjà avant la borne, les pages suivantes le sont aussi. Une page
+    sans aucune date exploitable ne permet pas de poursuivre : on s'arrête.
     """
-    if not notices:
-        return True
-    d = _parse_date(notices[-1].get("publication-date"))
-    return d is not None and d < borne
+    for notice in reversed(notices):
+        d = _parse_date(notice.get("publication-date"))
+        if d is not None:
+            return d < borne
+    return True
 
 
 def _notice_vers_ao(notice: dict[str, Any]) -> AOCollecte:
