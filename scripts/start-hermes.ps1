@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 $Root        = Resolve-Path "$PSScriptRoot\.."
 $Backend     = Join-Path $Root "backend"
 $Python      = Join-Path $Backend ".venv\Scripts\python.exe"
-$DepsDir     = "D:\HermesDeps"
+$DepsDir     = if ($env:HERMES_DEPS_DIR) { $env:HERMES_DEPS_DIR } else { "D:\HermesDeps" }
 $Ollama      = Join-Path $DepsDir "ollama\bin\ollama.exe"
 $Desktop     = Join-Path $DepsDir "tooling\cargo-target\release\hermes.exe"
 

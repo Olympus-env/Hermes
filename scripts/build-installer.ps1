@@ -42,6 +42,8 @@ if (-not $Iscc) {
 Write-Host "==> Inno Setup : $Iscc" -ForegroundColor DarkGray
 
 # 2. (Re)compile hermes.exe
+# Plus de .cargo/config.toml : le dossier de build Rust est fixé ici (défaut D:\HermesDeps).
+$env:CARGO_TARGET_DIR = Join-Path $DepsRoot "tooling\cargo-target"
 if (-not $SkipFrontend) {
     Write-Host "==> Compilation hermes.exe (Tauri release, peut prendre 5-10 min)..." -ForegroundColor Cyan
     Push-Location $Frontend

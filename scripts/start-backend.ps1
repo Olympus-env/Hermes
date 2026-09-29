@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $backend = Join-Path $root "backend"
-$deps = "D:\HermesDeps"
+$deps = if ($env:HERMES_DEPS_DIR) { $env:HERMES_DEPS_DIR } else { "D:\HermesDeps" }
 
 $env:HERMES_DB_PATH = Join-Path $root "data\hermes.db"
 $env:HERMES_STORAGE_PATH = Join-Path $root "data\storage"

@@ -1,20 +1,26 @@
 //! Entrée Tauri — fenêtre desktop + gestion du cycle de vie backend/PYTHIA.
 //!
 //! En **release**, Tauri devient propriétaire du cycle de vie :
-//!   - démarrage : si backend (port 8000) ou Ollama (port 11434) ne répondent
-//!     pas, on les lance comme processus enfants ;
+//!   - démarrage : dans un thread dédié (la fenêtre reste réactive), si backend
+//!     (port 8000) ou Ollama (port 11434) ne répondent pas, on les lance comme
+//!     processus enfants et on émet l'événement `hermes-services-etat` ;
 //!   - fermeture : on tue ces enfants à la destruction de la fenêtre
-//!     principale, garantissant l'arrêt complet de HERMES.
+//!     principale, garantissant l'arrêt complet de HERMES ;
+//!   - crash : sous Windows, les enfants sont rattachés à un Job Object
+//!     « kill-on-close » et meurent aussi si hermes.exe est tué brutalement.
 //!
 //! En **debug** (`cargo tauri dev`), on ne lance rien — le développeur garde
 //! la main via `scripts/start-backend.ps1` etc.
 
 use std::fs;
+use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use serde::Serialize;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -26,14 +32,35 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 // État partagé des sous-processus démarrés par Tauri
 // --------------------------------------------------------------------------- //
 
+/// Job Object Windows « kill-on-close » : tant que hermes.exe vit, il détient le
+/// handle ; s'il est tué brutalement, Windows ferme le handle et tue tous les
+/// processus assignés (backend, Ollama et leurs enfants).
+#[cfg(windows)]
+struct JobGuard(win32job::Job);
+
+#[cfg(windows)]
+fn create_kill_on_close_job() -> Option<JobGuard> {
+    let job = win32job::Job::create().ok()?;
+    let mut info = job.query_extended_limit_info().ok()?;
+    info.limit_kill_on_job_close();
+    job.set_extended_limit_info(&mut info).ok()?;
+    Some(JobGuard(job))
+}
+
 #[derive(Default)]
 struct ServiceState {
     backend: Option<Child>,
     ollama: Option<Child>,
+    /// Vrai une fois la fenêtre détruite : un démarrage encore en cours ne doit
+    /// plus laisser d'enfant vivant derrière lui.
+    arret: bool,
+    #[cfg(windows)]
+    job: Option<JobGuard>,
 }
 
 impl ServiceState {
     fn shutdown(&mut self) {
+        self.arret = true;
         if let Some(mut child) = self.backend.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -43,6 +70,65 @@ impl ServiceState {
             let _ = child.wait();
         }
     }
+
+    /// Rattache un enfant au Job Object (Windows) pour qu'il ne survive pas à
+    /// hermes.exe. Renvoie `false` (et tue l'enfant) si l'arrêt est déjà demandé.
+    fn adopter(&mut self, child: &mut Child) -> bool {
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsRawHandle;
+            if self.job.is_none() {
+                self.job = create_kill_on_close_job();
+            }
+            if let Some(job) = &self.job {
+                if let Err(e) = job.0.assign_process(child.as_raw_handle() as isize) {
+                    eprintln!("[HERMES] Job Object : rattachement impossible ({e})");
+                }
+            }
+        }
+        if self.arret {
+            let _ = child.kill();
+            let _ = child.wait();
+            return false;
+        }
+        true
+    }
+}
+
+type SharedState = Mutex<ServiceState>;
+
+// --------------------------------------------------------------------------- //
+// Événement d'état pour le frontend
+// --------------------------------------------------------------------------- //
+
+/// Émis à chaque changement d'état d'un service, pour que le frontend puisse
+/// afficher « démarrage… » plutôt qu'une fenêtre figée.
+const EVENT_ETAT: &str = "hermes-services-etat";
+
+#[derive(Clone, Serialize)]
+struct EtatService {
+    /// "pythia" ou "backend"
+    service: &'static str,
+    /// "demarrage", "pret" ou "erreur"
+    etat: &'static str,
+    message: Option<String>,
+}
+
+fn emettre(
+    app: &tauri::AppHandle,
+    service: &'static str,
+    etat: &'static str,
+    message: Option<String>,
+) {
+    use tauri::Emitter;
+    let _ = app.emit(
+        EVENT_ETAT,
+        EtatService {
+            service,
+            etat,
+            message,
+        },
+    );
 }
 
 // --------------------------------------------------------------------------- //
@@ -54,6 +140,28 @@ fn port_listening(host: &str, port: u16) -> bool {
         return false;
     };
     TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok()
+}
+
+/// Vrai si un HERMES répond sur `/health` (`"app": "HERMES"`). Distingue notre
+/// backend d'un autre service qui occuperait le port.
+fn is_hermes_backend(port: u16) -> bool {
+    let Ok(addr) = format!("127.0.0.1:{port}").parse() else {
+        return false;
+    };
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(500)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+    let requete = "GET /health HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    if stream.write_all(requete.as_bytes()).is_err() {
+        return false;
+    }
+    let mut reponse = String::new();
+    // Une erreur de lecture (timeout) après réception partielle reste exploitable.
+    let _ = stream.take(16 * 1024).read_to_string(&mut reponse);
+    let compact: String = reponse.split_whitespace().collect();
+    compact.contains("\"app\":\"HERMES\"")
 }
 
 fn wait_until_listening(host: &str, port: u16, timeout: Duration) -> bool {
@@ -105,7 +213,24 @@ fn hidden_command(exe: &PathBuf) -> Command {
     Command::new(exe)
 }
 
-fn start_ollama(state: &mut ServiceState) -> Result<(), String> {
+/// Enregistre l'enfant dans l'état partagé (verrou pris brièvement : la fenêtre
+/// peut se fermer pendant que l'attente de disponibilité continue).
+fn enregistrer(state: &SharedState, mut child: Child, ollama: bool) -> Result<(), String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "État des services indisponible.".to_string())?;
+    if !guard.adopter(&mut child) {
+        return Err("Arrêt de HERMES demandé pendant le démarrage.".into());
+    }
+    if ollama {
+        guard.ollama = Some(child);
+    } else {
+        guard.backend = Some(child);
+    }
+    Ok(())
+}
+
+fn start_ollama(state: &SharedState) -> Result<(), String> {
     if port_listening("127.0.0.1", 11434) {
         // Ollama tourne déjà — on ne le possède pas, on ne le tuera pas.
         return Ok(());
@@ -130,7 +255,7 @@ fn start_ollama(state: &mut ServiceState) -> Result<(), String> {
         .env("OLLAMA_MODELS", models_dir)
         .spawn()
         .map_err(|e| format!("Lancement Ollama : {e}"))?;
-    state.ollama = Some(child);
+    enregistrer(state, child, true)?;
 
     if !wait_until_listening("127.0.0.1", 11434, Duration::from_secs(25)) {
         return Err("PYTHIA/Ollama n'a pas répondu sur 127.0.0.1:11434.".into());
@@ -138,9 +263,17 @@ fn start_ollama(state: &mut ServiceState) -> Result<(), String> {
     Ok(())
 }
 
-fn start_backend(state: &mut ServiceState) -> Result<(), String> {
+fn start_backend(state: &SharedState) -> Result<(), String> {
     if port_listening("127.0.0.1", 8000) {
-        return Ok(());
+        // Le port est pris : on ne réutilise que si c'est bien un backend HERMES.
+        if is_hermes_backend(8000) {
+            return Ok(());
+        }
+        return Err(
+            "Le port 8000 est occupé par un autre service que HERMES. \
+             Libère-le puis relance HERMES."
+                .into(),
+        );
     }
 
     let backend_dir = locate_backend_dir().ok();
@@ -175,7 +308,7 @@ fn start_backend(state: &mut ServiceState) -> Result<(), String> {
             .env("HERMES_MASTER_KEY_PATH", &master_key_path)
             .spawn()
             .map_err(|e| format!("Lancement backend.exe : {e}"))?;
-        state.backend = Some(child);
+        enregistrer(state, child, false)?;
     } else {
         // 2) Fallback dev : python.exe du venv local.
         let backend_dir = backend_dir
@@ -205,7 +338,7 @@ fn start_backend(state: &mut ServiceState) -> Result<(), String> {
             .env("HERMES_MASTER_KEY_PATH", master_key_path)
             .spawn()
             .map_err(|e| format!("Lancement backend (python) : {e}"))?;
-        state.backend = Some(child);
+        enregistrer(state, child, false)?;
     }
 
     if !wait_until_listening("127.0.0.1", 8000, Duration::from_secs(35)) {
@@ -298,6 +431,33 @@ fn locate_backend_dir() -> Result<PathBuf, String> {
     Err("Dossier backend/ introuvable depuis l'exécutable HERMES.".into())
 }
 
+/// Démarre PYTHIA puis le backend en émettant l'état de chaque service.
+#[cfg(not(debug_assertions))]
+fn start_services(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Some(state) = app.try_state::<SharedState>() else {
+        return;
+    };
+
+    emettre(app, "pythia", "demarrage", None);
+    match start_ollama(&state) {
+        Ok(()) => emettre(app, "pythia", "pret", None),
+        Err(e) => {
+            eprintln!("[HERMES] PYTHIA : {e}");
+            emettre(app, "pythia", "erreur", Some(e));
+        }
+    }
+
+    emettre(app, "backend", "demarrage", None);
+    match start_backend(&state) {
+        Ok(()) => emettre(app, "backend", "pret", None),
+        Err(e) => {
+            eprintln!("[HERMES] Backend : {e}");
+            emettre(app, "backend", "erreur", Some(e));
+        }
+    }
+}
+
 // --------------------------------------------------------------------------- //
 // Entrée Tauri
 // --------------------------------------------------------------------------- //
@@ -309,19 +469,11 @@ pub fn run() {
         .setup(|app| {
             // En dev, on ne touche pas aux services — le développeur les
             // gère lui-même via les scripts PowerShell. En release, on lance
-            // tout ce qu'il faut.
+            // tout ce qu'il faut, hors du thread UI (jusqu'à ~60 s d'attente).
             #[cfg(not(debug_assertions))]
             {
-                use tauri::Manager;
-                if let Some(state) = app.try_state::<Mutex<ServiceState>>() {
-                    let mut guard = state.lock().unwrap();
-                    if let Err(e) = start_ollama(&mut guard) {
-                        eprintln!("[HERMES] PYTHIA : {e}");
-                    }
-                    if let Err(e) = start_backend(&mut guard) {
-                        eprintln!("[HERMES] Backend : {e}");
-                    }
-                }
+                let handle = app.handle().clone();
+                std::thread::spawn(move || start_services(&handle));
             }
             #[cfg(debug_assertions)]
             {
@@ -335,7 +487,7 @@ pub fn run() {
             // de l'application.
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 use tauri::Manager;
-                if let Some(state) = window.app_handle().try_state::<Mutex<ServiceState>>() {
+                if let Some(state) = window.app_handle().try_state::<SharedState>() {
                     if let Ok(mut guard) = state.lock() {
                         guard.shutdown();
                     }
