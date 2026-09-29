@@ -311,3 +311,40 @@ def test_annuler_telechargement_en_cours(monkeypatch):
         assert r.json()["statut"] == "annule"
 
     assert api_pythia.etat_global().en_cours is False
+
+
+def test_choix_modele_persiste_apres_redemarrage(monkeypatch):
+    from hermes.api import pythia as api_pythia
+    from hermes.config import settings
+    from hermes.main import app
+
+    async def fake_disponible(*args, **kwargs):
+        return True
+
+    async def fake_installe(nom=None):
+        return True
+
+    monkeypatch.setattr(pythia, "est_disponible", fake_disponible)
+    monkeypatch.setattr(pythia, "modele_installe", fake_installe)
+    monkeypatch.setattr(settings, "pythia_modele", "qwen3:8b")
+    monkeypatch.setattr(settings, "pythia_modele_explicite", False)
+
+    init_db()
+    with TestClient(app) as client:
+        r = client.post("/pythia/modele/choisir", json={"modele": "gemma2:9b"})
+        assert r.status_code == 200
+
+    # « Redémarrage » : défaut restauré, nouvelle instance (lifespan) sur la même base.
+    monkeypatch.setattr(settings, "pythia_modele", "qwen3:8b")
+    api_pythia._etat = api_pythia.EtatTelechargement()
+    with TestClient(app) as client:
+        s = client.get("/pythia/modele/status").json()
+    assert s["modele"] == "gemma2:9b"
+    assert s["installe"] is True
+
+    # Variable d'env explicite : elle prime sur la base.
+    monkeypatch.setattr(settings, "pythia_modele", "qwen3:8b")
+    monkeypatch.setattr(settings, "pythia_modele_explicite", True)
+    api_pythia._etat = api_pythia.EtatTelechargement()
+    with TestClient(app) as client:
+        assert client.get("/pythia/modele/status").json()["modele"] == "qwen3:8b"

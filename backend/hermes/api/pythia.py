@@ -11,15 +11,35 @@ import asyncio
 import shutil
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlmodel import Session
 
 from hermes.agents import pythia
 from hermes.config import settings
+from hermes.db.models import Parametre
+from hermes.db.session import get_session
 
 router = APIRouter(prefix="/pythia", tags=["pythia"])
+
+# Modèle choisi par l'utilisateur (parmi les modèles déjà installés), persisté
+# dans MNEMOSYNE pour survivre au redémarrage.
+CLE_MODELE = "pythia.modele"
+
+
+def appliquer_modele_persiste(session: Session) -> None:
+    """Applique au démarrage le modèle choisi en base.
+
+    Priorité : HERMES_PYTHIA_MODELE explicite > paramètre en base > défaut.
+    """
+    if settings.pythia_modele_explicite:
+        return
+    entree = session.get(Parametre, CLE_MODELE)
+    if entree and entree.valeur.strip():
+        settings.pythia_modele = entree.valeur.strip()
 
 
 # --------------------------------------------------------------------------- #
@@ -150,13 +170,24 @@ async def options_modeles() -> OptionsModelesResponse:
 
 
 @router.post("/modele/choisir", response_model=StatutModeleResponse)
-async def choisir_modele(payload: ChoixModeleRequest, etat: EtatDep) -> StatutModeleResponse:
-    """Utilise un modèle DÉJÀ installé, sans rien télécharger (effet jusqu'au redémarrage)."""
+async def choisir_modele(
+    payload: ChoixModeleRequest,
+    etat: EtatDep,
+    session: Annotated[Session, Depends(get_session)],
+) -> StatutModeleResponse:
+    """Utilise un modèle DÉJÀ installé, sans rien télécharger (persisté en base)."""
     if not await pythia.est_disponible(timeout=2.0):
         raise HTTPException(status_code=502, detail="Ollama/PYTHIA n'est pas joignable.")
     if not await pythia.modele_installe(payload.modele):
         raise HTTPException(status_code=404, detail="Ce modèle n'est pas installé dans Ollama.")
     settings.pythia_modele = payload.modele
+    entree = session.get(Parametre, CLE_MODELE) or Parametre(
+        cle=CLE_MODELE, valeur=payload.modele, description="Modèle PYTHIA choisi"
+    )
+    entree.valeur = payload.modele
+    entree.maj_le = datetime.now(UTC)
+    session.add(entree)
+    session.commit()
     etat.modele = payload.modele
     return await statut_modele(etat)
 
