@@ -19,6 +19,25 @@ os.environ["HERMES_STORAGE_PATH"] = str(_TMP_DIR / "storage")
 os.environ["HERMES_LOG_PATH"] = str(_TMP_DIR / "logs")
 os.environ["HERMES_DEBUG"] = "true"
 os.environ["HERMES_SCHEDULER_AUTO_START"] = "false"
+# TestClient envoie `Host: testserver` : autorisé uniquement en test.
+os.environ["HERMES_HOTES_AUTORISES"] = '["127.0.0.1","localhost","testserver"]'
+
+
+@pytest.fixture(autouse=True)
+def _entete_csrf_par_defaut(monkeypatch):
+    """Le frontend envoie X-Hermes-Client sur tout non-GET : les TestClient aussi.
+
+    Les tests CSRF retirent l'en-tête explicitement (`client.headers.pop`).
+    """
+    from fastapi.testclient import TestClient
+
+    init = TestClient.__init__
+
+    def _init(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        self.headers.setdefault("X-Hermes-Client", "tests")
+
+    monkeypatch.setattr(TestClient, "__init__", _init)
 
 
 @pytest.fixture(autouse=True)

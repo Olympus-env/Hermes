@@ -315,6 +315,8 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       Accept: "application/json",
+      // Protection CSRF : exigé par le backend sur tout non-GET (force un preflight).
+      "X-Hermes-Client": "hermes-ui",
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...init?.headers,
     },
