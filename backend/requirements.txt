@@ -31,6 +31,14 @@ tenacity==9.0.0
 pymupdf==1.25.1
 pdfplumber==0.11.5
 
+# --- KRINOS — OCR des PDF scannés (RapidOCR, ONNX, CPU, Apache-2.0) ---
+# Les modèles ONNX (~30 Mo) sont embarqués dans le wheel : aucun téléchargement.
+rapidocr==3.9.2
+onnxruntime==1.30.0
+
+# --- KRINOS — parsing XML sûr (XLSX/DOCX) ---
+defusedxml==0.7.1
+
 # --- HERMION — export PDF des réponses (V1) ---
 # Pur Python, aucune dépendance système → compatible PyInstaller/Windows.
 fpdf2==2.8.2
