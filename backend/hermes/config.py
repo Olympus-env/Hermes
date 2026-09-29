@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -110,6 +110,17 @@ class Settings(BaseSettings):
     krinos_ocr_max_pages: int = 40
     krinos_ocr_dpi: int = 200
     krinos_extraction_max_caracteres: int = 3_000_000
+
+    # Juge Jev (TypeSafe) — OPTIONNEL, désactivé par défaut. Seule exception
+    # volontaire à « aucun appel externe » : on n'y envoie que des données
+    # publiques d'avis (jamais HERMION, credentials, documents internes).
+    # La clé vient de l'environnement / .env, jamais de la base, jamais loguée.
+    jev_actif: bool = False
+    jev_api_key: SecretStr | None = None
+    jev_url: str = "https://api.typesafe.ai/v1/systemone"
+    jev_modele: str = "jev-latest"
+    jev_timeout_secondes: float = 30.0
+    jev_budget_tokens_mois: int = 2_000_000
 
     def model_post_init(self, __context: object) -> None:
         self.host = "127.0.0.1"

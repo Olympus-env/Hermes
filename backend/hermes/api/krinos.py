@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from hermes.agents.krinos import jev
 from hermes.agents.krinos.analyzer import ErreurAnalyseKrinos, analyser_ao
 from hermes.agents.krinos.downloader import (
     ErreurTelechargementDocument,
@@ -25,6 +26,7 @@ from hermes.agents.krinos.ponderation import (
     charger_ponderation,
     enregistrer_ponderation,
 )
+from hermes.config import settings
 from hermes.db.models import (
     AnalyseKrinos,
     AppelOffre,
@@ -91,11 +93,31 @@ class AnalyseRead(BaseModel):
     scores_dimensions: dict[str, float] = Field(default_factory=dict)
     # Vrai : analyse locale de secours (PYTHIA a échoué), pas une vraie analyse.
     degradee: bool = False
+    # Garde-fous : injection suspectée / résultat incohérent → décision humaine.
+    suspect_injection: bool = False
+    a_verifier: bool = False
+    drapeaux: list[str] = Field(default_factory=list)
+    # Juge Jev (optionnel), séparé du score PYTHIA (`score`).
+    score_jev: float | None = None
+    confiance_jev: float | None = None
+    details_jev: dict | None = None
     tags: list[str]
     criteres_extraits: str | None
     duree_analyse_ms: int | None
     modele_llm: str | None
     cree_le: str
+
+
+class JevConfigIO(BaseModel):
+    actif: bool
+    # Lecture seule : la clé n'est jamais exposée ni modifiable via l'API.
+    cle_configuree: bool = False
+    budget_tokens_mois: int = 0
+    tokens_consommes: int = 0
+
+
+class JevConfigUpdate(BaseModel):
+    actif: bool
 
 
 class AnalyseResponse(BaseModel):
@@ -312,6 +334,26 @@ async def analyser_appel_offre(
     )
 
 
+def _jev_config_io(session: Session) -> JevConfigIO:
+    return JevConfigIO(
+        actif=jev.reglage_actif(session),
+        cle_configuree=jev.cle_configuree(),
+        budget_tokens_mois=settings.jev_budget_tokens_mois,
+        tokens_consommes=jev.tokens_consommes(session),
+    )
+
+
+@router.get("/jev", response_model=JevConfigIO)
+def lire_config_jev(session: SessionDep) -> JevConfigIO:
+    return _jev_config_io(session)
+
+
+@router.put("/jev", response_model=JevConfigIO)
+def ecrire_config_jev(payload: JevConfigUpdate, session: SessionDep) -> JevConfigIO:
+    jev.enregistrer_actif(session, payload.actif)
+    return _jev_config_io(session)
+
+
 @router.get("/ponderation", response_model=PonderationIO)
 def lire_ponderation(session: SessionDep) -> PonderationIO:
     p = charger_ponderation(session)
@@ -410,12 +452,34 @@ def _analyse_read(analyse: AnalyseKrinos) -> AnalyseRead:
         justification_score=analyse.justification_score,
         scores_dimensions=_scores_dimensions(analyse),
         degradee=analyse.degradee,
+        suspect_injection=analyse.suspect_injection,
+        a_verifier=analyse.a_verifier,
+        drapeaux=_liste_json(analyse.drapeaux),
+        score_jev=analyse.score_jev,
+        confiance_jev=analyse.confiance_jev,
+        details_jev=_dict_json(analyse.details_jev),
         tags=tags,
         criteres_extraits=analyse.criteres_extraits,
         duree_analyse_ms=analyse.duree_analyse_ms,
         modele_llm=analyse.modele_llm,
         cree_le=analyse.cree_le.isoformat(),
     )
+
+
+def _liste_json(brut: str | None) -> list[str]:
+    try:
+        valeur = json.loads(brut) if brut else []
+    except json.JSONDecodeError:
+        return []
+    return [str(v) for v in valeur] if isinstance(valeur, list) else []
+
+
+def _dict_json(brut: str | None) -> dict | None:
+    try:
+        valeur = json.loads(brut) if brut else None
+    except json.JSONDecodeError:
+        return None
+    return valeur if isinstance(valeur, dict) else None
 
 
 def _scores_dimensions(analyse: AnalyseKrinos) -> dict[str, float]:

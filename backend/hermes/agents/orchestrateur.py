@@ -87,6 +87,8 @@ class RapportOrchestration:
     ao_analyses: int = 0
     ao_rediges: int = 0
     ao_sous_seuil: int = 0
+    # AO au-dessus du seuil mais drapeautés par KRINOS : décision humaine requise.
+    ao_a_verifier: int = 0
     ao_echecs: int = 0
     details: list[dict[str, object]] = field(default_factory=list)
 
@@ -327,6 +329,12 @@ async def _phase_redaction(
 
         if analyse.score < cfg.seuil_score:
             rapport.ao_sous_seuil += 1
+            continue
+
+        # Garde-fou KRINOS : injection suspectée / résultat incohérent → jamais de
+        # promotion automatique, l'AO reste en ANALYSE pour décision humaine.
+        if analyse.suspect_injection or analyse.a_verifier:
+            rapport.ao_a_verifier += 1
             continue
 
         deja = session.exec(

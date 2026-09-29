@@ -33,6 +33,7 @@ class RapportIO(BaseModel):
     ao_analyses: int
     ao_rediges: int
     ao_sous_seuil: int
+    ao_a_verifier: int = 0
     ao_echecs: int
     details: list[dict]
 
@@ -76,6 +77,7 @@ async def traiter(
         ao_analyses=rapport.ao_analyses,
         ao_rediges=rapport.ao_rediges,
         ao_sous_seuil=rapport.ao_sous_seuil,
+        ao_a_verifier=rapport.ao_a_verifier,
         ao_echecs=rapport.ao_echecs,
         details=rapport.details,
     )

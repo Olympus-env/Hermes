@@ -56,6 +56,12 @@ def _migrer_colonnes(conn) -> None:
         ("appels_offre", "emetteur_siret", "TEXT"),
         ("appels_offre", "code_cpv", "TEXT"),
         ("analyses_krinos", "degradee", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("analyses_krinos", "suspect_injection", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("analyses_krinos", "a_verifier", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("analyses_krinos", "drapeaux", "TEXT"),
+        ("analyses_krinos", "score_jev", "FLOAT"),
+        ("analyses_krinos", "confiance_jev", "FLOAT"),
+        ("analyses_krinos", "details_jev", "TEXT"),
     ]
     for table, colonne, definition in migrations:
         cols = {
