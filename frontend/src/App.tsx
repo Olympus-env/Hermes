@@ -239,8 +239,8 @@ export default function App() {
                 onToast={setToast}
               />
             )}
-            {active === "responses" && <Responses onToast={setToast} />}
-            {active === "journal" && <Journal />}
+            {active === "responses" && <Responses onToast={setToast} externalRefreshKey={tendersRefreshKey} />}
+            {active === "journal" && <Journal refreshKey={tendersRefreshKey} />}
             {active === "settings" && (
               <Settings
                 profile={profile}

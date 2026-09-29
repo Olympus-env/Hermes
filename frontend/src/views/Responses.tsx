@@ -13,7 +13,7 @@ import { type ResponseStatus } from "../lib/data";
 import type { ToastInput } from "../lib/toast";
 import { loadUserProfile } from "../lib/userProfile";
 
-type Props = { onToast: (t: ToastInput) => void };
+type Props = { onToast: (t: ToastInput) => void; externalRefreshKey?: number };
 
 const STATUS_FILTERS: { id: StatutReponseHermion | "all"; label: string }[] = [
   { id: "all",          label: "Toutes" },
@@ -53,7 +53,7 @@ function formatDuree(ms: number | null): string {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
-export function Responses({ onToast }: Props) {
+export function Responses({ onToast, externalRefreshKey = 0 }: Props) {
   const [filter, setFilter] = useState<StatutReponseHermion | "all">("all");
   const [reponses, setReponses] = useState<ReponseAvecAO[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -87,7 +87,7 @@ export function Responses({ onToast }: Props) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [refreshKey, externalRefreshKey]);
 
   // Charge le détail de la réponse sélectionnée
   useEffect(() => {
@@ -198,8 +198,8 @@ export function Responses({ onToast }: Props) {
     }
   };
 
-  const onSaveContent = async (contenu: string, commentaire?: string) => {
-    if (selectedId === null) return;
+  const onSaveContent = async (contenu: string, commentaire?: string): Promise<boolean> => {
+    if (selectedId === null) return false;
     try {
       const updated = await api.modifierContenuReponse(selectedId, contenu, commentaire);
       setDetail(updated);
@@ -220,6 +220,7 @@ export function Responses({ onToast }: Props) {
         msg: "Contenu enregistré, statut passé à « à modifier ».",
         agent: "hermion",
       });
+      return true;
     } catch (e) {
       onToast({
         title: "HERMION",
@@ -227,6 +228,7 @@ export function Responses({ onToast }: Props) {
         msg: e instanceof Error ? e.message : String(e),
         agent: "hermion",
       });
+      return false;
     }
   };
 
@@ -350,7 +352,7 @@ type DetailProps = {
     commentaire?: string,
     toast?: ToastInput,
   ) => void;
-  onSaveContent: (contenu: string, commentaire?: string) => void;
+  onSaveContent: (contenu: string, commentaire?: string) => Promise<boolean>;
   onExport: () => void;
   onDownload: () => void;
 };
@@ -518,7 +520,9 @@ function ResponseDetail({
           <button
             className="btn"
             disabled={!editing}
-            onClick={() => onSaveContent(editedContent, comment)}
+            onClick={async () => {
+              if (await onSaveContent(editedContent, comment)) setEditing(false);
+            }}
           >
             <Icon.check size={13} /> Enregistrer les modifications
           </button>

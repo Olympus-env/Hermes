@@ -40,7 +40,7 @@ function formatDate(iso: string): string {
   }
 }
 
-export function Journal() {
+export function Journal({ refreshKey = 0 }: { refreshKey?: number }) {
   const [agent, setAgent] = useState<string | "all">("all");
   const [niveau, setNiveau] = useState<NiveauLog | "all">("all");
   const [items, setItems] = useState<LogAgentEntry[]>([]);
@@ -85,7 +85,7 @@ export function Journal() {
   useEffect(() => {
     void load(0, false);
     return () => ctrl.current?.abort();
-  }, [load]);
+  }, [load, refreshKey]);
 
   return (
     <div className="view">
