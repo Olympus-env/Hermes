@@ -38,6 +38,7 @@ frontend/src-tauri/gen/
 
 # --- IDE ---
 .claude/settings.local.json
+.claude/worktrees/
 .vscode/
 .idea/
 *.swp
