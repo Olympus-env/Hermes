@@ -111,15 +111,21 @@ def test_boamp_ecarte_attributions_et_rectificatifs_cote_client(monkeypatch):
     assert [i.reference_externe for i in items] == ["a2026-09-01-0"]
 
 
-def test_ted_query_exclut_les_avis_d_attribution():
+def test_ted_query_liste_d_inclusion_des_appels_a_concurrence():
     q = construire_query_ted(("sms",))
-    assert "notice-type NOT IN (can-standard can-social can-desg can-modif veat)" in q
+    assert "notice-type IN (cn-standard cn-social cn-desg pin-cfc-standard pin-cfc-social)" in q
+    assert "NOT IN" not in q
 
 
 def test_ted_ecarte_les_notices_can_cote_client(monkeypatch):
     notices = [
         {"publication-number": "1-2026", "notice-title": "SMS", "notice-type": "cn-standard"},
         {"publication-number": "2-2026", "notice-title": "SMS", "notice-type": "can-standard"},
+        {"publication-number": "3-2026", "notice-title": "SMS", "notice-type": "pin-only"},
+        {"publication-number": "4-2026", "notice-title": "SMS", "notice-type": "qu-sy"},
+        {"publication-number": "5-2026", "notice-title": "SMS", "notice-type": "compl"},
+        {"publication-number": "6-2026", "notice-title": "SMS", "notice-type": "cn-social"},
+        {"publication-number": "7-2026", "notice-title": "SMS", "notice-type": "pin-cfc-standard"},
     ]
 
     class _C(_ClientTed):
@@ -127,7 +133,7 @@ def test_ted_ecarte_les_notices_can_cote_client(monkeypatch):
 
     monkeypatch.setattr(ted.httpx, "AsyncClient", _C)
     items = asyncio.run(TedScraper().collecter())
-    assert [i.reference_externe for i in items] == ["1-2026"]
+    assert [i.reference_externe for i in items] == ["1-2026", "6-2026", "7-2026"]
 
 
 class _ClientTed:
@@ -427,3 +433,69 @@ def test_api_put_portail_partiel_ne_reactive_pas():
         assert r.status_code == 200
         assert r.json()["actif"] is False  # champ omis : inchangé
         assert r.json()["frequence_minutes"] == 60
+
+
+# --------------------------------------------------------------------------- #
+# Issue #29 : types d'avis TED non-appels
+# --------------------------------------------------------------------------- #
+
+
+def _ao_ted(session, portail_id, ref, type_marche, statut):
+    from hermes.db.models import StatutAO
+
+    ao = AppelOffre(
+        portail_id=portail_id, reference_externe=ref, url_source=f"https://x/{ref}",
+        titre=ref, type_marche=type_marche, statut=StatutAO(statut),
+    )
+    session.add(ao)
+    session.commit()
+    return ao.id
+
+
+def test_migration_marque_les_avis_ted_non_appels_sans_toucher_le_reste():
+    from hermes.db.models import StatutAO
+    from hermes.db.session import _marquer_avis_ted_hors_appel
+
+    with Session(get_engine()) as session:
+        ted_p = Portail(nom="ted", url_base="https://ted.europa.eu", actif=True)
+        boamp_p = Portail(nom="boamp", url_base="https://boamp.fr", actif=True)
+        session.add(ted_p)
+        session.add(boamp_p)
+        session.commit()
+        ids = {
+            "pin": _ao_ted(session, ted_p.id, "1", "pin-only", "brut"),
+            "qu": _ao_ted(session, ted_p.id, "2", "qu-sy", "analyse"),
+            "cn": _ao_ted(session, ted_p.id, "3", "cn-standard", "brut"),
+            "exploite": _ao_ted(session, ted_p.id, "4", "compl", "a_repondre"),
+            "cfc": _ao_ted(session, ted_p.id, "7", "pin-cfc-social", "brut"),
+            "redac": _ao_ted(session, ted_p.id, "5", "pin-tran", "en_redaction"),
+            "boamp": _ao_ted(session, boamp_p.id, "6", "pin-only", "brut"),
+        }
+        conn = session.connection()
+        _marquer_avis_ted_hors_appel(conn)
+        _marquer_avis_ted_hors_appel(conn)  # idempotent
+        session.commit()
+        session.expire_all()
+        statut = {k: session.get(AppelOffre, v).statut for k, v in ids.items()}
+
+    assert statut["pin"] == StatutAO.HORS_FILTRE
+    assert statut["qu"] == StatutAO.HORS_FILTRE
+    assert statut["cn"] == StatutAO.BRUT
+    assert statut["cfc"] == StatutAO.BRUT
+    assert statut["exploite"] == StatutAO.A_REPONDRE
+    assert statut["redac"] == StatutAO.EN_REDACTION
+    assert statut["boamp"] == StatutAO.BRUT
+
+
+def test_refiltrage_ne_reintegre_pas_un_avis_ted_non_appel():
+    from hermes.agents.argos.filtre import FiltreVeille, refiltrer_existants
+    from hermes.db.models import StatutAO
+
+    with Session(get_engine()) as session:
+        p = Portail(nom="ted", url_base="https://ted.europa.eu", actif=True)
+        session.add(p)
+        session.commit()
+        ao_id = _ao_ted(session, p.id, "9", "pin-only", "hors_filtre")
+        refiltrer_existants(session, FiltreVeille())
+        session.expire_all()
+        assert session.get(AppelOffre, ao_id).statut == StatutAO.HORS_FILTRE

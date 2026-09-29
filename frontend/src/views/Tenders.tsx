@@ -29,18 +29,25 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
   const [minScore, setMinScore] = useState(0);
   const [portal, setPortal] = useState("all");
   const [tag, setTag] = useState("all");
+  // Vue « Hors filtre » : AO écartés par les filtres métier ou non-appels TED
+  // (masqués par défaut côté API), réintégrables via « Marquer à répondre ».
+  const [horsFiltre, setHorsFiltre] = useState(false);
   const {
     data: page,
     error: apiError,
     loading: apiLoading,
     reload,
-  } = useApi((signal) => api.listerAO(undefined, signal), [refreshKey]);
+  } = useApi(
+    (signal) => api.listerAO(horsFiltre ? "hors_filtre" : undefined, signal),
+    [refreshKey, horsFiltre],
+  );
 
   // Données précédentes conservées si une requête échoue (pas de liste vidée).
   const tenders = useMemo(() => (page ? page.items.map(mapAppelOffre) : []), [page]);
 
   useEffect(() => {
-    if (page) onCountChange(page.total);
+    // Le compteur global ne compte que la veille active, pas les hors filtre.
+    if (page && !horsFiltre) onCountChange(page.total);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
@@ -132,6 +139,17 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
           />
           <strong>{minScore}</strong>
         </div>
+        <button
+          className={`btn btn--sm${horsFiltre ? "" : " btn--ghost"}`}
+          aria-pressed={horsFiltre}
+          title="Afficher les AO écartés par les filtres ou qui ne sont pas des appels à concurrence"
+          onClick={() => {
+            setSelectedId(null);
+            setHorsFiltre((v) => !v);
+          }}
+        >
+          Hors filtre
+        </button>
         <div style={{ flex: 1 }} />
         <button className="btn btn--ghost btn--sm" onClick={() => void reload()}>
           <Icon.refresh size={11} /> Rafraîchir
