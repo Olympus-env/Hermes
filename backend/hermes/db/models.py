@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional
 
+from sqlalchemy import Index
 from sqlmodel import Column, Field, LargeBinary, Relationship, SQLModel, Text
 
 
@@ -102,6 +103,12 @@ class AppelOffre(SQLModel, table=True):
     """Table centrale — un appel d'offre détecté par ARGOS."""
 
     __tablename__ = "appels_offre"
+    # Un même avis ne peut exister qu'une fois par portail (NULL non contraint :
+    # les AO sans référence externe restent autorisés). Bases existantes :
+    # voir `_dedoublonner_appels_offre` dans db/session.py.
+    __table_args__ = (
+        Index("uq_appels_offre_portail_reference", "portail_id", "reference_externe", unique=True),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     portail_id: Optional[int] = Field(default=None, foreign_key="portails.id", index=True)

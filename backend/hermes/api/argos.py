@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Session, select
 
 from hermes import onboarding
 from hermes.agents import pythia
-from hermes.agents.argos.base import CriteresAvances
+from hermes.agents.argos.base import CriteresAvances, departement_valide, pays_valide
 from hermes.agents.argos.capabilities import tous_les_profils
 from hermes.agents.argos.filtre import (
     FiltreVeille,
@@ -60,6 +60,24 @@ class CriteresAvancesIO(BaseModel):
     date_publication_depuis: str | None = None
     deadline_min: str | None = None
     deadline_max: str | None = None
+
+    @field_validator("pays")
+    @classmethod
+    def _valider_pays(cls, valeurs: list[str]) -> list[str]:
+        nettoyes = [v.strip().upper() for v in valeurs if v.strip()]
+        for v in nettoyes:
+            if not pays_valide(v):
+                raise ValueError(f"code pays invalide (ISO3 attendu, ex. FRA) : {v!r}")
+        return nettoyes
+
+    @field_validator("departements")
+    @classmethod
+    def _valider_departements(cls, valeurs: list[str]) -> list[str]:
+        nettoyes = [v.strip().upper() for v in valeurs if v.strip()]
+        for v in nettoyes:
+            if not departement_valide(v):
+                raise ValueError(f"code département invalide (ex. 75, 2A, 971) : {v!r}")
+        return nettoyes
 
 
 class FiltreVeilleIO(BaseModel):
@@ -159,7 +177,7 @@ def lister_capacites() -> list[CapaciteResponse]:
 
 @router.post("/collecter", response_model=CycleCollecteResponse)
 async def collecter_tous(
-    limite: int = 20,
+    limite: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_session),
 ) -> CycleCollecteResponse:
     """Déclenche un cycle ARGOS sur tous les scrapers enregistrés."""
@@ -197,7 +215,7 @@ async def collecter_tous(
 @router.post("/collecter/{portail}", response_model=CollecteResponse)
 async def collecter(
     portail: str,
-    limite: int = 20,
+    limite: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_session),
 ) -> CollecteResponse:
     """Déclenche une collecte manuelle pour un portail donné."""
@@ -363,14 +381,16 @@ def enregistrer_portail(
 ) -> PortailRead:
     """Crée ou met à jour la configuration d'un portail ARGOS."""
     portail = session.exec(select(Portail).where(Portail.nom == nom)).first()
+    # Création : valeurs par défaut du payload. Mise à jour : seuls les champs
+    # réellement envoyés sont écrasés (un PUT sans `actif` ne doit pas
+    # réactiver un portail désactivé ni remettre la fréquence à zéro).
     if portail is None:
         portail = Portail(nom=nom, url_base=payload.url_base)
-
-    portail.url_base = payload.url_base
-    portail.type = payload.type
-    portail.actif = payload.actif
-    portail.frequence_minutes = payload.frequence_minutes
-    portail.config_scraping = payload.config_scraping
+        champs = payload.model_dump()
+    else:
+        champs = payload.model_dump(exclude_unset=True)
+    for champ, valeur in champs.items():
+        setattr(portail, champ, valeur)
 
     session.add(portail)
     session.commit()

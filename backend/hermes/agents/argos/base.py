@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -157,6 +158,21 @@ class CriteresAvances:
         return True
 
 
+# Validation des critères géographiques (interpolés dans des requêtes serveur).
+_RE_PAYS = re.compile(r"^[A-Z]{3}$")
+_RE_DEPARTEMENT = re.compile(r"^[0-9][0-9AB]{1,2}$")
+
+
+def pays_valide(valeur: str) -> bool:
+    """Code pays ISO3 en majuscules (ex. FRA)."""
+    return bool(_RE_PAYS.fullmatch(valeur))
+
+
+def departement_valide(valeur: str) -> bool:
+    """Code département français : 01-95, 2A/2B, 971-976 (métropole + DROM)."""
+    return bool(_RE_DEPARTEMENT.fullmatch(valeur))
+
+
 @dataclass
 class ResultatCollecte:
     """Bilan d'une exécution de collecte."""
@@ -167,6 +183,7 @@ class ResultatCollecte:
     ao_dedoublonnes: int = 0
     ao_filtres: int = 0
     duree_ms: int = 0
+    partielle: bool = False  # pagination interrompue : derniere_collecte non avancée
     erreurs: list[str] = field(default_factory=list)
     items: list[AOCollecte] = field(default_factory=list)
 
@@ -184,6 +201,10 @@ class Scraper(ABC):
 
     nom: str  # identifiant court ("boamp", "ted", …)
     url_base: str
+    # Vrai si la dernière collecte s'est arrêtée sur une erreur en cours de
+    # pagination : les avis récupérés sont exploitables mais la fenêtre n'est
+    # pas couverte, donc le runner ne doit pas avancer `derniere_collecte`.
+    collecte_partielle: bool = False
 
     @abstractmethod
     async def collecter(self, limite: int = 20) -> list[AOCollecte]:
