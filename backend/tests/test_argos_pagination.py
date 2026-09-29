@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from hermes.agents.argos import boamp, ted
 from hermes.agents.argos.base import MARGE_INCREMENTALE, borne_incrementale
@@ -153,7 +153,9 @@ def test_ted_sarrete_sur_la_borne_incrementale(monkeypatch):
 
     scraper = TedScraper()
     scraper.filtre_inclus = ("SMS",)
-    scraper.depuis = datetime.now(UTC) - timedelta(days=1)
+    # Date fixe cohérente avec les lots (et non `now()`), sinon le test casse
+    # dès que la date du jour dépasse celles des fixtures.
+    scraper.depuis = datetime(2026, 6, 17, tzinfo=UTC)  # borne = 2026-06-15
 
     items = asyncio.run(scraper.collecter())
 
