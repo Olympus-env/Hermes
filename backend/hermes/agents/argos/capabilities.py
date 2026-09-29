@@ -41,6 +41,8 @@ CHAMPS_BOAMP: tuple[str, ...] = (
     "code_departement_prestation",
     "descripteur_code",
     "descripteur_libelle",
+    # JSON de l'avis : SIRET acheteur + CPV principal (liaison DECP).
+    "donnees",
 )
 
 # TED — champs eForms demandés via `fields`. Identique à la liste historique du
