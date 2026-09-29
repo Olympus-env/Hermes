@@ -245,9 +245,10 @@ async def _consulter_jev(
     if not jev.est_actif(session):
         return None
     # Données privées : un portail non public (documents téléchargés derrière
-    # authentification) ne part JAMAIS chez Jev — analyse locale seule.
+    # authentification) ne part JAMAIS chez Jev — analyse locale seule. Un AO
+    # sans portail connu est traité comme non public (défaut prudent).
     portail = session.get(Portail, appel_offre.portail_id) if appel_offre.portail_id else None
-    if portail is not None and portail.type != TypePortail.PUBLIC:
+    if portail is None or portail.type != TypePortail.PUBLIC:
         logger.info("KRINOS : Jev non appelé pour AO {} (portail non public)", appel_offre.id)
         _journaliser(
             session,

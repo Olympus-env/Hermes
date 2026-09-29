@@ -130,6 +130,10 @@ _MOTIFS_DIRECTS: tuple[tuple[str, re.Pattern[str]], ...] = (
             rf"\b{_IMPERATIF_IGNORER}\b[^.]{{0,15}}"
             r"\b(?:ce qui precede|tout ce qui precede|ce qui est au[- ]dessus|"
             r"everything above|the above)\b"
+            # « the above amendment » (DCE légitime) ≠ « ignore the above » :
+            # la référence doit être suivie d'une ponctuation, de la fin ou d'un
+            # mot de consigne.
+            rf"(?=\s*(?:[.,;:!)]|$)|\s+{_OBJET_CONSIGNE}\b)"
         ),
     ),
     ("adresse_ia", _ADRESSE_IA),

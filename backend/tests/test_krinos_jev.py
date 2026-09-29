@@ -84,11 +84,21 @@ def _state() -> dict:
     )
 
 
-def _ao() -> int:
+def _ao(avec_portail: bool = True) -> int:
+    from hermes.db.models import Portail, TypePortail
+
     with Session(get_engine()) as s:
+        portail_id = None
+        if avec_portail:
+            portail = Portail(nom="Portail public", url_base="https://public.example.test",
+                              type=TypePortail.PUBLIC)
+            s.add(portail)
+            s.commit()
+            s.refresh(portail)
+            portail_id = portail.id
         ao = AppelOffre(
             titre="Marché SMS", emetteur="Ville", url_source="https://example.test/jev",
-            statut=StatutAO.BRUT,
+            statut=StatutAO.BRUT, portail_id=portail_id,
         )
         s.add(ao)
         s.commit()
@@ -470,3 +480,20 @@ def test_reservation_liberee_si_l_appel_echoue(monkeypatch):
         with pytest.raises(jev.ErreurJev):
             asyncio.run(jev.juger(s, _state(), Ponderation()))
         assert jev.tokens_consommes(s) == 0
+
+
+def test_ao_sans_portail_jamais_envoye_a_jev(monkeypatch):
+    """Portail inconnu = non public par défaut : aucune requête vers Jev."""
+    _activer(monkeypatch)
+    monkeypatch.setattr(analyzer.pythia, "generer", _pythia_dims(70))
+    appels: list[httpx.Request] = []
+    monkeypatch.setattr(
+        jev, "_transport", _transport([httpx.Response(200, json=_reponse_jev())], appels)
+    )
+    init_db()
+    ao_id = _ao(avec_portail=False)
+    with Session(get_engine()) as s:
+        ao = s.get(AppelOffre, ao_id)
+        analyse = asyncio.run(analyzer.analyser_ao(s, ao)).analyse
+        assert analyse.score_jev is None
+    assert appels == []
