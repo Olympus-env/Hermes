@@ -274,6 +274,24 @@ d'annoncer une avancée.
 
 ---
 
+## 🏗️ Workflow « chantier autonome » (validé le 29/09/2026)
+
+- Backlog = **issues GitHub** ; chaque PR contient `Closes #n`.
+- Chef de chantier (session principale) → 1 agent `hermes-implementeur` par issue
+  (worktree isolé, branche `fix/…`/`feat/…`/`chore/…`) → 1 agent
+  `hermes-verificateur` indépendant qui lance l'app (skill `verify`) et rend
+  PASS/FAIL. FAIL → retour à l'implémenteur, 2 boucles max, puis escalade.
+- PR ouverte automatiquement ; **merge squash automatique** dès CI verte +
+  vérificateur PASS ; les autres PR sont rebasées ; PR obsolètes fermées avec
+  commentaire. Tout le lot part en parallèle.
+- Jamais de push direct sur `main`, jamais de `--force` (seulement
+  `--force-with-lease` sur une branche de PR).
+- Interrompre Joshua uniquement pour : choix d'architecture irréversible, FAIL
+  après 2 boucles, action destructive. Rapport court en fin de lot.
+- Env macOS : venv `backend/.venv` en Python 3.11 (`python3.11 -m venv .venv`).
+
+---
+
 ## 🤝 Style de collaboration
 
 L'utilisateur (Joshua) est francophone et a partagé un CDC complet : il sait ce
