@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type StatutModele } from "../lib/api";
+import { api, type OptionsModeles, type StatutModele } from "../lib/api";
 
 const GIGA = 1024 * 1024 * 1024;
 const POLL_INTERVAL_MS = 1500;
@@ -15,13 +15,15 @@ function formatGo(octets: number): string {
 
 /**
  * Modal bloquant qui apparaît au démarrage si le modèle PYTHIA principal
- * n'est pas installé. Lance le téléchargement et affiche la progression.
+ * n'est pas installé. Propose de choisir un modèle déjà installé ou d'en
+ * télécharger un (sur clic explicite), avec suivi et annulation.
  * Appelle `onReady` quand le modèle est disponible.
  */
 export function ModelDownloader({ onReady }: Props) {
   const [statut, setStatut] = useState<StatutModele | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [demarrageDemande, setDemarrageDemande] = useState(false);
+  const [options, setOptions] = useState<OptionsModeles | null>(null);
+  const [choix, setChoix] = useState("");
 
   // Poll de l'état toutes les 1.5 s tant que le modèle n'est pas prêt.
   useEffect(() => {
@@ -54,20 +56,46 @@ export function ModelDownloader({ onReady }: Props) {
     };
   }, [onReady]);
 
-  // Démarrage automatique du téléchargement dès qu'on sait que le modèle
-  // manque et qu'Ollama est joignable.
+  // Options (modèles proposés / installés, espace disque) : chargées une fois
+  // Ollama joignable. AUCUN téléchargement n'est lancé sans clic explicite.
+  const ollamaOk = statut?.ollama_disponible ?? false;
   useEffect(() => {
-    if (!statut || demarrageDemande) return;
-    if (!statut.ollama_disponible) return;
-    if (statut.installe) return;
-    if (statut.progression.en_cours) return;
+    if (!ollamaOk) return;
+    api
+      .optionsModeles()
+      .then((o) => {
+        setOptions(o);
+        setChoix((c) => c || o.modele_actuel);
+      })
+      .catch((e) => setErreur(e instanceof Error ? e.message : String(e)));
+  }, [ollamaOk]);
 
-    setDemarrageDemande(true);
-    api.telechargerModele().catch((e) => {
+  const lancer = async () => {
+    setErreur(null);
+    try {
+      await api.telechargerModele(choix);
+    } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
-      setDemarrageDemande(false);
-    });
-  }, [statut, demarrageDemande]);
+    }
+  };
+
+  const annuler = async () => {
+    try {
+      await api.annulerTelechargementModele();
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const utiliserInstalle = async (nom: string) => {
+    setErreur(null);
+    try {
+      await api.choisirModeleInstalle(nom);
+      onReady();
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   if (!statut) {
     return (
@@ -100,15 +128,92 @@ export function ModelDownloader({ onReady }: Props) {
   const done = p.octets_telecharges;
   const pourcent = p.pourcent;
 
+  if (!p.en_cours) {
+    const propose = options?.proposes.find((m) => m.nom === choix);
+    const taille = propose?.taille_octets ?? 0;
+    const libre = options?.espace_disque_libre_octets ?? 0;
+    const insuffisant = taille > 0 && libre > 0 && libre < taille * 1.2;
+    const installesDispo = options?.installes ?? [];
+    return (
+      <ModalShell
+        titre="Modèle PYTHIA requis"
+        sousTitre={`Le modèle « ${statut.modele} » n'est pas installé`}
+      >
+        <p style={{ fontSize: 13, color: "var(--fg-2)", lineHeight: 1.5, marginBottom: 14 }}>
+          Rien n'est téléchargé sans ton accord. Choisis un modèle déjà présent
+          dans Ollama, ou lance explicitement un téléchargement.
+        </p>
+
+        {installesDispo.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 6 }}>
+              Modèles déjà installés
+            </div>
+            {installesDispo.map((nom) => (
+              <button
+                key={nom}
+                className="btn"
+                style={{ marginRight: 6, marginBottom: 6 }}
+                onClick={() => void utiliserInstalle(nom)}
+              >
+                Utiliser {nom}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ fontSize: 12, color: "var(--fg-3)", marginBottom: 6 }}>
+          Télécharger un modèle
+        </div>
+        <select
+          value={choix}
+          onChange={(e) => setChoix(e.target.value)}
+          style={{ width: "100%", marginBottom: 8 }}
+        >
+          {(options?.proposes ?? []).map((m) => (
+            <option key={m.nom} value={m.nom}>
+              {m.nom} — ~{formatGo(m.taille_octets)}
+              {m.installe ? " (installé)" : ""}
+            </option>
+          ))}
+        </select>
+        <div style={{ fontSize: 12, color: "var(--fg-3)", lineHeight: 1.5 }}>
+          Taille estimée (indicative) : {taille > 0 ? formatGo(taille) : "inconnue"}
+          {" · "}espace disque libre : {libre > 0 ? formatGo(libre) : "inconnu"}
+        </div>
+        {insuffisant && (
+          <ErreurBox message="Espace disque probablement insuffisant pour ce modèle." />
+        )}
+        {p.statut === "annule" && (
+          <div style={{ marginTop: 8, fontSize: 12, color: "var(--fg-3)" }}>
+            Téléchargement annulé.
+          </div>
+        )}
+
+        <div style={{ marginTop: 16 }}>
+          <button
+            className="btn"
+            disabled={!choix || !!propose?.installe || insuffisant}
+            onClick={() => void lancer()}
+          >
+            Télécharger
+          </button>
+        </div>
+
+        {p.erreur && <ErreurBox message={p.erreur} />}
+        {erreur && !p.erreur && <ErreurBox message={erreur} />}
+      </ModalShell>
+    );
+  }
+
   return (
     <ModalShell
       titre="Téléchargement de PYTHIA"
-      sousTitre={`Modèle ${statut.modele} — première installation`}
+      sousTitre={`Modèle ${statut.modele}`}
     >
       <p style={{ fontSize: 13, color: "var(--fg-2)", lineHeight: 1.5, marginBottom: 16 }}>
-        HERMES télécharge le modèle de langage local. Cette étape n'est faite
-        qu'une seule fois. Le téléchargement se poursuit même si tu fermes
-        cette fenêtre, mais l'application n'est utilisable qu'à la fin.
+        HERMES télécharge le modèle de langage local que tu as demandé. Tu peux
+        annuler à tout moment ; l'application n'est utilisable qu'à la fin.
       </p>
 
       <div
@@ -149,6 +254,12 @@ export function ModelDownloader({ onReady }: Props) {
 
       <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--fg-4)" }}>
         Statut Ollama : <code>{p.statut || "en attente"}</code>
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <button className="btn" onClick={() => void annuler()}>
+          Annuler le téléchargement
+        </button>
       </div>
 
       {p.erreur && <ErreurBox message={p.erreur} />}

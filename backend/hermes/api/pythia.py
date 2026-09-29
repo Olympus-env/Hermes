@@ -8,6 +8,7 @@ localement et de lancer son téléchargement (Qwen3 8B ~5,2 Go) avec un
 from __future__ import annotations
 
 import asyncio
+import shutil
 import time
 from dataclasses import dataclass, field
 from typing import Annotated
@@ -36,6 +37,7 @@ class EtatTelechargement:
     erreur: str | None = None
     termine_le: float | None = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _tache: asyncio.Task | None = None
 
 
 _etat = EtatTelechargement()
@@ -72,7 +74,27 @@ class StatutModeleResponse(BaseModel):
 
 
 class TelechargementRequest(BaseModel):
-    modele: str | None = None
+    # Consentement explicite : aucun téléchargement sans `confirme: true`.
+    modele: str
+    confirme: bool = False
+
+
+class ChoixModeleRequest(BaseModel):
+    modele: str
+
+
+class ModelePropose(BaseModel):
+    nom: str
+    taille_octets: int  # indicative (pas de consultation du registre Ollama)
+    installe: bool
+
+
+class OptionsModelesResponse(BaseModel):
+    modele_actuel: str
+    proposes: list[ModelePropose]
+    installes: list[str]
+    espace_disque_libre_octets: int
+    modele_libre: bool
 
 
 # --------------------------------------------------------------------------- #
@@ -99,17 +121,70 @@ async def statut_modele(etat: EtatDep) -> StatutModeleResponse:
     )
 
 
+@router.get("/modele/options", response_model=OptionsModelesResponse)
+async def options_modeles() -> OptionsModelesResponse:
+    """Modèles proposés (liste blanche) et modèles déjà installés dans Ollama."""
+    installes: list[str] = []
+    if await pythia.est_disponible(timeout=2.0):
+        try:
+            installes = await pythia.lister_modeles()
+        except pythia.ErreurPythia:
+            installes = []
+    proposes = [
+        ModelePropose(
+            nom=nom,
+            taille_octets=taille,
+            installe=any(_meme_modele(nom, i) for i in installes),
+        )
+        for nom, taille in settings.pythia_modeles_proposes.items()
+    ]
+    dossier = settings.db_path.parent
+    dossier.mkdir(parents=True, exist_ok=True)
+    return OptionsModelesResponse(
+        modele_actuel=settings.pythia_modele,
+        proposes=proposes,
+        installes=installes,
+        espace_disque_libre_octets=shutil.disk_usage(dossier).free,
+        modele_libre=settings.pythia_modele_libre,
+    )
+
+
+@router.post("/modele/choisir", response_model=StatutModeleResponse)
+async def choisir_modele(payload: ChoixModeleRequest, etat: EtatDep) -> StatutModeleResponse:
+    """Utilise un modèle DÉJÀ installé, sans rien télécharger (effet jusqu'au redémarrage)."""
+    if not await pythia.est_disponible(timeout=2.0):
+        raise HTTPException(status_code=502, detail="Ollama/PYTHIA n'est pas joignable.")
+    if not await pythia.modele_installe(payload.modele):
+        raise HTTPException(status_code=404, detail="Ce modèle n'est pas installé dans Ollama.")
+    settings.pythia_modele = payload.modele
+    etat.modele = payload.modele
+    return await statut_modele(etat)
+
+
 @router.post("/modele/telecharger", response_model=ProgressionRead)
 async def lancer_telechargement(
+    payload: TelechargementRequest,
     etat: EtatDep,
-    payload: TelechargementRequest | None = None,
 ) -> ProgressionRead:
     """Démarre le téléchargement du modèle en tâche de fond.
 
-    Idempotent : si un téléchargement est déjà en cours, renvoie son état
-    actuel sans en lancer un nouveau.
+    Exige `confirme: true` et un modèle de la liste blanche (sauf option
+    avancée `pythia_modele_libre`). Idempotent : si un téléchargement est déjà
+    en cours, renvoie son état actuel sans en lancer un nouveau.
     """
-    modele = (payload.modele if payload else None) or settings.pythia_modele
+    if not payload.confirme:
+        raise HTTPException(
+            status_code=400,
+            detail="Téléchargement non confirmé : `confirme` doit valoir true.",
+        )
+    modele = payload.modele.strip()
+    if not modele:
+        raise HTTPException(status_code=422, detail="Nom de modèle vide.")
+    if modele not in settings.pythia_modeles_proposes and not settings.pythia_modele_libre:
+        raise HTTPException(
+            status_code=403,
+            detail="Modèle hors de la liste proposée (option avancée désactivée).",
+        )
 
     async with etat._lock:
         if etat.en_cours:
@@ -131,8 +206,28 @@ async def lancer_telechargement(
         etat.termine_le = None
 
     # Lance la tâche en arrière-plan, ne pas await ici.
-    asyncio.create_task(_executer_telechargement(etat, modele))
+    etat._tache = asyncio.create_task(_executer_telechargement(etat, modele))
     return _progression_read(etat)
+
+
+@router.post("/modele/annuler", response_model=ProgressionRead)
+async def annuler_telechargement(etat: EtatDep) -> ProgressionRead:
+    """Annule le téléchargement en cours (Ollama reprendra les blobs déjà reçus)."""
+    tache = etat._tache
+    if etat.en_cours and tache is not None and not tache.done():
+        tache.cancel()
+        try:
+            await tache
+        except asyncio.CancelledError:
+            pass
+    return _progression_read(etat)
+
+
+def _meme_modele(a: str, b: str) -> bool:
+    def norm(n: str) -> str:
+        return n if ":" in n else f"{n}:latest"
+
+    return norm(a) == norm(b)
 
 
 async def _executer_telechargement(etat: EtatTelechargement, modele: str) -> None:
@@ -154,6 +249,9 @@ async def _executer_telechargement(etat: EtatTelechargement, modele: str) -> Non
         if etat.octets_total > 0:
             etat.octets_telecharges = etat.octets_total
         etat.termine_le = time.time()
+    except asyncio.CancelledError:
+        etat.statut = "annule"
+        etat.erreur = None
     except pythia.ErreurPythia as exc:
         etat.erreur = str(exc)
         etat.statut = "erreur"
