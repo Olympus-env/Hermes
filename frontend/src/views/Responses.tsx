@@ -146,6 +146,33 @@ export function Responses({ onToast }: Props) {
     }
   };
 
+  /** Télécharge le PDF via blob + <a download> (window.open est bloqué dans la webview Tauri). */
+  const telechargerPdf = async (id: number, version: number) => {
+    const blob = await api.telechargerExportReponse(id);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `reponse_${id}_v${version}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  };
+
+  const onDownload = async () => {
+    if (!detail) return;
+    try {
+      await telechargerPdf(detail.id, detail.version);
+    } catch (e) {
+      onToast({
+        title: "HERMION",
+        app: "Erreur de téléchargement",
+        msg: e instanceof Error ? e.message : String(e),
+        agent: "hermion",
+      });
+    }
+  };
+
   const onExport = async () => {
     if (selectedId === null) return;
     try {
@@ -160,7 +187,7 @@ export function Responses({ onToast }: Props) {
         msg: `PDF généré pour la réponse v${updated.version}.`,
         agent: "hermion",
       });
-      window.open(api.urlExportReponse(selectedId), "_blank");
+      await telechargerPdf(updated.id, updated.version);
     } catch (e) {
       onToast({
         title: "HERMION",
@@ -301,6 +328,7 @@ export function Responses({ onToast }: Props) {
             onStatusChange={onStatusChange}
             onSaveContent={onSaveContent}
             onExport={onExport}
+            onDownload={() => void onDownload()}
           />
         )}
         {!selectedSummary && !loadingList && reponses.length > 0 && (
@@ -324,6 +352,7 @@ type DetailProps = {
   ) => void;
   onSaveContent: (contenu: string, commentaire?: string) => void;
   onExport: () => void;
+  onDownload: () => void;
 };
 
 function ResponseDetail({
@@ -333,16 +362,27 @@ function ResponseDetail({
   onStatusChange,
   onSaveContent,
   onExport,
+  onDownload,
 }: DetailProps) {
   const [editing, setEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(detail.contenu);
   const [comment, setComment] = useState(detail.commentaire_humain ?? "");
 
+  // Changement de réponse : on repart de zéro.
   useEffect(() => {
     setEditedContent(detail.contenu);
     setComment(detail.commentaire_humain ?? "");
     setEditing(false);
-  }, [detail.id, detail.contenu, detail.commentaire_humain]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.id]);
+
+  // Même réponse rafraîchie (polling, sauvegarde) : ne pas écraser la saisie en cours.
+  useEffect(() => {
+    if (editing) return;
+    setEditedContent(detail.contenu);
+    setComment(detail.commentaire_humain ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.contenu, detail.commentaire_humain]);
 
   const uiStatus = toUiStatus(detail.statut);
   const verrouille = detail.statut === "exportee" || detail.statut === "rejetee";
@@ -456,7 +496,7 @@ function ResponseDetail({
           {detail.statut === "exportee" ? (
             <button
               className="btn btn--ok"
-              onClick={() => window.open(api.urlExportReponse(detail.id), "_blank")}
+              onClick={onDownload}
             >
               <Icon.download size={13} /> Télécharger le PDF
             </button>

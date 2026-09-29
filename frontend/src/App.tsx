@@ -23,6 +23,18 @@ import { Responses } from "./views/Responses";
 import { Settings } from "./views/Settings";
 import { Tenders } from "./views/Tenders";
 
+/** « mm:ss » (ou « h:mm:ss ») avant l'échéance ; « — » si aucun cycle n'est programmé. */
+function formaterCompteARebours(cibleMs: number | null, maintenantMs: number): string {
+  if (cibleMs === null) return "—";
+  const total = Math.max(0, Math.round((cibleMs - maintenantMs) / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = (total % 60).toString().padStart(2, "0");
+  return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+}
+
 export default function App() {
   const [active, setActive] = useState<ViewKey>("tenders");
   const [toast, setToast] = useState<ToastInput | null>(null);
@@ -36,7 +48,9 @@ export default function App() {
     krinos: "active",
     hermion: "active",
   });
-  const [nextCycle, setNextCycle] = useState("04:12");
+  const [backendUp, setBackendUp] = useState<boolean | null>(null);
+  const [prochainCycleMs, setProchainCycleMs] = useState<number | null>(null);
+  const [maintenant, setMaintenant] = useState(() => Date.now());
   const [tendersRefreshKey, setTendersRefreshKey] = useState(0);
   const [tenderCount, setTenderCount] = useState(0);
   const [responseCount, setResponseCount] = useState(0);
@@ -65,22 +79,59 @@ export default function App() {
     };
   }, []);
 
-  // Décompte du prochain cycle ARGOS
+  // Backend joignable ? Sonde /health (rapide tant qu'il démarre, lente ensuite)
+  // pour afficher un bandeau global plutôt qu'une erreur dans chaque vue.
   useEffect(() => {
-    const id = setInterval(() => {
-      setNextCycle((prev) => {
-        const [mm, ss] = prev.split(":").map(Number);
-        let total = mm * 60 + ss - 1;
-        if (total <= 0) total = 30 * 60;
-        const m = Math.floor(total / 60)
-          .toString()
-          .padStart(2, "0");
-        const s = (total % 60).toString().padStart(2, "0");
-        return `${m}:${s}`;
-      });
-    }, 1000);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let etaitJoignable: boolean | null = null;
+    const sonder = async () => {
+      let ok = false;
+      try {
+        await api.health();
+        ok = true;
+      } catch {
+        ok = false;
+      }
+      if (cancelled) return;
+      setBackendUp(ok);
+      // Retour du backend après une panne/un démarrage : les vues se rechargent.
+      if (ok && etaitJoignable === false) setTendersRefreshKey((k) => k + 1);
+      etaitJoignable = ok;
+      timer = setTimeout(sonder, ok ? 30_000 : 2_000);
+    };
+    void sonder();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // Prochain cycle ARGOS : vraie échéance APScheduler (`/argos/scheduler`).
+  const rafraichirScheduler = useCallback(async () => {
+    try {
+      const etat = await api.etatSchedulerArgos();
+      const echeances = etat.jobs
+        .map((j) => (j.prochaine_execution ? Date.parse(j.prochaine_execution) : NaN))
+        .filter((t) => !Number.isNaN(t));
+      setProchainCycleMs(etat.en_marche && echeances.length ? Math.min(...echeances) : null);
+    } catch {
+      // Pas critique — on garde l'échéance précédente
+    }
+  }, []);
+
+  useEffect(() => {
+    void rafraichirScheduler();
+    const id = setInterval(rafraichirScheduler, 30_000);
+    return () => clearInterval(id);
+  }, [rafraichirScheduler, backendUp]);
+
+  useEffect(() => {
+    const id = setInterval(() => setMaintenant(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  const nextCycle = formaterCompteARebours(prochainCycleMs, maintenant);
 
   const triggerCycle = useCallback(async () => {
     setIsLoading(true);
@@ -97,7 +148,7 @@ export default function App() {
       setTendersRefreshKey((key) => key + 1);
       setIsLoading(false);
       setAgents((a) => ({ ...a, argos: "active", krinos: "active" }));
-      setNextCycle("30:00");
+      void rafraichirScheduler();
       const filtres = result.ao_filtres
         ? ` · ${result.ao_filtres} filtrés (hors critères)`
         : "";
@@ -121,7 +172,7 @@ export default function App() {
         agent: "argos",
       });
     }
-  }, []);
+  }, [rafraichirScheduler]);
 
   return (
     <div className="app">
@@ -150,6 +201,15 @@ export default function App() {
       )}
 
       <main className="app__main">
+        {backendUp === false && (
+          <div className="loading-banner" role="status">
+            <span className="loading-banner__icon" />
+            <span>
+              <strong style={{ color: "var(--argos)", letterSpacing: "0.08em" }}>HERMES</strong>{" "}
+              Le backend démarre ou est injoignable — nouvelle tentative en cours…
+            </span>
+          </div>
+        )}
         {emptyState ? (
           <EmptyView
             onConfigure={() => {
