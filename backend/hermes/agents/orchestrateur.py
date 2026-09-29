@@ -18,6 +18,7 @@ en `EN_ATTENTE` — la validation finale reste exclusivement humaine.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -47,6 +48,17 @@ CLE_PARAMETRE = "orchestration.config"
 SEUIL_MIN = 0.0
 SEUIL_MAX = 100.0
 MAX_PAR_CYCLE_PLAFOND = 50
+
+# Verrou global : un seul pipeline à la fois dans le process. Les jobs BOAMP et
+# TED (et `POST /orchestration/traiter`) sélectionnent les mêmes AO ; sans lui,
+# analyses KRINOS et réponses HERMION seraient produites en double (#13).
+# Jobs planifiés : ils attendent leur tour. API manuelle : 409 (voir api/).
+_VERROU_PIPELINE = asyncio.Lock()
+
+
+def pipeline_en_cours() -> bool:
+    """Vrai si un pipeline est déjà en train de tourner."""
+    return _VERROU_PIPELINE.locked()
 
 
 @dataclass(frozen=True)
@@ -188,12 +200,27 @@ def expirer_ao_depasses(
 async def traiter_pipeline(
     session: Session, *, limite: int | None = None
 ) -> RapportOrchestration:
-    """Exécute un passage complet du pipeline autonome.
+    """Exécute un passage complet du pipeline autonome (un seul à la fois).
+
+    Les appels concurrents sont sérialisés par un verrou global : le second
+    attend la fin du premier, puis ne retrouve plus les AO déjà traités.
 
     Robuste : chaque AO est traité indépendamment ; un échec (PYTHIA down,
     document illisible…) n'interrompt pas le cycle et laisse l'AO récupérable
     au prochain passage. Aucune exception n'est propagée.
     """
+    async with _VERROU_PIPELINE:
+        return await _traiter_pipeline_verrouille(session, limite)
+
+
+async def _traiter_pipeline_verrouille(
+    session: Session, limite: int | None
+) -> RapportOrchestration:
+    # Reprise : un arrêt du process pendant la rédaction laisse des AO en
+    # A_REPONDRE sans réponse. Sous verrou, aucune rédaction du pipeline n'est
+    # en cours : on les repasse en ANALYSE pour que la phase rédaction les reprenne.
+    _reprendre_a_repondre_orphelins(session)
+
     # Maintenance systématique : on périme les AO dont la date limite est
     # passée, indépendamment de l'autonomie (un AO expiré ne doit ni être
     # analysé ni rédigé). Exécuté en tête, avant le court-circuit `cfg.actif`.
@@ -262,7 +289,7 @@ async def _phase_analyse(
             )
         except Exception as exc:  # noqa: BLE001
             rapport.ao_echecs += 1
-            logger.exception("Pipeline : erreur inattendue analyse AO %s", ao_id)
+            logger.exception("Pipeline : erreur inattendue analyse AO {}", ao_id)
             _journaliser(
                 session,
                 niveau=NiveauLog.ERROR,
@@ -339,7 +366,7 @@ async def _phase_redaction(
         except Exception as exc:  # noqa: BLE001
             _restaurer_analyse_si_aucune_reponse(session, ao)
             rapport.ao_echecs += 1
-            logger.exception("Pipeline : erreur inattendue rédaction AO %s", ao_id)
+            logger.exception("Pipeline : erreur inattendue rédaction AO {}", ao_id)
             _journaliser(
                 session,
                 niveau=NiveauLog.ERROR,
@@ -357,11 +384,11 @@ async def _documents_best_effort(session: Session, ao: AppelOffre) -> None:
     try:
         await telecharger_documents_ao(session, ao)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Pipeline : téléchargement docs AO %s ignoré — %s", ao.id, exc)
+        logger.debug("Pipeline : téléchargement docs AO {} ignoré — {}", ao.id, exc)
 
     rapport = extraire_documents_appel_offre(session, ao, best_effort=True)
     for erreur in rapport.erreurs:
-        logger.debug("Pipeline : extraction AO %s ignorée — %s", ao.id, erreur)
+        logger.debug("Pipeline : extraction AO {} ignorée — {}", ao.id, erreur)
 
 
 # --------------------------------------------------------------------------- #
@@ -383,6 +410,26 @@ def _plafond_valide(valeur: object, defaut: int) -> int:
     except (TypeError, ValueError):
         return defaut
     return max(1, min(MAX_PAR_CYCLE_PLAFOND, n))
+
+
+def _reprendre_a_repondre_orphelins(session: Session) -> int:
+    """Repasse en ANALYSE les AO `A_REPONDRE` sans aucune réponse HERMION."""
+    orphelins = session.exec(
+        select(AppelOffre).where(
+            AppelOffre.statut == StatutAO.A_REPONDRE,
+            ~select(ReponseHermion.id)
+            .where(ReponseHermion.appel_offre_id == AppelOffre.id)
+            .exists(),
+        )
+    ).all()
+    for ao in orphelins:
+        ao.statut = StatutAO.ANALYSE
+        ao.maj_le = datetime.now(UTC)
+        session.add(ao)
+    if orphelins:
+        session.commit()
+        logger.info("Pipeline : {} AO A_REPONDRE orphelins repris", len(orphelins))
+    return len(orphelins)
 
 
 def _restaurer_analyse_si_aucune_reponse(session: Session, ao: AppelOffre) -> None:
