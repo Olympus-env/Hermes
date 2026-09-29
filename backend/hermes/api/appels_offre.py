@@ -64,40 +64,14 @@ class StatutUpdate(BaseModel):
     statut: StatutAO
 
 
-# Transitions manuelles autorisées (PATCH /statut). Les passages automatiques
-# (ARGOS, KRINOS, HERMION, expiration) écrivent le statut directement et ne
-# passent pas par cette matrice.
-_TRANSITIONS_AO: dict[StatutAO, set[StatutAO]] = {
-    StatutAO.BRUT: {
-        StatutAO.ANALYSE,
-        StatutAO.A_REPONDRE,
-        StatutAO.REJETE,
-        StatutAO.EXPIRE,
-    },
-    StatutAO.ANALYSE: {
-        StatutAO.BRUT,
-        StatutAO.A_REPONDRE,
-        StatutAO.REJETE,
-        StatutAO.EXPIRE,
-    },
-    StatutAO.A_REPONDRE: {
-        StatutAO.ANALYSE,
-        StatutAO.EN_REDACTION,
-        StatutAO.REPONDU,
-        StatutAO.REJETE,
-        StatutAO.EXPIRE,
-    },
-    StatutAO.EN_REDACTION: {
-        StatutAO.A_REPONDRE,
-        StatutAO.REPONDU,
-        StatutAO.REJETE,
-        StatutAO.EXPIRE,
-    },
-    StatutAO.REPONDU: {StatutAO.EN_REDACTION},
-    # Un AO écarté peut être repris volontairement par l'humain.
-    StatutAO.REJETE: {StatutAO.ANALYSE, StatutAO.A_REPONDRE},
-    StatutAO.EXPIRE: set(),
-    StatutAO.HORS_FILTRE: {StatutAO.BRUT},
+# Statuts posables à la main via PATCH /statut : gestes humains explicites
+# (boutons « Marquer à répondre » / « Exclure », marquage « répondu »), permis
+# depuis n'importe quel statut. Les autres (brut, analyse, en_redaction, expire,
+# hors_filtre) sont pilotés par le système (ARGOS, KRINOS, HERMION, expiration).
+_STATUTS_MANUELS: set[StatutAO] = {
+    StatutAO.A_REPONDRE,
+    StatutAO.REJETE,
+    StatutAO.REPONDU,
 }
 
 
@@ -192,12 +166,12 @@ def modifier_statut(
         raise HTTPException(status_code=404, detail="Appel d'offre introuvable")
 
     if payload.statut != ao.statut:
-        if payload.statut not in _TRANSITIONS_AO.get(ao.statut, set()):
+        if payload.statut not in _STATUTS_MANUELS:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"Transition '{ao.statut.value}' → '{payload.statut.value}' "
-                    "non autorisée"
+                    f"Statut '{payload.statut.value}' non modifiable manuellement "
+                    "(piloté par le système)"
                 ),
             )
         if payload.statut == StatutAO.REPONDU and not _a_reponse_finalisee(

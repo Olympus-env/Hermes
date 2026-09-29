@@ -108,11 +108,32 @@ def test_ao_repondu_exige_reponse_validee():
         assert r.status_code == 200
 
 
-def test_ao_transition_interdite():
-    ao_id = _ao(StatutAO.EXPIRE)
+def test_ao_statut_systeme_non_posable():
+    ao_id = _ao(StatutAO.A_REPONDRE)
     with TestClient(app) as client:
-        r = client.patch(f"/appels-offre/{ao_id}/statut", json={"statut": "a_repondre"})
-    assert r.status_code == 409
+        for statut in ("brut", "analyse", "en_redaction", "expire", "hors_filtre"):
+            r = client.patch(f"/appels-offre/{ao_id}/statut", json={"statut": statut})
+            assert r.status_code == 409, statut
+
+
+@pytest.mark.parametrize(
+    "depart",
+    [
+        StatutAO.EXPIRE,
+        StatutAO.HORS_FILTRE,
+        StatutAO.REPONDU,
+        StatutAO.EN_REDACTION,
+        StatutAO.REJETE,
+        StatutAO.BRUT,
+    ],
+)
+@pytest.mark.parametrize("cible", ["a_repondre", "rejete"])
+def test_ao_gestes_humains_depuis_tout_statut(depart, cible):
+    ao_id = _ao(depart)
+    with TestClient(app) as client:
+        r = client.patch(f"/appels-offre/{ao_id}/statut", json={"statut": cible})
+    assert r.status_code == 200
+    assert r.json()["statut"] == cible
 
 
 def test_ao_statut_maj_le_et_dates_utc():
@@ -120,7 +141,7 @@ def test_ao_statut_maj_le_et_dates_utc():
     with Session(get_engine()) as s:
         avant = s.get(AppelOffre, ao_id).maj_le
     with TestClient(app) as client:
-        r = client.patch(f"/appels-offre/{ao_id}/statut", json={"statut": "analyse"})
+        r = client.patch(f"/appels-offre/{ao_id}/statut", json={"statut": "a_repondre"})
     assert r.status_code == 200
     assert r.json()["maj_le"].endswith("+00:00")
     assert r.json()["cree_le"].endswith("+00:00")
