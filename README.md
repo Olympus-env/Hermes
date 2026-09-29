@@ -260,7 +260,9 @@ PYTHIA accepte deux moteurs, tous deux **strictement locaux** (l'URL doit être
 
 Le moteur `openai_compatible` envoie les sorties structurées de KRINOS via
 `response_format` (`json_schema`). Le contexte du modèle y est fixé au lancement
-du serveur (`llama-server -c 16384`), pas par HERMES.
+du serveur (`llama-server -c 16384`), pas par HERMES. Avec Ollama `/v1` (test
+local), Ollama applique son propre défaut : le lancer avec
+`OLLAMA_CONTEXT_LENGTH=16384`, sinon les prompts KRINOS (~5k tokens) sont tronqués.
 
 **Modèles Hugging Face (GGUF) via Ollama** : `hf.co/<org>/<repo>:<quant>` est un
 nom de modèle valide, p. ex. `HERMES_PYTHIA_MODELE=hf.co/unsloth/Qwen3-8B-GGUF:Q4_K_M`.
