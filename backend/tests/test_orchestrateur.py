@@ -395,3 +395,98 @@ def test_endpoint_traiter_refuse_limite_negative():
     with TestClient(app) as client:
         r = client.post("/orchestration/traiter?limite=-1")
     assert r.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Verrou global, reprise A_REPONDRE, scheduler (issue #13)
+# --------------------------------------------------------------------------- #
+
+
+def test_deux_pipelines_simultanes_un_seul_traitement_par_ao(monkeypatch):
+    appels: list[int] = []
+
+    async def analyser_lent(session, ao, *, forcer=False):
+        appels.append(ao.id)
+        await asyncio.sleep(0.05)  # laisse l'autre pipeline s'intercaler
+        return await _fake_analyser(50.0)(session, ao)
+
+    monkeypatch.setattr(orch, "telecharger_documents_ao", _noop_docs)
+    monkeypatch.setattr(orch, "analyser_ao", analyser_lent)
+
+    init_db()
+    with Session(get_engine()) as s:
+        ao_id = _ao_brut(s)
+
+    async def deux():
+        with Session(get_engine()) as s1, Session(get_engine()) as s2:
+            return await asyncio.gather(
+                orch.traiter_pipeline(s1), orch.traiter_pipeline(s2)
+            )
+
+    r1, r2 = asyncio.run(deux())
+    assert appels == [ao_id]
+    assert r1.ao_analyses + r2.ao_analyses == 1
+
+
+def test_traiter_renvoie_409_si_pipeline_en_cours(monkeypatch):
+    import hermes.api.orchestration as api_orch
+    from hermes.main import app
+
+    monkeypatch.setattr(api_orch, "pipeline_en_cours", lambda: True)
+    init_db()
+    with TestClient(app) as client:
+        assert client.post("/orchestration/traiter").status_code == 409
+
+
+def test_ao_a_repondre_orphelin_repris(monkeypatch):
+    monkeypatch.setattr(orch, "telecharger_documents_ao", _noop_docs)
+    monkeypatch.setattr(orch, "analyser_ao", _fake_analyser(85.0))
+    monkeypatch.setattr(orch, "rediger_reponse", _fake_rediger)
+
+    init_db()
+    with Session(get_engine()) as s:
+        ao_id = _ao_brut(s)
+        ao = s.get(AppelOffre, ao_id)
+        ao.statut = StatutAO.A_REPONDRE  # process arrêté pendant la rédaction
+        s.add(ao)
+        s.add(
+            AnalyseKrinos(
+                appel_offre_id=ao_id,
+                resume="r",
+                score=90.0,
+                justification_score="—",
+                tags="[]",
+            )
+        )
+        s.commit()
+
+    with Session(get_engine()) as s:
+        rapport = asyncio.run(orch.traiter_pipeline(s))
+    assert rapport.ao_rediges == 1
+    with Session(get_engine()) as s:
+        assert s.get(AppelOffre, ao_id).statut == StatutAO.EN_REDACTION
+
+
+def test_synchroniser_jobs_ne_relance_pas_les_jobs_existants():
+    from hermes import onboarding
+    from hermes.agents.argos.scheduler import ArgosScheduler
+
+    init_db()
+    with Session(get_engine()) as s:
+        onboarding.marquer_termine(s)
+
+    async def scenario():
+        sched = ArgosScheduler()
+        sched.demarrer()
+        try:
+            jobs = sched._sched.get_jobs()
+            assert jobs, "au moins un job ARGOS attendu"
+            job = jobs[0]
+            futur = datetime.now(UTC) + timedelta(minutes=30)
+            sched._sched.modify_job(job.id, next_run_time=futur)
+            sched.synchroniser_jobs()
+            assert sched._sched.get_job(job.id).next_run_time == futur
+        finally:
+            sched.arreter()
+
+    asyncio.run(scenario())

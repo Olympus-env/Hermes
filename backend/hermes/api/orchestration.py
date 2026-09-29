@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
@@ -12,6 +12,7 @@ from hermes.agents.orchestrateur import (
     ConfigOrchestration,
     charger_config,
     enregistrer_config,
+    pipeline_en_cours,
     traiter_pipeline,
 )
 from hermes.db.session import get_session
@@ -60,7 +61,15 @@ async def traiter(
     session: SessionDep,
     limite: Annotated[int | None, Query(ge=1, le=50)] = None,
 ) -> RapportIO:
-    """Déclenche un passage du pipeline à la demande (sinon : scheduler ARGOS)."""
+    """Déclenche un passage du pipeline à la demande (sinon : scheduler ARGOS).
+
+    409 si un pipeline tourne déjà (job planifié ou autre appel) : on ne met
+    pas la requête HTTP en attente d'un cycle KRINOS/HERMION potentiellement long.
+    """
+    if pipeline_en_cours():
+        raise HTTPException(
+            status_code=409, detail="Un pipeline est déjà en cours d'exécution."
+        )
     rapport = await traiter_pipeline(session, limite=limite)
     return RapportIO(
         actif=rapport.actif,

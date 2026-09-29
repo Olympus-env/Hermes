@@ -21,7 +21,7 @@ from hermes.agents.argos.filtre import (
 )
 from hermes.agents.argos.registry import creer_scraper, scrapers_disponibles
 from hermes.agents.argos.runner import executer_collecte
-from hermes.agents.argos.scheduler import scheduler_global
+from hermes.agents.argos.scheduler import scheduler_global, verrou_portail
 from hermes.db.models import Portail, TypePortail
 from hermes.db.session import get_session
 from hermes.securite.credentials import chiffrer_credentials
@@ -169,7 +169,8 @@ async def collecter_tous(
         if portail_config is not None and not portail_config.actif:
             continue
         scraper = creer_scraper(nom)
-        resultat = await executer_collecte(scraper, session, limite=limite)
+        async with verrou_portail(nom):
+            resultat = await executer_collecte(scraper, session, limite=limite)
         resultats.append(
             CollecteResponse(
                 portail=resultat.portail,
@@ -205,7 +206,8 @@ async def collecter(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    resultat = await executer_collecte(scraper, session, limite=limite)
+    async with verrou_portail(portail):
+        resultat = await executer_collecte(scraper, session, limite=limite)
     return CollecteResponse(
         portail=resultat.portail,
         ao_trouves=resultat.ao_trouves,

@@ -6,6 +6,9 @@ Le scheduler tourne en arrière-plan dans le process FastAPI.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -19,6 +22,18 @@ from hermes.agents.argos.registry import creer_scraper, scrapers_disponibles
 from hermes.agents.argos.runner import executer_collecte
 from hermes.db.models import Portail
 from hermes.db.session import get_engine
+
+# Verrou par portail : une collecte manuelle ne doit pas chevaucher le job
+# planifié du même portail (doublons, double pagination). Elle attend son tour.
+_VERROUS_PORTAILS: dict[str, asyncio.Lock] = {}
+
+
+@asynccontextmanager
+async def verrou_portail(nom_portail: str) -> AsyncIterator[None]:
+    """Sérialise les collectes d'un même portail (planifiées ou manuelles)."""
+    verrou = _VERROUS_PORTAILS.setdefault(nom_portail, asyncio.Lock())
+    async with verrou:
+        yield
 
 
 class ArgosScheduler:
@@ -72,12 +87,23 @@ class ArgosScheduler:
                 continue
             job_id = f"argos.{portail.nom}"
             ids_a_garder.add(job_id)
+            minutes = max(5, portail.frequence_minutes)
+            existant = self._sched.get_job(job_id)
+            if existant is not None:
+                # Job déjà planifié : on ne relance PAS de collecte immédiate
+                # (un PUT portail / sync ne doit pas déclencher de cycle). Seule
+                # une fréquence modifiée reprogramme le job.
+                if _intervalle_minutes(existant) != minutes:
+                    self._sched.reschedule_job(
+                        job_id, trigger=IntervalTrigger(minutes=minutes)
+                    )
+                continue
             self._sched.add_job(
                 func=_executer_job,
                 kwargs={"nom_portail": portail.nom},
-                trigger=IntervalTrigger(minutes=max(5, portail.frequence_minutes)),
+                trigger=IntervalTrigger(minutes=minutes),
                 id=job_id,
-                replace_existing=True,
+                # Première collecte immédiate uniquement à la création du job.
                 next_run_time=datetime.now(UTC),
                 # Une seule exécution simultanée par portail, et on fusionne les
                 # déclenchements ratés au lieu de les rejouer en rafale : évite
@@ -108,6 +134,11 @@ class ArgosScheduler:
         }
 
 
+def _intervalle_minutes(job: Any) -> int | None:
+    intervalle = getattr(job.trigger, "interval", None)
+    return None if intervalle is None else int(intervalle.total_seconds() // 60)
+
+
 async def _executer_job(nom_portail: str) -> None:
     """Job APScheduler : collecte puis pipeline autonome (KRINOS→HERMION).
 
@@ -117,9 +148,10 @@ async def _executer_job(nom_portail: str) -> None:
     scraper = creer_scraper(nom_portail)
     with Session(get_engine()) as session:
         try:
-            await executer_collecte(scraper, session)
+            async with verrou_portail(nom_portail):
+                await executer_collecte(scraper, session)
         except Exception:  # noqa: BLE001
-            logger.exception("Échec job ARGOS %s", nom_portail)
+            logger.exception("Échec job ARGOS {}", nom_portail)
         # Le pipeline est volontairement hors du try ci-dessus : il doit
         # tourner même si une collecte a partiellement échoué (d'autres AO
         # peuvent être en attente). `traiter_pipeline` ne propage rien.
@@ -128,7 +160,7 @@ async def _executer_job(nom_portail: str) -> None:
 
             await traiter_pipeline(session)
         except Exception:  # noqa: BLE001
-            logger.exception("Échec pipeline autonome après collecte %s", nom_portail)
+            logger.exception("Échec pipeline autonome après collecte {}", nom_portail)
 
 
 scheduler_global = ArgosScheduler()
