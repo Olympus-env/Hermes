@@ -52,6 +52,7 @@ def _migrer_colonnes(conn) -> None:
         # (table, colonne, definition SQL)
         ("analyses_krinos", "scores_dimensions", "TEXT"),
         ("appels_offre", "liens_documents", "TEXT"),
+        ("analyses_krinos", "degradee", "BOOLEAN NOT NULL DEFAULT 0"),
     ]
     for table, colonne, definition in migrations:
         cols = {

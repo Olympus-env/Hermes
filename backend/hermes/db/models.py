@@ -188,6 +188,10 @@ class AnalyseKrinos(SQLModel, table=True):
     # si l'utilisateur change la pondération sans relancer PYTHIA.
     scores_dimensions: Optional[str] = Field(default=None, sa_column=Column(Text))
 
+    # Vrai si PYTHIA n'a pas fourni de sortie exploitable et que KRINOS a
+    # produit une analyse locale de secours (heuristique, pas une vraie analyse).
+    degradee: bool = Field(default=False)
+
     duree_analyse_ms: Optional[int] = None
     modele_llm: Optional[str] = None  # ex: qwen3:8b
 

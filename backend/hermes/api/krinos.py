@@ -17,7 +17,7 @@ from hermes.agents.krinos.downloader import (
 from hermes.agents.krinos.extractor import (
     ErreurExtractionDocument,
     extraire_document,
-    extraire_documents_appel_offre,
+    extraire_documents_appel_offre_async,
 )
 from hermes.agents.krinos.ponderation import (
     Ponderation,
@@ -86,6 +86,8 @@ class AnalyseRead(BaseModel):
     score: float
     justification_score: str
     scores_dimensions: dict[str, float] = Field(default_factory=dict)
+    # Vrai : analyse locale de secours (PYTHIA a échoué), pas une vraie analyse.
+    degradee: bool = False
     tags: list[str]
     criteres_extraits: str | None
     duree_analyse_ms: int | None
@@ -254,7 +256,9 @@ async def analyser_appel_offre(
     if ao is None:
         raise HTTPException(status_code=404, detail="Appel d'offre introuvable")
 
-    rapport_extraction = extraire_documents_appel_offre(session, ao, best_effort=True)
+    rapport_extraction = await extraire_documents_appel_offre_async(
+        session, ao, best_effort=True
+    )
     if rapport_extraction.documents_traites:
         _journaliser(
             session,
@@ -382,6 +386,7 @@ def _analyse_read(analyse: AnalyseKrinos) -> AnalyseRead:
         score=analyse.score,
         justification_score=analyse.justification_score,
         scores_dimensions=_scores_dimensions(analyse),
+        degradee=analyse.degradee,
         tags=tags,
         criteres_extraits=analyse.criteres_extraits,
         duree_analyse_ms=analyse.duree_analyse_ms,

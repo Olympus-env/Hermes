@@ -202,7 +202,9 @@ def refiltrer_existants(session: Session, filtre: FiltreVeille) -> ResultatRefil
         if filtre.actif and not filtre.correspond_champs(ao.titre, ao.objet, ao.emetteur):
             continue
         a_analyse = session.exec(
-            select(AnalyseKrinos.id).where(AnalyseKrinos.appel_offre_id == ao.id)
+            select(AnalyseKrinos.id)
+            .where(AnalyseKrinos.appel_offre_id == ao.id)
+            .where(AnalyseKrinos.degradee == False)  # noqa: E712
         ).first()
         ao.statut = StatutAO.ANALYSE if a_analyse is not None else StatutAO.BRUT
         ao.maj_le = datetime.now(UTC)

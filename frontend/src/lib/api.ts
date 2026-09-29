@@ -175,6 +175,8 @@ export type AnalyseKrinos = {
   score: number;
   justification_score: string;
   scores_dimensions: Partial<Record<keyof Omit<PonderationKrinos, "total">, number>>;
+  /** Analyse locale de secours (PYTHIA a échoué) : résumé et score heuristiques. */
+  degradee?: boolean;
   tags: string[];
   criteres_extraits: string | null;
   duree_analyse_ms: number | null;
