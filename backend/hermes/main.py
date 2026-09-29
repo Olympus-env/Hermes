@@ -12,9 +12,11 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlmodel import Session
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from hermes import __version__, onboarding
 from hermes.agents.argos.scheduler import scheduler_global
@@ -84,19 +86,44 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Ordre des middlewares : le dernier ajouté est le plus externe. CORS est donc
+# outermost (il répond aux preflights OPTIONS), puis le contrôle du Host, puis
+# la protection CSRF.
+
+# CSRF : un POST sans corps ou en text/plain est une « simple request » que
+# n'importe quel site peut émettre vers 127.0.0.1. Exiger un en-tête
+# personnalisé sur toute méthode non sûre force un preflight CORS, que
+# l'allowlist d'origines ci-dessous refuse aux sites tiers.
+ENTETE_CLIENT = "X-Hermes-Client"
+_METHODES_SURES = {"GET", "HEAD", "OPTIONS"}
+
+
+@app.middleware("http")
+async def exiger_entete_client(request: Request, call_next):
+    if request.method not in _METHODES_SURES and not request.headers.get(ENTETE_CLIENT):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": f"En-tête {ENTETE_CLIENT} requis (protection CSRF)"},
+        )
+    return await call_next(request)
+
+
+# DNS rebinding : une page rebindée sur 127.0.0.1 envoie un Host étranger.
+# On refuse (400) tout Host hors allowlist (`HERMES_HOTES_AUTORISES`).
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.hotes_autorises)
+
 # Tauri sert le frontend depuis tauri://localhost ou http(s)://tauri.localhost
 # selon le mode WebView, et Vite depuis localhost/127.0.0.1 en dev.
-# On reste permissif uniquement sur localhost — aucun risque puisque le backend
-# n'écoute que sur 127.0.0.1.
+# Origines limitées à localhost ; pas de credentials (aucun cookie/session).
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=(
         r"^(http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?|"
         r"tauri://localhost|https?://tauri\.localhost)$"
     ),
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Accept", ENTETE_CLIENT],
 )
 
 app.include_router(health.router)

@@ -28,6 +28,8 @@ class Settings(BaseSettings):
 
     host: str = "127.0.0.1"
     port: int = 8000
+    # Hôtes acceptés dans l'en-tête Host (anti DNS rebinding). Env : liste JSON.
+    hotes_autorises: list[str] = Field(default_factory=lambda: ["127.0.0.1", "localhost"])
     debug: bool = False
     # En mode debug le scheduler ne démarre pas automatiquement
     # (évite des collectes répétées pendant le hot-reload).

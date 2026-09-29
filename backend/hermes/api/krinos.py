@@ -71,6 +71,8 @@ class TelechargementDocumentsResponse(BaseModel):
     appel_offre_id: int
     documents: list[DocumentRead]
     nouveaux: int
+    # Échecs partiels (best-effort) : URLs en erreur, les autres sont téléchargées.
+    erreurs: list[str] = Field(default_factory=list)
 
 
 class AnalyseRequest(BaseModel):
@@ -118,11 +120,13 @@ async def telecharger_documents(
     if ao is None:
         raise HTTPException(status_code=404, detail="Appel d'offre introuvable")
 
+    erreurs: list[str] = []
     try:
         resultats = await telecharger_documents_ao(
             session,
             ao,
             urls=payload.urls if payload else None,
+            erreurs=erreurs,
         )
     except ErreurTelechargementDocument as exc:
         _journaliser(
@@ -133,6 +137,13 @@ async def telecharger_documents(
         )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    for erreur in erreurs:
+        _journaliser(
+            session,
+            niveau=NiveauLog.WARNING,
+            message=f"Téléchargement document AO {ao_id} en échec : {erreur}",
+            appel_offre_id=ao_id,
+        )
     for resultat in resultats:
         _journaliser(
             session,
@@ -148,6 +159,7 @@ async def telecharger_documents(
         appel_offre_id=ao_id,
         documents=[_document_read(r.document) for r in resultats],
         nouveaux=sum(1 for r in resultats if r.nouveau),
+        erreurs=erreurs,
     )
 
 

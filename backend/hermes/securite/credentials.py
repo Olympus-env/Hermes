@@ -72,11 +72,15 @@ def _charger_cle_maitre() -> bytes:
 
 def _charger_ou_generer_cle_fichier(path: Path) -> bytes:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        return _normaliser_cle(path.read_text(encoding="utf-8").strip())
-
     key = os.urandom(_KEY_SIZE)
-    path.write_text(base64.urlsafe_b64encode(key).decode("ascii"), encoding="utf-8")
+    try:
+        # Création atomique (O_EXCL) en 0o600 : pas de course entre deux
+        # processus, jamais de fenêtre où la clé serait lisible par d'autres.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return _normaliser_cle(path.read_text(encoding="utf-8").strip())
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(base64.urlsafe_b64encode(key).decode("ascii"))
     return key
 
 
