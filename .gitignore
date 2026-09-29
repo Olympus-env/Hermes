@@ -31,6 +31,9 @@ frontend/vite.config.js
 
 # --- Tauri ---
 src-tauri/target/
+
+# --- Launcher .NET (binaire non signé : artefact de release, pas versionné) ---
+Lancer HERMES.exe
 frontend/src-tauri/gen/
 
 # --- IDE ---

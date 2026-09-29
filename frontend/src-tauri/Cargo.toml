@@ -17,6 +17,10 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Job Object Windows « kill-on-close » : les enfants (backend, Ollama) meurent avec hermes.exe.
+[target.'cfg(windows)'.dependencies]
+win32job = "2"
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

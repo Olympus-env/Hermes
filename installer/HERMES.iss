@@ -39,7 +39,7 @@ WizardImageStretch=no
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 CloseApplications=force
-CloseApplicationsFilter=*.exe
+CloseApplicationsFilter=hermes.exe,backend.exe
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
@@ -67,7 +67,9 @@ Filename: "{tmp}\OllamaSetup.exe"; Parameters: "/SILENT /CLOSEAPPLICATIONS"; Sta
 Filename: "{app}\{#MyAppExeName}"; Description: "Lancer {#MyAppName} maintenant"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; À la désinstallation, on tue les processus HERMES en cours.
+; À la désinstallation, on tue les processus HERMES en cours. `/T` emporte toute
+; l'arborescence : l'Ollama lancé par hermes.exe (son enfant) part avec lui. On ne
+; tue volontairement PAS `ollama.exe` globalement : il peut appartenir à l'utilisateur.
 Filename: "taskkill.exe"; Parameters: "/F /IM hermes.exe /T"; Flags: runhidden; RunOnceId: "kill_hermes"
 Filename: "taskkill.exe"; Parameters: "/F /IM backend.exe /T"; Flags: runhidden; RunOnceId: "kill_backend"
 

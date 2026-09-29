@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$deps = "D:\HermesDeps"
+$deps = if ($env:HERMES_DEPS_DIR) { $env:HERMES_DEPS_DIR } else { "D:\HermesDeps" }
 $ollama = Join-Path $deps "ollama\bin\ollama.exe"
 
 if (-not (Test-Path -LiteralPath $ollama)) {

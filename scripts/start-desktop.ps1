@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $frontend = Join-Path $root "frontend"
-$deps = "D:\HermesDeps"
+$deps = if ($env:HERMES_DEPS_DIR) { $env:HERMES_DEPS_DIR } else { "D:\HermesDeps" }
 $tooling = Join-Path $deps "tooling"
 $cache = Join-Path $deps "install-cache"
 

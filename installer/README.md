@@ -52,6 +52,10 @@ embarqué, ~120 Mo sans).
 .\scripts\build-installer.ps1 -SkipFrontend -SkipBackend
 ```
 
+`build-installer.ps1` fixe `CARGO_TARGET_DIR` sous `$env:HERMES_DEPS_DIR`
+(défaut `D:\HermesDeps`) : `hermes.exe` sort dans
+`<deps>\tooling\cargo-target\release\`.
+
 ## Structure
 
 ```

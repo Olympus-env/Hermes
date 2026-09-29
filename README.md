@@ -111,8 +111,7 @@ hermes/
 │   └── README.md
 ├── docs/
 ├── scripts/                 # scripts dev + build
-├── tools/HermesLauncher/    # launcher .NET historique (optionnel)
-└── Lancer HERMES.exe        # launcher historique (obsolète si hermes.exe en release)
+└── tools/HermesLauncher/    # launcher .NET historique (optionnel, sources seules)
 ```
 
 ---
@@ -140,10 +139,15 @@ démarrés par le script) sont stoppés proprement.
 > + backend au démarrage et les tue à la fermeture de la fenêtre. Plus besoin
 > du launcher .NET — c'est un simple double-clic sur l'icône HERMES.
 >
-> Le launcher `Lancer HERMES.exe` historique reste fonctionnel pour le moment ;
-> son code source (`tools/HermesLauncher/`) a été mis à jour avec un Job
-> Object Windows pour kill propre, recompilable via `dotnet build -c Release`
-> si tu installes le .NET SDK 8.
+> Le launcher `Lancer HERMES.exe` n'est plus versionné (binaire non signé, ignoré
+> par git). Pour le reconstruire depuis `tools/HermesLauncher/` (.NET SDK 8) :
+> `dotnet publish tools/HermesLauncher -c Release`, puis copier l'exécutable
+> `Lancer HERMES.exe` à la racine du dépôt (ou le joindre à une release).
+>
+> **Emplacement des dépendances** : par défaut `D:\HermesDeps`. Sur une autre
+> machine, définir `$env:HERMES_DEPS_DIR` (ex. `C:\HermesDeps`) avant de lancer
+> les scripts `scripts\*.ps1` ; ils en dérivent `CARGO_TARGET_DIR`, les modèles
+> Ollama, etc. Il n'y a plus de `.cargo/config.toml` figé sur `D:`.
 
 ### En cas de processus zombies
 
