@@ -15,6 +15,7 @@ from hermes.agents.hermion.workflow import (
     enregistrer_workflow,
 )
 from hermes.agents.hermion.writer import (
+    ErreurGenerationEnCours,
     ErreurRedactionHermion,
     ProfilUtilisateur,
     ResultatRedaction,
@@ -23,6 +24,7 @@ from hermes.agents.hermion.writer import (
 
 __all__ = [
     "ErreurExportPdf",
+    "ErreurGenerationEnCours",
     "ErreurRedactionHermion",
     "ProfilUtilisateur",
     "ResultatRedaction",

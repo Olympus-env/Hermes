@@ -53,6 +53,15 @@ SYSTEM_PROMPT_SECTION = (
 NB_SECTIONS_DEFAUT = (3, 6)  # min, max sections imposées au LLM
 
 
+class ErreurGenerationEnCours(RuntimeError):
+    """Une rédaction HERMION est déjà en cours pour cet AO (→ HTTP 409)."""
+
+
+# AO dont une rédaction est en cours. Un seul event loop : le test-et-ajout est
+# atomique tant qu'aucun `await` ne s'intercale.
+_generations_en_cours: set[int] = set()
+
+
 class ErreurRedactionHermion(RuntimeError):
     """Erreur contrôlée lors d'une rédaction HERMION."""
 
@@ -103,6 +112,11 @@ async def rediger_reponse(
         raise ErreurRedactionHermion("Appel d'offre non persisté")
 
     ao_id = appel_offre.id
+    if ao_id in _generations_en_cours:
+        raise ErreurGenerationEnCours(
+            f"Une rédaction est déjà en cours pour l'AO {ao_id}"
+        )
+    _generations_en_cours.add(ao_id)
     progression.demarrer(ao_id)
     try:
         return await _rediger_reponse_suivie(
@@ -114,6 +128,8 @@ async def rediger_reponse(
     except Exception as exc:  # noqa: BLE001
         progression.echec(ao_id, f"Erreur inattendue : {exc}")
         raise
+    finally:
+        _generations_en_cours.discard(ao_id)
 
 
 async def _rediger_reponse_suivie(

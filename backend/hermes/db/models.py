@@ -138,7 +138,7 @@ class AppelOffre(SQLModel, table=True):
     statut: StatutAO = Field(default=StatutAO.BRUT, index=True)
 
     cree_le: datetime = Field(default_factory=_utcnow, index=True)
-    maj_le: datetime = Field(default_factory=_utcnow)
+    maj_le: datetime = Field(default_factory=_utcnow, sa_column_kwargs={"onupdate": _utcnow})
 
     portail: Optional[Portail] = Relationship(back_populates="appels_offre")
     documents: List["Document"] = Relationship(back_populates="appel_offre")
@@ -200,6 +200,10 @@ class ReponseHermion(SQLModel, table=True):
     """Versions de réponse rédigées par HERMION pour un AO."""
 
     __tablename__ = "reponses_hermion"
+    # Une seule version n par AO : garde-fou contre deux /rediger concurrents.
+    __table_args__ = (
+        Index("uq_reponses_hermion_ao_version", "appel_offre_id", "version", unique=True),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     appel_offre_id: int = Field(foreign_key="appels_offre.id", index=True)
@@ -220,7 +224,7 @@ class ReponseHermion(SQLModel, table=True):
     chemin_export: Optional[str] = None  # rempli après export PDF
 
     cree_le: datetime = Field(default_factory=_utcnow, index=True)
-    maj_le: datetime = Field(default_factory=_utcnow)
+    maj_le: datetime = Field(default_factory=_utcnow, sa_column_kwargs={"onupdate": _utcnow})
 
     appel_offre: Optional[AppelOffre] = Relationship(back_populates="reponses")
 

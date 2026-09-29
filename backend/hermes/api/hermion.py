@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from hermes.agents import pythia
 from hermes.agents.hermion import (
     ErreurExportPdf,
+    ErreurGenerationEnCours,
     ErreurRedactionHermion,
     ProfilUtilisateur,
     SectionWorkflow,
@@ -24,6 +24,7 @@ from hermes.agents.hermion import (
     progression,
     rediger_reponse,
 )
+from hermes.api._dates import DatetimeUTC
 from hermes.config import settings
 from hermes.db.models import AppelOffre, ReponseHermion, StatutAO, StatutReponse
 from hermes.db.session import get_session
@@ -32,17 +33,22 @@ router = APIRouter(prefix="/hermion", tags=["hermion"])
 SessionDep = Annotated[Session, Depends(get_session)]
 
 
+_MAX_CONSIGNES = 10_000
+_MAX_CONTENU = 200_000
+_MAX_COMMENTAIRE = 5_000
+
+
 class ProfilRequest(BaseModel):
-    prenom: str = ""
-    nom: str = ""
-    email: str = ""
-    entreprise: str = ""
-    activite: str = ""
+    prenom: str = Field(default="", max_length=200)
+    nom: str = Field(default="", max_length=200)
+    email: str = Field(default="", max_length=320)
+    entreprise: str = Field(default="", max_length=300)
+    activite: str = Field(default="", max_length=2_000)
 
 
 class RedactionRequest(BaseModel):
     profil: ProfilRequest | None = None
-    consignes: str | None = None
+    consignes: str | None = Field(default=None, max_length=_MAX_CONSIGNES)
 
 
 class ReponseRead(BaseModel):
@@ -56,8 +62,8 @@ class ReponseRead(BaseModel):
     workflow_utilise: str | None
     commentaire_humain: str | None
     chemin_export: str | None
-    cree_le: datetime
-    maj_le: datetime
+    cree_le: DatetimeUTC
+    maj_le: DatetimeUTC
 
 
 class ReponseSummary(BaseModel):
@@ -67,7 +73,7 @@ class ReponseSummary(BaseModel):
     statut: StatutReponse
     longueur_mots: int | None
     duree_generation_ms: int | None
-    cree_le: datetime
+    cree_le: DatetimeUTC
 
 
 class ReponseAvecAO(BaseModel):
@@ -81,8 +87,8 @@ class ReponseAvecAO(BaseModel):
     statut: StatutReponse
     longueur_mots: int | None
     duree_generation_ms: int | None
-    cree_le: datetime
-    maj_le: datetime
+    cree_le: DatetimeUTC
+    maj_le: DatetimeUTC
 
 
 class RedactionResponse(BaseModel):
@@ -107,17 +113,17 @@ class ProgressionRead(BaseModel):
 
 class StatutReponseUpdate(BaseModel):
     statut: StatutReponse
-    commentaire_humain: str | None = None
+    commentaire_humain: str | None = Field(default=None, max_length=_MAX_COMMENTAIRE)
 
 
 class ContenuUpdate(BaseModel):
-    contenu: str
-    commentaire_humain: str | None = None
+    contenu: str = Field(max_length=_MAX_CONTENU)
+    commentaire_humain: str | None = Field(default=None, max_length=_MAX_COMMENTAIRE)
 
 
 class SectionWorkflowModel(BaseModel):
-    titre: str
-    brief: str = ""
+    titre: str = Field(max_length=300)
+    brief: str = Field(default="", max_length=_MAX_CONSIGNES)
     longueur_cible: int | None = None
 
 
@@ -129,14 +135,14 @@ class WorkflowRead(BaseModel):
 
 
 class WorkflowUpdate(BaseModel):
-    consignes_globales: str = ""
-    sections: list[SectionWorkflowModel] = []
-    source: str = "manuel"
+    consignes_globales: str = Field(default="", max_length=_MAX_CONSIGNES)
+    sections: list[SectionWorkflowModel] = Field(default=[], max_length=50)
+    source: str = Field(default="manuel", max_length=100)
 
 
 class WorkflowDeriverRequest(BaseModel):
     mode: Literal["workflow", "exemples"]
-    contenu: str
+    contenu: str = Field(max_length=_MAX_CONTENU)
 
 
 _TRANSITIONS_AUTORISEES: dict[StatutReponse, set[StatutReponse]] = {
@@ -151,9 +157,11 @@ _TRANSITIONS_AUTORISEES: dict[StatutReponse, set[StatutReponse]] = {
         StatutReponse.VALIDEE,
         StatutReponse.REJETEE,
     },
-    StatutReponse.VALIDEE: {StatutReponse.EXPORTEE, StatutReponse.A_MODIFIER},
+    # EXPORTEE n'est atteint que par POST /exporter (génération du PDF), jamais
+    # par PATCH /statut. Une réponse exportée peut être rouverte pour correction.
+    StatutReponse.VALIDEE: {StatutReponse.A_MODIFIER},
     StatutReponse.REJETEE: set(),
-    StatutReponse.EXPORTEE: set(),
+    StatutReponse.EXPORTEE: {StatutReponse.A_MODIFIER},
 }
 
 
@@ -197,6 +205,8 @@ async def rediger(
             profil=profil,
             consignes_supplementaires=payload.consignes if payload else None,
         )
+    except ErreurGenerationEnCours as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ErreurRedactionHermion as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -350,6 +360,8 @@ def modifier_statut(
     reponse.statut = payload.statut
     if payload.commentaire_humain is not None:
         reponse.commentaire_humain = payload.commentaire_humain
+    if ancien == StatutReponse.EXPORTEE and payload.statut != ancien:
+        reponse.chemin_export = None  # le PDF existant ne reflète plus la réponse
     session.add(reponse)
 
     _synchroniser_statut_ao(session, reponse)
@@ -470,7 +482,8 @@ def _synchroniser_statut_ao(session: Session, reponse: ReponseHermion) -> None:
         return
 
     if reponse.statut == StatutReponse.VALIDEE:
-        if ao.statut != StatutAO.REPONDU:
+        # Ne pas ressusciter un AO écarté (rejeté / expiré) à la validation.
+        if ao.statut in {StatutAO.A_REPONDRE, StatutAO.EN_REDACTION, StatutAO.ANALYSE}:
             ao.statut = StatutAO.REPONDU
             session.add(ao)
         return
