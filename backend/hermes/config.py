@@ -18,6 +18,15 @@ def _est_url_loopback(url: str) -> bool:
     }
 
 
+def url_jev_autorisee(url: str) -> bool:
+    """La clé Bearer Jev ne doit partir que vers api.typesafe.ai (https) ; le
+    loopback reste permis pour les tests avec un faux serveur."""
+    parsed = urlparse(url)
+    if parsed.scheme == "https" and parsed.hostname == "api.typesafe.ai":
+        return True
+    return _est_url_loopback(url)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -125,6 +134,8 @@ class Settings(BaseSettings):
     def model_post_init(self, __context: object) -> None:
         self.host = "127.0.0.1"
         self.pythia_modele_explicite = "pythia_modele" in self.model_fields_set
+        if not url_jev_autorisee(self.jev_url):
+            self.jev_url = "https://api.typesafe.ai/v1/systemone"
         if not _est_url_loopback(self.ollama_base_url):
             self.ollama_base_url = "http://127.0.0.1:11434"
 

@@ -23,7 +23,11 @@ from sqlmodel import Session, select
 
 from hermes.agents import pythia
 from hermes.agents.krinos import jev
-from hermes.agents.krinos.garde_fous import detecter_injection, verifier_coherence
+from hermes.agents.krinos.garde_fous import (
+    detecter_injection,
+    passages_suspects,
+    verifier_coherence,
+)
 from hermes.agents.krinos.ponderation import (
     Ponderation,
     calculer_score_final,
@@ -36,7 +40,9 @@ from hermes.db.models import (
     Document,
     LogAgent,
     NiveauLog,
+    Portail,
     StatutAO,
+    TypePortail,
 )
 
 SYSTEM_PROMPT = (
@@ -238,7 +244,21 @@ async def _consulter_jev(
     """Second avis Jev si activé ; toute panne est transparente (None)."""
     if not jev.est_actif(session):
         return None
-    documents = contexte["documents"]
+    # Données privées : un portail non public (documents téléchargés derrière
+    # authentification) ne part JAMAIS chez Jev — analyse locale seule.
+    portail = session.get(Portail, appel_offre.portail_id) if appel_offre.portail_id else None
+    if portail is not None and portail.type != TypePortail.PUBLIC:
+        logger.info("KRINOS : Jev non appelé pour AO {} (portail non public)", appel_offre.id)
+        _journaliser(
+            session,
+            niveau=NiveauLog.INFO,
+            message=(
+                f"Jev non appelé pour AO {appel_offre.id} : portail non public "
+                "(analyse locale seule)"
+            ),
+            appel_offre_id=appel_offre.id,  # type: ignore[arg-type]
+        )
+        return None
     state = jev.construire_state(
         titre=contexte["titre"],
         objet=contexte["objet"],
@@ -247,7 +267,8 @@ async def _consulter_jev(
         budget=f"{contexte['budget']} {contexte['devise']}" if contexte["budget"] else "",
         date_limite=contexte["date_limite"],
         profil_metier=_profil_metier(session),
-        extrait_documents="" if documents.startswith("(aucun") else documents,
+        extrait_documents=contexte["texte_documents"],
+        passages_suspects=passages_suspects(contexte["texte_documents"]),
     )
     try:
         return await jev.juger(session, state, ponderation)
@@ -448,6 +469,7 @@ def _construire_contexte(session: Session, appel_offre: AppelOffre) -> dict[str,
 
     return {
         "corpus_controle": corpus_controle,
+        "texte_documents": "\n".join(c for _, c in contenus),
         "titre": appel_offre.titre,
         "objet": appel_offre.objet or "",
         "emetteur": appel_offre.emetteur or "",
