@@ -37,6 +37,7 @@ from hermes.agents.argos.base import (
     parse_iso_date,
     pays_valide,
 )
+from hermes.agents.argos.capabilities import TYPES_AVIS_HORS_APPEL_TED
 from hermes.db.models import (
     AnalyseKrinos,
     AppelOffre,
@@ -170,6 +171,15 @@ class ResultatRefiltrage:
 _STATUTS_REFILTRABLES = (StatutAO.BRUT, StatutAO.ANALYSE)
 
 
+def _est_avis_ted_hors_appel(ao: AppelOffre) -> bool:
+    """Vrai pour un AO dont `type_marche` est un type d'avis TED non-appel.
+
+    Les codes eForms (`pin-only`, `qu-sy`…) ne collisionnent pas avec les
+    valeurs BOAMP, donc pas besoin de charger le portail.
+    """
+    return ao.type_marche in TYPES_AVIS_HORS_APPEL_TED
+
+
 def refiltrer_existants(session: Session, filtre: FiltreVeille) -> ResultatRefiltrage:
     """Réapplique le filtre métier courant aux AO déjà présents (issue #6).
 
@@ -199,6 +209,10 @@ def refiltrer_existants(session: Session, filtre: FiltreVeille) -> ResultatRefil
         select(AppelOffre).where(AppelOffre.statut == StatutAO.HORS_FILTRE)
     ).all()
     for ao in hors_filtre:
+        # Avis TED non-appel (issue #29) : le filtre mots-clés ne les réintègre
+        # pas ; seul un geste humain (« Marquer à répondre ») le peut.
+        if _est_avis_ted_hors_appel(ao):
+            continue
         if filtre.actif and not filtre.correspond_champs(ao.titre, ao.objet, ao.emetteur):
             continue
         a_analyse = session.exec(

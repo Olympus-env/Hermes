@@ -43,6 +43,7 @@ def init_db() -> None:
         _migrer_colonnes(conn)
         _dedoublonner_appels_offre(conn)
         _migrer_versions_uniques(conn)
+        _marquer_avis_ted_hors_appel(conn)
         conn.commit()
 
 
@@ -119,6 +120,30 @@ def _dedoublonner_appels_offre(conn) -> None:
     conn.exec_driver_sql(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_appels_offre_portail_reference "
         "ON appels_offre (portail_id, reference_externe)"
+    )
+
+
+def _marquer_avis_ted_hors_appel(conn) -> None:
+    """Passe en `hors_filtre` les AO TED ingérés qui ne sont pas des appels.
+
+    Avant la liste d'inclusion, des avis `pin-only`, `qu-sy`, `compl`… étaient
+    ingérés. On les *marque* (jamais supprimés, réintégrables via « Marquer à
+    répondre ») ; seuls les statuts précoces (brut/analyse) sont touchés : un AO
+    déjà exploité (à répondre, en rédaction, répondu, rejeté, expiré) reste tel
+    quel. Idempotent.
+    """
+    # Import local : `hermes.agents.argos` importe cette session (cycle sinon).
+    from hermes.agents.argos.capabilities import TYPES_AVIS_HORS_APPEL_TED
+
+    # SQLAlchemy persiste les Enum par *nom* de membre (BRUT, HORS_FILTRE…).
+    types = sorted(TYPES_AVIS_HORS_APPEL_TED)
+    marques = ", ".join("?" for _ in types)
+    conn.exec_driver_sql(
+        "UPDATE appels_offre SET statut = 'HORS_FILTRE' "
+        "WHERE statut IN ('BRUT', 'ANALYSE') "
+        f"AND type_marche IN ({marques}) "
+        "AND portail_id IN (SELECT id FROM portails WHERE nom = 'ted')",
+        tuple(types),
     )
 
 

@@ -43,7 +43,7 @@ from hermes.agents.argos.base import (
     borne_incrementale,
     pays_valide,
 )
-from hermes.agents.argos.capabilities import CHAMPS_TED, PROFIL_TED
+from hermes.agents.argos.capabilities import CHAMPS_TED, PROFIL_TED, TYPES_AVIS_APPEL_TED
 from hermes.agents.argos.reseau import requeter_avec_retry
 
 _UA = (
@@ -63,10 +63,10 @@ _LANGUES_PREFEREES = ("fra", "fr", "FRA", "FR", "eng", "en", "ENG", "EN")
 # côté `_date_limite`.
 _FIELDS = list(CHAMPS_TED)
 
-# Avis d'attribution/résultat (`can-*`, `veat`) : marchés déjà attribués, à ne
-# pas ingérer comme appels d'offre. Types vérifiés en live (2026-09-29) :
-# `cn-standard` (appel à concurrence) vs `can-standard`/`can-social` (résultat).
-_TYPES_AVIS_ATTRIBUTION = ("can-standard", "can-social", "can-desg", "can-modif", "veat")
+# Seuls les appels à concurrence (`cn-*`) sont ingérés : liste d'inclusion
+# (codelist eForms `notice-type`, cf. `capabilities.TYPES_AVIS_APPEL_TED`).
+# Syntaxe `IN (a b c)` validée en live le 2026-09-29.
+_TYPES_AVIS_APPEL = TYPES_AVIS_APPEL_TED
 
 # Tri appliqué à toutes les requêtes (fait partie de la query expert eForms).
 _TRI = "SORT BY publication-date DESC"
@@ -212,7 +212,7 @@ def _construire_query(
     pays = tuple(p for p in criteres.pays if pays_valide(p)) or ("FRA",)
     clauses = [
         f"place-of-performance IN ({', '.join(pays)})",
-        f"notice-type NOT IN ({' '.join(_TYPES_AVIS_ATTRIBUTION)})",
+        f"notice-type IN ({' '.join(_TYPES_AVIS_APPEL)})",
     ]
 
     termes = [_echapper(k) for k in inclus if _echapper(k)]
@@ -259,11 +259,14 @@ def _echapper(terme: str | None) -> str:
 
 
 def _est_valide(notice: dict[str, Any]) -> bool:
-    """Filtre les notices inexploitables (ni titre ni acheteur) ou d'attribution.
+    """Filtre les notices inexploitables (ni titre ni acheteur) ou hors appel.
 
-    Garde-fou client de la restriction serveur sur `notice-type`.
+    Garde-fou client de la restriction serveur sur `notice-type` : un type
+    renseigné hors de la liste d'inclusion est rejeté ; un type absent de la
+    réponse est toléré (parseur défensif).
     """
-    if _texte_simple(notice.get("notice-type")) in _TYPES_AVIS_ATTRIBUTION:
+    type_avis = _texte_simple(notice.get("notice-type"))
+    if type_avis is not None and type_avis not in _TYPES_AVIS_APPEL:
         return False
     return bool(
         _texte_multi(notice.get("notice-title"))
