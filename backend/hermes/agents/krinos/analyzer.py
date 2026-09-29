@@ -17,10 +17,17 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from loguru import logger
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from hermes.agents import pythia
+from hermes.agents.krinos import jev
+from hermes.agents.krinos.garde_fous import (
+    detecter_injection,
+    passages_suspects,
+    verifier_coherence,
+)
 from hermes.agents.krinos.ponderation import (
     Ponderation,
     calculer_score_final,
@@ -33,7 +40,9 @@ from hermes.db.models import (
     Document,
     LogAgent,
     NiveauLog,
+    Portail,
     StatutAO,
+    TypePortail,
 )
 
 SYSTEM_PROMPT = (
@@ -131,6 +140,24 @@ async def analyser_ao(
     duree_ms = int((time.perf_counter() - debut) * 1000)
 
     degradee = bool(champs.get("degradee"))
+
+    # Garde-fous locaux (toujours actifs) : injection dans le texte de l'AO,
+    # résultat incohérent. Un drapeau exige une décision humaine.
+    codes_injection = detecter_injection(contexte["corpus_controle"])
+    drapeaux = [f"injection:{c}" for c in codes_injection]
+    drapeaux += verifier_coherence(champs["scores_dimensions"], score_final)
+
+    # Juge Jev optionnel : second avis, jamais bloquant.
+    resultat_jev = await _consulter_jev(session, appel_offre, contexte, ponderation)
+    if resultat_jev is not None:
+        if resultat_jev.manipulation_detectee:
+            drapeaux.append("jev:manipulation")
+            codes_injection.append("jev")
+        if not degradee and abs(resultat_jev.score - score_final) > jev.SEUIL_DIVERGENCE:
+            drapeaux.append("divergence_jev_pythia")
+    suspect_injection = bool(codes_injection)
+    a_verifier = bool(drapeaux)
+
     if existante is not None and existante.degradee:
         # Remplace l'ancienne analyse de secours plutôt que d'en empiler une par cycle.
         session.delete(existante)
@@ -148,6 +175,14 @@ async def analyser_ao(
             else None
         ),
         degradee=degradee,
+        suspect_injection=suspect_injection,
+        a_verifier=a_verifier,
+        drapeaux=json.dumps(drapeaux) if drapeaux else None,
+        score_jev=resultat_jev.score if resultat_jev else None,
+        confiance_jev=resultat_jev.confiance if resultat_jev else None,
+        details_jev=(
+            json.dumps(resultat_jev.en_dict(), ensure_ascii=False) if resultat_jev else None
+        ),
         duree_analyse_ms=duree_ms,
         modele_llm=reponse.modele,
     )
@@ -162,6 +197,17 @@ async def analyser_ao(
     session.commit()
     session.refresh(analyse)
 
+    if drapeaux:
+        # Codes seulement : jamais d'extrait du texte suspect dans les logs.
+        _journaliser(
+            session,
+            niveau=NiveauLog.WARNING,
+            message=(
+                f"AO {appel_offre.id} à vérifier (décision humaine requise) : "
+                f"{', '.join(drapeaux)}"
+            ),
+            appel_offre_id=appel_offre.id,
+        )
     _journaliser(
         session,
         niveau=NiveauLog.INFO,
@@ -177,6 +223,69 @@ async def analyser_ao(
     session.refresh(analyse)
 
     return ResultatAnalyse(analyse=analyse, nouveau=True)
+
+
+def _profil_metier(session: Session) -> str:
+    """Profil métier général pour Jev : mots-clés du filtre ARGOS (onboarding)."""
+    from hermes.agents.argos.filtre import charger_filtre
+
+    inclus = charger_filtre(session).inclus
+    if not inclus:
+        return "(profil métier non renseigné)"
+    return "Activités et mots-clés métier : " + ", ".join(inclus)
+
+
+async def _consulter_jev(
+    session: Session,
+    appel_offre: AppelOffre,
+    contexte: dict[str, Any],
+    ponderation: Ponderation,
+) -> jev.ResultatJev | None:
+    """Second avis Jev si activé ; toute panne est transparente (None)."""
+    if not jev.est_actif(session):
+        return None
+    # Données privées : un portail non public (documents téléchargés derrière
+    # authentification) ne part JAMAIS chez Jev — analyse locale seule. Un AO
+    # sans portail connu est traité comme non public (défaut prudent).
+    portail = session.get(Portail, appel_offre.portail_id) if appel_offre.portail_id else None
+    if portail is None or portail.type != TypePortail.PUBLIC:
+        logger.info("KRINOS : Jev non appelé pour AO {} (portail non public)", appel_offre.id)
+        _journaliser(
+            session,
+            niveau=NiveauLog.INFO,
+            message=(
+                f"Jev non appelé pour AO {appel_offre.id} : portail non public "
+                "(analyse locale seule)"
+            ),
+            appel_offre_id=appel_offre.id,  # type: ignore[arg-type]
+        )
+        return None
+    state = jev.construire_state(
+        titre=contexte["titre"],
+        objet=contexte["objet"],
+        acheteur=contexte["emetteur"],
+        type_marche=contexte["type_marche"],
+        budget=f"{contexte['budget']} {contexte['devise']}" if contexte["budget"] else "",
+        date_limite=contexte["date_limite"],
+        profil_metier=_profil_metier(session),
+        extrait_documents=contexte["texte_documents"],
+        passages_suspects=passages_suspects(contexte["texte_documents"]),
+    )
+    try:
+        return await jev.juger(session, state, ponderation)
+    except jev.ErreurJev as exc:
+        logger.warning("KRINOS : Jev ignoré pour AO {} — {}", appel_offre.id, exc)
+        _journaliser(
+            session,
+            niveau=NiveauLog.WARNING,
+            message=f"Jev ignoré pour AO {appel_offre.id} (analyse locale conservée) : {exc}",
+            appel_offre_id=appel_offre.id,  # type: ignore[arg-type]
+        )
+    except Exception as exc:  # noqa: BLE001 — Jev ne doit jamais casser l'analyse
+        logger.warning(
+            "KRINOS : erreur Jev inattendue AO {} — {}", appel_offre.id, type(exc).__name__
+        )
+    return None
 
 
 async def _generer_analyse_valide(
@@ -352,7 +461,16 @@ def _construire_contexte(session: Session, appel_offre: AppelOffre) -> dict[str,
         morceau = morceau.replace("</document", "<\\/document")
         extraits.append(f'<document nom="{_attribut(nom)}">\n{morceau}\n</document>')
 
+    # Corpus complet (non tronqué) pour la détection d'injection : le texte
+    # malveillant peut se trouver au-delà du budget envoyé au LLM.
+    corpus_controle = "\n".join(
+        [appel_offre.titre or "", appel_offre.objet or "", appel_offre.emetteur or ""]
+        + [c for _, c in contenus]
+    )
+
     return {
+        "corpus_controle": corpus_controle,
+        "texte_documents": "\n".join(c for _, c in contenus),
         "titre": appel_offre.titre,
         "objet": appel_offre.objet or "",
         "emetteur": appel_offre.emetteur or "",

@@ -198,6 +198,19 @@ class AnalyseKrinos(SQLModel, table=True):
     # produit une analyse locale de secours (heuristique, pas une vraie analyse).
     degradee: bool = Field(default=False)
 
+    # Garde-fous KRINOS : motif d'injection détecté dans le texte de l'AO, ou
+    # résultat incohérent → décision humaine requise (pas de promotion auto).
+    suspect_injection: bool = Field(default=False)
+    a_verifier: bool = Field(default=False)
+    # Codes des drapeaux levés (JSON : ["injection:ignorer_instructions", …]).
+    drapeaux: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    # Juge Jev (optionnel), stocké séparément du score PYTHIA (`score`).
+    score_jev: Optional[float] = None  # 0-100
+    confiance_jev: Optional[float] = None  # 0-1
+    # Détail Jev (JSON) : dimensions, pertinence, manipulation, tokens.
+    details_jev: Optional[str] = Field(default=None, sa_column=Column(Text))
+
     duree_analyse_ms: Optional[int] = None
     modele_llm: Optional[str] = None  # ex: qwen3:8b
 

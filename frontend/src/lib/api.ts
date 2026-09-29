@@ -216,11 +216,33 @@ export type AnalyseKrinos = {
   scores_dimensions: Partial<Record<keyof Omit<PonderationKrinos, "total">, number>>;
   /** Analyse locale de secours (PYTHIA a échoué) : résumé et score heuristiques. */
   degradee?: boolean;
+  /** Motif d'injection détecté dans le texte de l'AO : décision humaine requise. */
+  suspect_injection?: boolean;
+  /** Drapeau global (injection, incohérence, divergence Jev/PYTHIA). */
+  a_verifier?: boolean;
+  drapeaux?: string[];
+  /** Juge Jev (optionnel), séparé du score PYTHIA. */
+  score_jev?: number | null;
+  /** Confiance Jev 0-1. */
+  confiance_jev?: number | null;
+  details_jev?: {
+    pertinence?: number | null;
+    manipulation?: number | null;
+    tokens?: number;
+  } | null;
   tags: string[];
   criteres_extraits: string | null;
   duree_analyse_ms: number | null;
   modele_llm: string | null;
   cree_le: string;
+};
+
+export type ConfigJev = {
+  actif: boolean;
+  /** La clé (HERMES_JEV_API_KEY) n'est jamais exposée, seulement sa présence. */
+  cle_configuree: boolean;
+  budget_tokens_mois: number;
+  tokens_consommes: number;
 };
 
 export type ProgressionModele = {
@@ -337,6 +359,8 @@ export type RapportOrchestration = {
   ao_analyses: number;
   ao_rediges: number;
   ao_sous_seuil: number;
+  /** AO au-dessus du seuil mais drapeautés par KRINOS (décision humaine). */
+  ao_a_verifier?: number;
   ao_echecs: number;
   details: { ao_id: number; action: string; score?: number }[];
 };
@@ -566,6 +590,12 @@ export const api = {
     q.set("offset", String(params.offset ?? 0));
     return fetchJson<LogsPage>(`/logs?${q.toString()}`, { signal });
   },
+  lireConfigJev: () => fetchJson<ConfigJev>("/krinos/jev"),
+  ecrireConfigJev: (actif: boolean) =>
+    fetchJson<ConfigJev>("/krinos/jev", {
+      method: "PUT",
+      body: JSON.stringify({ actif }),
+    }),
   lireConfigOrchestration: () =>
     fetchJson<ConfigOrchestration>("/orchestration/config"),
   ecrireConfigOrchestration: (c: ConfigOrchestration) =>

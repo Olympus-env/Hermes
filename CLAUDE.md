@@ -16,7 +16,9 @@ avant toute soumission.
 
 1. **Local-first** — aucune donnée ne sort de la machine. FastAPI n'écoute que
    sur `127.0.0.1`, jamais sur `0.0.0.0`. Aucune télémétrie. Aucun appel
-   externe sauf vers les portails AO ciblés.
+   externe sauf vers les portails AO ciblés (et, uniquement si Joshua l'active
+   — `HERMES_JEV_ACTIF`, désactivé par défaut —, le juge Jev de KRINOS, qui ne
+   reçoit que des données publiques d'avis, plafonné en tokens).
 2. **Validation humaine obligatoire** — la soumission finale d'une réponse à un
    AO est *exclusivement* humaine, sans exception. HERMION rédige, ne soumet
    jamais.

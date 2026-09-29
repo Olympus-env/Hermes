@@ -11,6 +11,7 @@ import { WorkflowEditor, type WorkflowDraft } from "../components/WorkflowEditor
 import {
   api,
   type CapaciteArgos,
+  type ConfigJev,
   type ConfigOrchestration,
   type CriteresAvances,
   type NatureMarche,
@@ -1256,6 +1257,68 @@ const CFG_DEFAUT: ConfigOrchestration = {
   max_par_cycle: 5,
 };
 
+/** Réglage du juge Jev (TypeSafe) : appliqué immédiatement, désactivé par défaut. */
+function JevReglage() {
+  const [cfg, setCfg] = useState<ConfigJev | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .lireConfigJev()
+      .then((c) => {
+        if (!cancelled) setCfg(c);
+      })
+      .catch((e) => {
+        if (!cancelled) setErreur(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!cfg) return erreur ? <div className="settings-row__hint">{erreur}</div> : null;
+
+  const basculer = async () => {
+    setBusy(true);
+    setErreur(null);
+    try {
+      setCfg(await api.ecrireConfigJev(!cfg.actif));
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-row">
+      <div>
+        <div className="settings-row__label">Juge Jev (TypeSafe) — optionnel</div>
+        <div className="settings-row__hint">
+          Second avis externe sur le score KRINOS. Envoie uniquement des données publiques de
+          l'avis (titre, objet, acheteur, extrait du dossier) et le profil métier général —
+          jamais les réponses HERMION ni vos identifiants.{" "}
+          {cfg.cle_configuree
+            ? `Budget du mois : ${cfg.tokens_consommes.toLocaleString("fr-FR")} / ${cfg.budget_tokens_mois.toLocaleString("fr-FR")} tokens.`
+            : "Clé absente : définir HERMES_JEV_API_KEY dans l'environnement (jamais stockée ici) ; sans clé, Jev reste inactif."}
+          {erreur ? ` ${erreur}` : ""}
+        </div>
+      </div>
+      <button
+        className={`toggle${cfg.actif ? " toggle--on" : ""}`}
+        onClick={basculer}
+        disabled={busy}
+        role="switch"
+        aria-checked={cfg.actif}
+      >
+        <div className="toggle__thumb" />
+      </button>
+    </div>
+  );
+}
+
 function OrchestrationSection() {
   const [cfg, setCfg] = useState<ConfigOrchestration>(CFG_DEFAUT);
   const [saved, setSaved] = useState<ConfigOrchestration>(CFG_DEFAUT);
@@ -1413,6 +1476,8 @@ function OrchestrationSection() {
             />
           </div>
 
+          <JevReglage />
+
           <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center" }}>
             <button
               className="btn btn--gold"
@@ -1444,7 +1509,7 @@ function OrchestrationSection() {
               }}
             >
               {rapport.actif
-                ? `${rapport.ao_analyses} analysés, ${rapport.ao_rediges} mis en rédaction, ${rapport.ao_sous_seuil} sous le seuil, ${rapport.ao_echecs} échecs.`
+                ? `${rapport.ao_analyses} analysés, ${rapport.ao_rediges} mis en rédaction, ${rapport.ao_sous_seuil} sous le seuil, ${rapport.ao_a_verifier ?? 0} à vérifier (drapeaux KRINOS), ${rapport.ao_echecs} échecs.`
                 : "Pipeline désactivé — rien n'a été traité."}
             </div>
           )}

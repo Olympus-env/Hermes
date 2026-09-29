@@ -620,7 +620,33 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
               ce résumé et ce score sont une estimation locale à confirmer (relancez l'analyse).
             </p>
           )}
+          {analyse?.a_verifier && (
+            <p className="tender-panel__summary" role="alert">
+              <strong>À vérifier</strong> :{" "}
+              {analyse.suspect_injection
+                ? "le texte de cet AO contient des consignes suspectes visant à influencer l'évaluation automatique. "
+                : "les résultats de l'analyse sont incohérents ou divergents. "}
+              Pas de rédaction automatique — décision humaine requise
+              {analyse.drapeaux && analyse.drapeaux.length > 0
+                ? ` (${analyse.drapeaux.join(", ")})`
+                : ""}
+              .
+            </p>
+          )}
           <p className="tender-panel__summary">{analyse?.resume ?? tender.summary}</p>
+          {analyse?.score_jev != null && (
+            <p className="tender-panel__summary">
+              <strong>Avis Jev</strong> (juge externe optionnel) : score{" "}
+              {Math.round(analyse.score_jev)} / 100
+              {analyse.confiance_jev != null
+                ? `, confiance ${Math.round(analyse.confiance_jev * 100)} %`
+                : ""}
+              {analyse.details_jev?.pertinence != null
+                ? `, pertinence ${Math.round(analyse.details_jev.pertinence * 100)} %`
+                : ""}
+              . Score PYTHIA (local) : {Math.round(analyse.score)} / 100.
+            </p>
+          )}
         </div>
 
         <div className="tender-panel__section">

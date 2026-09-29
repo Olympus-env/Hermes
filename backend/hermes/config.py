@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,15 @@ def _est_url_loopback(url: str) -> bool:
         "localhost",
         "::1",
     }
+
+
+def url_jev_autorisee(url: str) -> bool:
+    """La clé Bearer Jev ne doit partir que vers api.typesafe.ai (https) ; le
+    loopback reste permis pour les tests avec un faux serveur."""
+    parsed = urlparse(url)
+    if parsed.scheme == "https" and parsed.hostname == "api.typesafe.ai":
+        return True
+    return _est_url_loopback(url)
 
 
 class Settings(BaseSettings):
@@ -111,9 +120,22 @@ class Settings(BaseSettings):
     krinos_ocr_dpi: int = 200
     krinos_extraction_max_caracteres: int = 3_000_000
 
+    # Juge Jev (TypeSafe) — OPTIONNEL, désactivé par défaut. Seule exception
+    # volontaire à « aucun appel externe » : on n'y envoie que des données
+    # publiques d'avis (jamais HERMION, credentials, documents internes).
+    # La clé vient de l'environnement / .env, jamais de la base, jamais loguée.
+    jev_actif: bool = False
+    jev_api_key: SecretStr | None = None
+    jev_url: str = "https://api.typesafe.ai/v1/systemone"
+    jev_modele: str = "jev-latest"
+    jev_timeout_secondes: float = 30.0
+    jev_budget_tokens_mois: int = 2_000_000
+
     def model_post_init(self, __context: object) -> None:
         self.host = "127.0.0.1"
         self.pythia_modele_explicite = "pythia_modele" in self.model_fields_set
+        if not url_jev_autorisee(self.jev_url):
+            self.jev_url = "https://api.typesafe.ai/v1/systemone"
         if not _est_url_loopback(self.ollama_base_url):
             self.ollama_base_url = "http://127.0.0.1:11434"
 
