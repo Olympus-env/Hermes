@@ -295,6 +295,32 @@ cd backend
 
 ---
 
+## Chantier des 29–30/09/2026 (lots 1 et 2)
+
+Audit complet + workflow autonome (implémenteur / vérificateur par PR, CI
+GitHub : ruff, pytest, build front, `cargo check` Windows, cohérence des versions).
+
+**Lot 1 — correctifs** : ARGOS n'ingère que les avis ouverts (BOAMP `APPEL_OFFRE/INITIAL`,
+TED en liste d'inclusion) et signale les pannes ; un seul pipeline à la fois ; sécurité
+locale (contrôle `Host`, en-tête CSRF `X-Hermes-Client`, téléchargements limités aux IP
+publiques) ; MNEMOSYNE (clés étrangères actives, versions uniques, dates UTC) ;
+PYTHIA (`num_ctx`, `think`, sorties au schéma JSON, analyse dégradée signalée) ;
+frontend (requêtes annulables, export PDF) ; desktop portable (plus de `D:` en dur).
+
+**Lot 2 — fonctionnalités** :
+- **Consentement** : aucun téléchargement de modèle sans clic ; choix d'un modèle déjà installé (persisté).
+- **Extraction KRINOS** : PyMuPDF + OCR RapidOCR (local, modèles embarqués), tableaux en Markdown, DOCX/XLSX sûrs.
+- **DECP** : encart « concurrence » (titulaires, montant médian, tendance) depuis data.gouv.fr.
+- **Moteurs LLM** : `HERMES_PYTHIA_MOTEUR=ollama|openai_compatible` + banc d'essai (voir plus bas).
+- **Score robuste** : détection d'injection, drapeau « À vérifier » (pas de promotion auto) et
+  **juge Jev (TypeSafe) optionnel**, désactivé par défaut, uniquement sur données publiques
+  (`HERMES_JEV_API_KEY`, budget `HERMES_JEV_BUDGET_TOKENS_MOIS`). Suite : issue #38.
+
+Nouvelles variables : `HERMES_PYTHIA_MOTEUR`, `HERMES_PYTHIA_URL`, `HERMES_PYTHIA_NUM_CTX`,
+`HERMES_PYTHIA_MODELE_LIBRE`, `HERMES_JEV_ACTIF`, `HERMES_JEV_API_KEY`,
+`HERMES_JEV_BUDGET_TOKENS_MOIS`, `HERMES_DECP_URL`, `HERMES_KRINOS_*` (plafonds d'extraction/OCR),
+`HERMES_DEPS_DIR` (scripts Windows).
+
 ## Fonctionnalités disponibles
 
 - **Profil utilisateur configurable** au premier lancement et dans Paramètres.
