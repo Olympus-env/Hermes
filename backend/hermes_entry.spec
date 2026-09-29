@@ -7,7 +7,7 @@
 Le binaire résultat se trouve dans `dist/backend/backend.exe` (mode onedir).
 """
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
 
@@ -31,6 +31,20 @@ hiddenimports += [
     "email_validator",
 ]
 
+# KRINOS — OCR des PDF scannés : RapidOCR charge ses modèles ONNX et ses YAML de
+# config depuis son propre dossier (`rapidocr/models`, ~30 Mo) et onnxruntime
+# apporte des bibliothèques natives : collect_all embarque données + binaires.
+# Import paresseux côté code (`from rapidocr import RapidOCR`), donc invisible
+# de l'analyse statique de PyInstaller.
+datas: list = []
+binaries: list = []
+for _paquet in ("rapidocr", "onnxruntime"):
+    _d, _b, _h = collect_all(_paquet)
+    datas += _d
+    binaries += _b
+    hiddenimports += _h
+hiddenimports += ["defusedxml", "defusedxml.ElementTree"]
+
 # Playwright nécessite ses navigateurs et n'est pas utilisé au démarrage —
 # on l'exclut volontairement du bundle pour rester compact. Le scraping
 # portails privés (Phase 3) sera réintégré différemment plus tard.
@@ -45,8 +59,8 @@ excludes = [
 a = Analysis(
     ["hermes_entry.py"],
     pathex=["."],
-    binaries=[],
-    datas=[],
+    binaries=binaries,
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],

@@ -9,7 +9,7 @@ Zéro cloud, zéro coût récurrent, validation humaine obligatoire avant toute 
 |-----------|-------------|------|
 | **HERMES** | Tauri 2 + React 18 + Tailwind | Application desktop, orchestrateur |
 | **ARGOS** | Playwright + APScheduler | Collecte / scraping des portails AO |
-| **KRINOS** | pdfplumber + pymupdf + Ollama | Extraction, analyse, scoring |
+| **KRINOS** | pymupdf (+ pdfplumber en repli) + RapidOCR ONNX + Ollama | Extraction, analyse, scoring |
 | **HERMION** | Ollama + workflow engine | Rédaction des réponses |
 | **MNEMOSYNE** | SQLite + SQLModel | Base de données locale |
 | **PYTHIA** | Ollama + Qwen3 8B | LLM local |
@@ -397,8 +397,9 @@ d'un usage commercial réel.
 - **Fiabilité ARGOS** : retry réseau avec backoff, rattrapage au redémarrage,
   watchdog, état détaillé par portail et journal consultable depuis l'UI sont
   encore à compléter.
-- **KRINOS extraction avancée** : l'extraction existe, mais il manque OCR pour
-  PDF scannés, vérification d'intégrité SHA-256 à chaque lecture, extraction
+- **KRINOS extraction avancée** : PDF (tableaux en Markdown, OCR RapidOCR des
+  pages scannées — modèles embarqués, plafond `HERMES_KRINOS_OCR_MAX_PAGES`),
+  DOCX et XLSX (anti zip bomb) sont lus ; il manque encore la vérification d'intégrité SHA-256 à chaque lecture, extraction
   structurée plus complète des champs clés et chaîne automatique
   téléchargement → extraction → analyse.
 - **Grille scoring CDC** : la pondération actuelle fonctionne, mais ses

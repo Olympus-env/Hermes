@@ -32,7 +32,7 @@ from hermes.agents.krinos import (
     analyser_ao,
     telecharger_documents_ao,
 )
-from hermes.agents.krinos.extractor import extraire_documents_appel_offre
+from hermes.agents.krinos.extractor import extraire_documents_appel_offre_async
 from hermes.db.models import (
     AnalyseKrinos,
     AppelOffre,
@@ -386,9 +386,12 @@ async def _documents_best_effort(session: Session, ao: AppelOffre) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.debug("Pipeline : téléchargement docs AO {} ignoré — {}", ao.id, exc)
 
-    rapport = extraire_documents_appel_offre(session, ao, best_effort=True)
+    # Hors boucle async : l'OCR/PDF d'un gros DCE bloquerait tout FastAPI.
+    rapport = await extraire_documents_appel_offre_async(session, ao, best_effort=True)
     for erreur in rapport.erreurs:
         logger.debug("Pipeline : extraction AO {} ignorée — {}", ao.id, erreur)
+    for avertissement in rapport.avertissements:
+        logger.warning("Pipeline : extraction AO {} incomplète — {}", ao.id, avertissement)
 
 
 # --------------------------------------------------------------------------- #

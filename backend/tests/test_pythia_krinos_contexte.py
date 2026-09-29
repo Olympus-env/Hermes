@@ -295,7 +295,8 @@ def test_budget_par_document_et_borne_par_num_ctx(monkeypatch):
     assert "A" * 301 not in contexte["documents"]
 
 
-def test_extraction_pdf_texte_vide_bascule_sur_pymupdf(monkeypatch, tmp_path):
+def test_extraction_pdf_bascule_sur_pdfplumber_si_pymupdf_echoue(monkeypatch, tmp_path):
+    """PyMuPDF est l'extracteur principal (#31) ; pdfplumber n'est qu'un repli."""
     import sys
     import types
 
@@ -303,7 +304,7 @@ def test_extraction_pdf_texte_vide_bascule_sur_pymupdf(monkeypatch, tmp_path):
 
     class _Page:
         def extract_text(self):
-            return ""
+            return "texte pdfplumber"
 
     class _Pdf:
         pages = [_Page()]
@@ -314,22 +315,12 @@ def test_extraction_pdf_texte_vide_bascule_sur_pymupdf(monkeypatch, tmp_path):
         def __exit__(self, *_):
             return None
 
-    class _PageFitz:
-        def get_text(self, _mode):
-            return "texte PyMuPDF"
+    def _fitz_casse(_p):
+        raise RuntimeError("PDF corrompu pour PyMuPDF")
 
-    class _DocFitz(list):
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            return None
-
-    faux_plumber = types.SimpleNamespace(open=lambda _p: _Pdf())
-    faux_fitz = types.SimpleNamespace(open=lambda _p: _DocFitz([_PageFitz()]))
-    monkeypatch.setitem(sys.modules, "pdfplumber", faux_plumber)
-    monkeypatch.setitem(sys.modules, "fitz", faux_fitz)
-    assert extractor._extraire_pdf(tmp_path / "x.pdf") == "texte PyMuPDF"
+    monkeypatch.setitem(sys.modules, "pdfplumber", types.SimpleNamespace(open=lambda _p: _Pdf()))
+    monkeypatch.setitem(sys.modules, "fitz", types.SimpleNamespace(open=_fitz_casse))
+    assert extractor._extraire_pdf(tmp_path / "x.pdf", []) == "texte pdfplumber"
 
 
 def test_extraction_async_persiste(monkeypatch, tmp_path):

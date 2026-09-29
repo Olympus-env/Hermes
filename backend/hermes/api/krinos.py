@@ -45,12 +45,15 @@ class ExtractionDocumentResponse(BaseModel):
     caracteres_extraits: int
     checksum_sha256: str
     taille_octets: int
+    # Extraction incomplète (scan non lu, plafond de pages…), texte exploitable.
+    avertissements: list[str] = Field(default_factory=list)
 
 
 class ExtractionAOResponse(BaseModel):
     appel_offre_id: int
     documents_traites: int
     caracteres_extraits: int
+    avertissements: list[str] = Field(default_factory=list)
 
 
 class TelechargementDocumentsRequest(BaseModel):
@@ -189,9 +192,13 @@ def extraire_documents_ao(
         select(Document).where(Document.appel_offre_id == ao_id).order_by(Document.id)
     ).all()
     caracteres = 0
+    avertissements: list[str] = []
     for document in documents:
         reponse = _extraire_et_persister(session, document)
         caracteres += reponse.caracteres_extraits
+        avertissements.extend(
+            f"Document {document.id}: {a}" for a in reponse.avertissements
+        )
 
     if documents and ao.statut == StatutAO.BRUT:
         ao.statut = StatutAO.ANALYSE
@@ -202,6 +209,7 @@ def extraire_documents_ao(
         appel_offre_id=ao_id,
         documents_traites=len(documents),
         caracteres_extraits=caracteres,
+        avertissements=avertissements,
     )
 
 
@@ -236,6 +244,13 @@ def _extraire_et_persister(
         ),
         appel_offre_id=document.appel_offre_id,
     )
+    for avertissement in extraction.avertissements:
+        _journaliser(
+            session,
+            niveau=NiveauLog.WARNING,
+            message=f"Extraction document {document.id} incomplète : {avertissement}",
+            appel_offre_id=document.appel_offre_id,
+        )
 
     return ExtractionDocumentResponse(
         document_id=document.id,  # type: ignore[arg-type]
@@ -243,6 +258,7 @@ def _extraire_et_persister(
         caracteres_extraits=len(extraction.texte),
         checksum_sha256=extraction.checksum_sha256,
         taille_octets=extraction.taille_octets,
+        avertissements=list(extraction.avertissements),
     )
 
 
@@ -275,6 +291,13 @@ async def analyser_appel_offre(
             session,
             niveau=NiveauLog.WARNING,
             message=f"Pré-analyse AO {ao_id} : extraction ignorée — {erreur}",
+            appel_offre_id=ao_id,
+        )
+    for avertissement in rapport_extraction.avertissements:
+        _journaliser(
+            session,
+            niveau=NiveauLog.WARNING,
+            message=f"Pré-analyse AO {ao_id} : extraction incomplète — {avertissement}",
             appel_offre_id=ao_id,
         )
 

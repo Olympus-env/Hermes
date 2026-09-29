@@ -87,6 +87,17 @@ class Settings(BaseSettings):
     # (borné à l'exécution selon `pythia_num_ctx`, cf. analyzer.budget_caracteres).
     krinos_contexte_max_caracteres: int = 24000
 
+    # KRINOS — extraction documentaire : plafonds pour qu'un DCE géant ou piégé
+    # ne fige pas la machine. Taille max d'un fichier (octets), taille max
+    # décompressée d'un DOCX/XLSX (anti zip bomb), pages lues par PDF, pages
+    # passées à l'OCR par PDF, et caractères conservés par document.
+    krinos_extraction_max_octets: int = 100 * 1024 * 1024
+    krinos_extraction_max_octets_decompresses: int = 100 * 1024 * 1024
+    krinos_extraction_max_pages: int = 400
+    krinos_ocr_max_pages: int = 40
+    krinos_ocr_dpi: int = 200
+    krinos_extraction_max_caracteres: int = 3_000_000
+
     def model_post_init(self, __context: object) -> None:
         self.host = "127.0.0.1"
         self.pythia_modele_explicite = "pythia_modele" in self.model_fields_set
