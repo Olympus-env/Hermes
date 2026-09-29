@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 
 from hermes.config import settings
@@ -17,6 +18,18 @@ _engine = create_engine(
 )
 
 
+@event.listens_for(_engine, "connect")
+def _configurer_connexion(dbapi_connection, _record) -> None:
+    """Pragmas par connexion : SQLite les oublie à la fermeture de chaque connexion."""
+    curseur = dbapi_connection.cursor()
+    try:
+        curseur.execute("PRAGMA foreign_keys=ON")
+        curseur.execute("PRAGMA busy_timeout=5000")
+        curseur.execute("PRAGMA journal_mode=WAL")
+    finally:
+        curseur.close()
+
+
 def init_db() -> None:
     """Crée la BDD et toutes les tables si nécessaires + active WAL.
 
@@ -27,10 +40,9 @@ def init_db() -> None:
     settings.ensure_dirs()
     SQLModel.metadata.create_all(_engine)
     with _engine.connect() as conn:
-        conn.exec_driver_sql("PRAGMA journal_mode=WAL")
-        conn.exec_driver_sql("PRAGMA foreign_keys=ON")
         _migrer_colonnes(conn)
         _dedoublonner_appels_offre(conn)
+        _migrer_versions_uniques(conn)
         conn.commit()
 
 
@@ -106,6 +118,43 @@ def _dedoublonner_appels_offre(conn) -> None:
     conn.exec_driver_sql(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_appels_offre_portail_reference "
         "ON appels_offre (portail_id, reference_externe)"
+    )
+
+
+def _migrer_versions_uniques(conn) -> None:
+    """Contrainte unique (appel_offre_id, version) sur reponses_hermion.
+
+    Une base créée avant la contrainte peut contenir des versions en double
+    (deux /rediger simultanés) : on renumérote les doublons (le plus ancien
+    garde son numéro) avant de poser l'index unique.
+    """
+    doublons = conn.exec_driver_sql(
+        "SELECT appel_offre_id FROM reponses_hermion "
+        "GROUP BY appel_offre_id, version HAVING COUNT(*) > 1"
+    ).fetchall()
+    for ao_id in {row[0] for row in doublons}:
+        lignes = conn.exec_driver_sql(
+            "SELECT id, version FROM reponses_hermion "
+            "WHERE appel_offre_id = ? ORDER BY version, id",
+            (ao_id,),
+        ).fetchall()
+        vues: set[int] = set()
+        a_renumeroter: list[int] = []
+        for rep_id, version in lignes:
+            if version in vues:
+                a_renumeroter.append(rep_id)
+            else:
+                vues.add(version)
+        prochaine = max(vues) + 1
+        for rep_id in a_renumeroter:
+            conn.exec_driver_sql(
+                "UPDATE reponses_hermion SET version = ? WHERE id = ?",
+                (prochaine, rep_id),
+            )
+            prochaine += 1
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_reponses_hermion_ao_version "
+        "ON reponses_hermion (appel_offre_id, version)"
     )
 
 

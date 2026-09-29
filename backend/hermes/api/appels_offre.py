@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, func, select
 
 from hermes.agents.krinos.downloader import liens_documents_ao
-from hermes.db.models import AnalyseKrinos, AppelOffre, Document, Portail, StatutAO
+from hermes.api._dates import DatetimeUTC
+from hermes.db.models import (
+    AnalyseKrinos,
+    AppelOffre,
+    Document,
+    Portail,
+    ReponseHermion,
+    StatutAO,
+    StatutReponse,
+)
 from hermes.db.session import get_session
 
 router = APIRouter(prefix="/appels-offre", tags=["appels-offre"])
@@ -26,14 +33,14 @@ class AppelOffreRead(BaseModel):
     objet: str | None
     budget_estime: float | None
     devise: str
-    date_publication: datetime | None
-    date_limite: datetime | None
+    date_publication: DatetimeUTC | None
+    date_limite: DatetimeUTC | None
     type_marche: str | None
     zone_geographique: str | None
     code_naf: str | None
     statut: StatutAO
-    cree_le: datetime
-    maj_le: datetime
+    cree_le: DatetimeUTC
+    maj_le: DatetimeUTC
     # Score KRINOS pondéré le plus récent ; None si l'AO n'a jamais été analysé
     # (distinct d'un score réel de 0 — issue #2).
     score: float | None = None
@@ -57,11 +64,48 @@ class StatutUpdate(BaseModel):
     statut: StatutAO
 
 
+# Transitions manuelles autorisées (PATCH /statut). Les passages automatiques
+# (ARGOS, KRINOS, HERMION, expiration) écrivent le statut directement et ne
+# passent pas par cette matrice.
+_TRANSITIONS_AO: dict[StatutAO, set[StatutAO]] = {
+    StatutAO.BRUT: {
+        StatutAO.ANALYSE,
+        StatutAO.A_REPONDRE,
+        StatutAO.REJETE,
+        StatutAO.EXPIRE,
+    },
+    StatutAO.ANALYSE: {
+        StatutAO.BRUT,
+        StatutAO.A_REPONDRE,
+        StatutAO.REJETE,
+        StatutAO.EXPIRE,
+    },
+    StatutAO.A_REPONDRE: {
+        StatutAO.ANALYSE,
+        StatutAO.EN_REDACTION,
+        StatutAO.REPONDU,
+        StatutAO.REJETE,
+        StatutAO.EXPIRE,
+    },
+    StatutAO.EN_REDACTION: {
+        StatutAO.A_REPONDRE,
+        StatutAO.REPONDU,
+        StatutAO.REJETE,
+        StatutAO.EXPIRE,
+    },
+    StatutAO.REPONDU: {StatutAO.EN_REDACTION},
+    # Un AO écarté peut être repris volontairement par l'humain.
+    StatutAO.REJETE: {StatutAO.ANALYSE, StatutAO.A_REPONDRE},
+    StatutAO.EXPIRE: set(),
+    StatutAO.HORS_FILTRE: {StatutAO.BRUT},
+}
+
+
 @router.get("")
 def lister(
     statut: StatutAO | None = None,
-    limit: int = Query(default=50, le=500),
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_session),
 ) -> AppelsOffrePage:
     stmt = select(AppelOffre, Portail.nom).join(Portail, isouter=True)
@@ -147,17 +191,51 @@ def modifier_statut(
     if ao is None:
         raise HTTPException(status_code=404, detail="Appel d'offre introuvable")
 
-    ao.statut = payload.statut
-    session.add(ao)
-    session.commit()
-    session.refresh(ao)
+    if payload.statut != ao.statut:
+        if payload.statut not in _TRANSITIONS_AO.get(ao.statut, set()):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Transition '{ao.statut.value}' → '{payload.statut.value}' "
+                    "non autorisée"
+                ),
+            )
+        if payload.statut == StatutAO.REPONDU and not _a_reponse_finalisee(
+            session, ao_id
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Statut 'repondu' impossible : aucune réponse HERMION "
+                    "validée ou exportée pour cet AO"
+                ),
+            )
+        ao.statut = payload.statut
+        session.add(ao)
+        session.commit()
+        session.refresh(ao)
 
     portail_nom = None
     if ao.portail_id is not None:
         portail = session.get(Portail, ao.portail_id)
         portail_nom = portail.nom if portail else None
     scores = _scores_recents(session, [ao.id])
-    return _ao_read(ao, portail_nom, scores.get(ao.id))
+    docs = _docs_telecharges(session, [ao.id])
+    return _ao_read(ao, portail_nom, scores.get(ao.id), docs.get(ao.id, 0))
+
+
+def _a_reponse_finalisee(session: Session, ao_id: int) -> bool:
+    return (
+        session.exec(
+            select(ReponseHermion.id).where(
+                ReponseHermion.appel_offre_id == ao_id,
+                ReponseHermion.statut.in_(
+                    {StatutReponse.VALIDEE, StatutReponse.EXPORTEE}
+                ),
+            )
+        ).first()
+        is not None
+    )
 
 
 def _ao_read(
