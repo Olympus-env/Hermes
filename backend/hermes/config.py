@@ -52,6 +52,12 @@ class Settings(BaseSettings):
 
     # PYTHIA — LLM local via Ollama
     ollama_base_url: str = "http://127.0.0.1:11434"
+    # Moteur d'inférence : "ollama" (défaut) ou "openai_compatible" (llama.cpp
+    # `llama-server`, LM Studio, vLLM… via `/v1/chat/completions`).
+    pythia_moteur: str = "ollama"
+    # URL de base (avec `/v1`) du serveur openai_compatible. Loopback obligatoire :
+    # vérifiée à chaque appel (ErreurPythia sinon), jamais réécrite en silence.
+    pythia_url: str = "http://127.0.0.1:8080/v1"
     # Qwen3 8B (q4) : tient entièrement dans 8 Go de VRAM (~72 t/s), bien meilleur
     # que Mistral 7B en français, respect de structure et résumés (fini le
     # « résumé = titre »), sans sortir du local. Override possible via

@@ -1,0 +1,31 @@
+{
+  "id": "refonte_portail_usagers",
+  "description": "AO très pertinent : développement logiciel sur mesure, budget confortable, délai raisonnable.",
+  "ao": {
+    "titre": "Refonte du portail numérique des usagers de la Communauté de communes du Val de Lorne",
+    "emetteur": "Communauté de communes du Val de Lorne (fictif)",
+    "objet": "Conception, développement et maintenance d'un portail web et d'une application mobile permettant aux usagers d'effectuer leurs démarches en ligne (eau, déchets, transports scolaires).",
+    "budget_estime": 280000,
+    "devise": "EUR",
+    "date_limite": "2026-11-30T12:00:00+00:00",
+    "zone_geographique": "Pays de la Loire",
+    "type_marche": "Services",
+    "code_naf": "62.01Z"
+  },
+  "documents": [
+    {
+      "nom": "reglement_consultation.pdf",
+      "contenu": "REGLEMENT DE LA CONSULTATION (RC)\n\nArticle 1 - Objet de la consultation\nLa Communauté de communes du Val de Lorne lance une procédure adaptée pour la refonte de son portail numérique des usagers : portail web responsive, application mobile (iOS et Android), interconnexion avec le logiciel de facturation de l'eau et le système de gestion des déchets. Le marché comprend la conception UX, le développement, la recette, la formation des agents et trois ans de maintenance évolutive et corrective.\n\nArticle 2 - Durée du marché\nLe marché est conclu pour une durée de 12 mois pour la phase de réalisation, suivie de 36 mois de maintenance.\n\nArticle 3 - Conditions de participation\nLes candidats produisent : une déclaration sur l'honneur, les attestations fiscales et sociales, trois références de projets similaires (portail citoyen ou application de services publics) réalisés ces cinq dernières années, et le CV des membres de l'équipe projet. Le chiffre d'affaires annuel moyen sur les trois derniers exercices doit être au moins égal à 150 000 euros HT.\n\nArticle 4 - Jugement des offres\nLes offres sont jugées selon les critères pondérés suivants :\n- Valeur technique de l'offre (méthodologie, architecture, sécurité, accessibilité RGAA) : 50 %\n- Prix des prestations : 30 %\n- Références et compétences de l'équipe : 15 %\n- Délais et planning proposé : 5 %\n\nArticle 5 - Remise des offres\nLes offres sont remises par voie dématérialisée au plus tard le 30 novembre 2026 à 12h00. Une visite du site n'est pas prévue. Le démarrage des prestations est prévu en janvier 2027."
+    },
+    {
+      "nom": "cctp.pdf",
+      "contenu": "CAHIER DES CLAUSES TECHNIQUES PARTICULIERES (CCTP)\n\n1. Périmètre fonctionnel\nAuthentification via FranceConnect, espace personnel, suivi des demandes, paiement en ligne des factures, prise de rendez-vous en déchetterie, inscription aux transports scolaires, notifications par courriel et SMS.\n\n2. Exigences techniques\n- Conformité RGAA 4.1 niveau AA et RGS.\n- Hébergement en France, certification HDS non requise.\n- API REST documentée (OpenAPI) pour l'interconnexion avec les logiciels métiers.\n- Application mobile native ou multiplateforme au choix du candidat.\n- Couverture de tests automatisés d'au moins 70 % du code.\n\n3. Sécurité\nLe titulaire réalise un audit de sécurité avant mise en production et corrige les vulnérabilités critiques sous 5 jours ouvrés.\n\n4. Maintenance\nLa maintenance corrective est assurée avec une garantie de temps de rétablissement de 4 heures ouvrées pour les anomalies bloquantes."
+    }
+  ],
+  "attendus": {
+    "score_min": 65,
+    "score_max": 100,
+    "tags": ["développement", "portail", "application mobile", "web"],
+    "criteres_mots_cles": ["technique", "prix", "50", "30", "références"]
+  }
+}

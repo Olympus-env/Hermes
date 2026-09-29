@@ -1,0 +1,22 @@
+{
+  "id": "donnees_sans_document",
+  "description": "AO sans document DCE : seules les métadonnées existent (l'analyse doit rester prudente, sans inventer de critères).",
+  "ao": {
+    "titre": "Tierce maintenance applicative du système d'information des ressources humaines",
+    "emetteur": "Centre hospitalier de Vallauris-Sud (fictif)",
+    "objet": "Tierce maintenance applicative (TMA) et évolutions du logiciel de gestion des ressources humaines et de la paie, sur 4 ans.",
+    "budget_estime": 900000,
+    "devise": "EUR",
+    "date_limite": "2026-12-04T12:00:00+00:00",
+    "zone_geographique": "Provence-Alpes-Côte d'Azur",
+    "type_marche": "Services",
+    "code_naf": "62.02A"
+  },
+  "documents": [],
+  "attendus": {
+    "score_min": 40,
+    "score_max": 85,
+    "tags": ["maintenance", "application"],
+    "criteres_mots_cles": []
+  }
+}

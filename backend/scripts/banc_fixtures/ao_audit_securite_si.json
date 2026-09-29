@@ -1,0 +1,27 @@
+{
+  "id": "audit_securite_si",
+  "description": "AO pertinent mais contraignant : conseil/audit cybersécurité, certification exigée, budget serré.",
+  "ao": {
+    "titre": "Audit de sécurité du système d'information et accompagnement à la mise en conformité NIS 2",
+    "emetteur": "Syndicat mixte de gestion des eaux du Bassin de l'Aulne (fictif)",
+    "objet": "Prestations d'audit technique et organisationnel du système d'information (postes, serveurs, réseau, sites distants), tests d'intrusion, production d'un plan d'action priorisé et accompagnement à la mise en conformité NIS 2.",
+    "budget_estime": 45000,
+    "devise": "EUR",
+    "date_limite": "2026-10-16T12:00:00+00:00",
+    "zone_geographique": "Bretagne",
+    "type_marche": "Services",
+    "code_naf": "62.03Z"
+  },
+  "documents": [
+    {
+      "nom": "reglement_consultation.pdf",
+      "contenu": "REGLEMENT DE LA CONSULTATION\n\nArticle 1 - Objet\nAudit de sécurité du système d'information du syndicat (environ 120 postes, 8 serveurs, 4 sites) et accompagnement à la conformité NIS 2. Le prestataire livre un rapport d'audit, une cartographie des risques, un plan d'action à 24 mois et anime deux ateliers de sensibilisation.\n\nArticle 2 - Conditions de participation\nLe prestataire doit être qualifié PASSI (Prestataire d'Audit de la Sécurité des Systèmes d'Information) par l'ANSSI ; à défaut, il justifie de moyens équivalents. Deux références d'audits réalisés pour des collectivités ou des opérateurs de services essentiels sont exigées.\n\nArticle 3 - Jugement des offres\n- Valeur technique (méthode d'audit, livrables, qualification des auditeurs) : 55 %\n- Prix : 35 %\n- Délais : 10 %\n\nArticle 4 - Calendrier\nDurée de la mission : 4 mois à compter de la notification. Remise des offres avant le 16 octobre 2026 à 12h00. Démarrage souhaité en novembre 2026. Les données du système d'information sont confidentielles : les auditeurs signent un engagement de confidentialité et les livrables sont hébergés en France."
+    }
+  ],
+  "attendus": {
+    "score_min": 35,
+    "score_max": 75,
+    "tags": ["audit", "sécurité", "conformité"],
+    "criteres_mots_cles": ["technique", "55", "prix", "35"]
+  }
+}

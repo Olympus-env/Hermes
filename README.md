@@ -246,6 +246,55 @@ Sortie : `installer/dist/HERMES-Setup-<version>.exe`. Voir
 
 ---
 
+## PYTHIA : moteurs LLM et banc d'essai de modèles
+
+PYTHIA accepte deux moteurs, tous deux **strictement locaux** (l'URL doit être
+`127.0.0.1`, `localhost` ou `::1`, sinon l'appel est refusé) :
+
+| Variable | Valeur | Rôle |
+|---|---|---|
+| `HERMES_PYTHIA_MOTEUR` | `ollama` (défaut) ou `openai_compatible` | Moteur d'inférence |
+| `HERMES_OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | URL d'Ollama (moteur `ollama`) |
+| `HERMES_PYTHIA_URL` | `http://127.0.0.1:8080/v1` | URL de base d'un serveur `/v1/chat/completions` (llama.cpp `llama-server`, LM Studio, vLLM…) |
+| `HERMES_PYTHIA_MODELE` | `qwen3:8b` | Nom du modèle chez le moteur |
+
+Le moteur `openai_compatible` envoie les sorties structurées de KRINOS via
+`response_format` (`json_schema`). Le contexte du modèle y est fixé au lancement
+du serveur (`llama-server -c 16384`), pas par HERMES. Avec Ollama `/v1` (test
+local), Ollama applique son propre défaut : le lancer avec
+`OLLAMA_CONTEXT_LENGTH=16384`, sinon les prompts KRINOS (~5k tokens) sont tronqués.
+
+**Modèles Hugging Face (GGUF) via Ollama** : `hf.co/<org>/<repo>:<quant>` est un
+nom de modèle valide, p. ex. `HERMES_PYTHIA_MODELE=hf.co/unsloth/Qwen3-8B-GGUF:Q4_K_M`.
+
+### Comparer des modèles (banc d'essai)
+
+`backend/scripts/banc_pythia.py` exécute KRINOS sur des AO fictifs de référence
+(`backend/scripts/banc_fixtures/*.json`, avec attendus : fourchette de score, tags,
+critères) et écrit un rapport Markdown : conformité au schéma JSON, écart aux
+attendus, latence, tokens/s. Il n'utilise qu'une base jetable et **ne télécharge
+jamais de modèle** : un modèle absent est signalé et ignoré.
+
+Les téléchargements se font à la main, avant de lancer le banc (à adapter aux
+tags réellement publiés sur <https://ollama.com/library> ou Hugging Face) :
+
+```bash
+ollama pull qwen3.5:9b
+ollama pull ministral-3:8b
+ollama pull gemma4:9b            # si le tag existe dans votre version d'Ollama
+ollama pull hf.co/<org>/<repo>:Q4_K_M   # GGUF Hugging Face quelconque
+
+cd backend
+.venv/bin/python scripts/banc_pythia.py \
+    --modeles qwen3:8b,qwen3.5:9b,ministral-3:8b --sortie rapport.md
+
+# Serveur openai_compatible (ex. llama-server déjà lancé sur le port 8080)
+.venv/bin/python scripts/banc_pythia.py --moteur openai_compatible \
+    --url http://127.0.0.1:8080/v1 --modeles mon-modele
+```
+
+---
+
 ## Fonctionnalités disponibles
 
 - **Profil utilisateur configurable** au premier lancement et dans Paramètres.

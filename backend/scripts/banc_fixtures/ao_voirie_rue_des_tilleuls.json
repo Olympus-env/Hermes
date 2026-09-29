@@ -1,0 +1,31 @@
+{
+  "id": "voirie_rue_des_tilleuls",
+  "description": "AO hors métier : travaux de voirie, à écarter (score bas attendu).",
+  "ao": {
+    "titre": "Travaux de réfection de la chaussée et des trottoirs rue des Tilleuls",
+    "emetteur": "Commune de Saint-Aubin-des-Prés (fictif)",
+    "objet": "Réfection de la chaussée (rabotage, réfection de couche de roulement en enrobés), création de trottoirs accessibles PMR et mise en place d'un réseau d'eaux pluviales sur 650 mètres linéaires.",
+    "budget_estime": 420000,
+    "devise": "EUR",
+    "date_limite": "2026-10-20T16:00:00+00:00",
+    "zone_geographique": "Centre-Val de Loire",
+    "type_marche": "Travaux",
+    "code_naf": "42.11Z"
+  },
+  "documents": [
+    {
+      "nom": "reglement_consultation.pdf",
+      "contenu": "REGLEMENT DE LA CONSULTATION\n\nArticle 1 - Objet\nLe présent marché de travaux concerne la réfection complète de la rue des Tilleuls sur 650 mètres : dépose des bordures, purge et reprise de la structure de chaussée, enrobés à chaud, trottoirs en béton désactivé de 1,60 m, réseau d'eaux pluviales en PVC diamètre 400 et 12 avaloirs.\n\nArticle 2 - Conditions de participation\nLes entreprises justifient d'une qualification FNTP 2112 ou équivalent, de références de travaux de voirie communale d'un montant comparable sur les cinq dernières années, et d'une assurance décennale en cours de validité.\n\nArticle 3 - Jugement des offres\n- Prix : 50 %\n- Valeur technique (mémoire, moyens, matériaux) : 40 %\n- Délais d'exécution et gestion de la circulation riveraine : 10 %\n\nArticle 4 - Délais\nLes travaux durent 14 semaines à compter de l'ordre de service, prévu en février 2027. Une visite obligatoire du site est organisée le 6 octobre 2026 à 10h. Remise des offres avant le 20 octobre 2026 à 16h."
+    },
+    {
+      "nom": "cctp.pdf",
+      "contenu": "CCTP - LOT UNIQUE\n\nTerrassements, structure de chaussée en GNT 0/31,5 sur 30 cm, couche de base en GB3 sur 8 cm, couche de roulement en BBSG 0/10 sur 5 cm. Signalisation horizontale et verticale. Plan de récolement géoréférencé exigé à la réception. Le titulaire assure le maintien de l'accès des riverains et des véhicules de secours pendant toute la durée du chantier."
+    }
+  ],
+  "attendus": {
+    "score_min": 0,
+    "score_max": 40,
+    "tags": ["travaux", "voirie"],
+    "criteres_mots_cles": ["prix", "50", "technique", "40"]
+  }
+}
