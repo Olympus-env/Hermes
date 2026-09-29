@@ -65,6 +65,8 @@ export type AnalyseConcurrence = {
   }[];
   tendance: {
     sens: "hausse" | "baisse" | "stable" | "indeterminee";
+    // false : échantillon plafonné ne remontant pas à la période précédente.
+    precedent_couvert: boolean;
     nb_recent: number;
     nb_precedent: number;
     montant_median_recent: number | null;
@@ -72,6 +74,9 @@ export type AnalyseConcurrence = {
   };
   periode_annees: number;
   echantillon_plafonne: boolean;
+  total_reel: number | null;
+  periode_debut: string | null;
+  periode_fin: string | null;
 };
 
 export type ConcurrenceAO = {

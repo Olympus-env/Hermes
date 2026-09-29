@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
@@ -16,6 +18,11 @@ from hermes.db.session import get_session
 
 router = APIRouter(prefix="/appels-offre", tags=["concurrence"])
 
+# Cache négatif du rattrapage BOAMP : un AO dont l'avis n'expose ni SIRET ni CPV
+# n'est pas relu à chaque consultation (24 h, mémoire du process).
+_RATTRAPAGE_TTL_S = 24 * 3600
+_rattrapages_vides: dict[int, float] = {}
+
 
 class TitulaireRecurrent(BaseModel):
     nom: str
@@ -27,6 +34,8 @@ class TitulaireRecurrent(BaseModel):
 
 class TendanceMarches(BaseModel):
     sens: str  # hausse | baisse | stable | indeterminee
+    # False : échantillon plafonné ne couvrant pas la période précédente.
+    precedent_couvert: bool = True
     nb_recent: int
     nb_precedent: int
     montant_median_recent: float | None
@@ -51,6 +60,11 @@ class AnalyseConcurrence(BaseModel):
     marches_recents: list[MarcheRecent]
     periode_annees: int
     echantillon_plafonne: bool
+    # Total réel annoncé par l'API (peut dépasser l'échantillon) et période
+    # effectivement couverte quand l'échantillon est plafonné.
+    total_reel: int | None = None
+    periode_debut: str | None = None
+    periode_fin: str | None = None
 
 
 class ConcurrenceRead(BaseModel):
@@ -114,6 +128,9 @@ async def _rattraper_identifiants(session: Session, ao: AppelOffre) -> None:
     """AO BOAMP collecté avant l'ajout du SIRET/CPV : relit l'avis (lecture seule)."""
     if ao.emetteur_siret or ao.code_cpv or not ao.reference_externe or not ao.portail_id:
         return
+    tente = _rattrapages_vides.get(ao.id or 0)
+    if tente is not None and time.monotonic() - tente < _RATTRAPAGE_TTL_S:
+        return
     portail = session.get(Portail, ao.portail_id)
     if portail is None or portail.nom.lower() != "boamp":
         return
@@ -122,6 +139,8 @@ async def _rattraper_identifiants(session: Session, ao: AppelOffre) -> None:
     except httpx.HTTPError as exc:
         logger.warning("Rattrapage SIRET BOAMP impossible pour AO {} : {}", ao.id, exc)
         return
+    if not (siret or cpv):
+        _rattrapages_vides[ao.id or 0] = time.monotonic()
     if siret or cpv:
         ao.emetteur_siret = siret
         ao.code_cpv = cpv

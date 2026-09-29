@@ -72,6 +72,12 @@ Colonnes ajoutées à `appels_offre` (migration `_migrer_colonnes`, bases exista
 tendance 12 mois vs 12 mois précédents avec seuil ±10 % sur la médiane, marchés récents).
 
 - Cache local `cache_decp` (MNEMOSYNE), TTL 24 h ; en cas de panne, le cache périmé est servi.
+- URL de l'API configurable : `HERMES_DECP_URL` (défaut : la ressource ci-dessus).
+- Requêtes concurrentes sur une même clé : verrou par clé, une seule interrogation réseau.
+- Échantillon plafonné (600 lignes) : jugé sur les lignes brutes reçues, avec le total réel
+  (`meta.total`) et la période effectivement couverte ; la tendance n'est pas calculée si
+  l'échantillon ne remonte pas à l'année précédente. Le total est celui du filtre `contains`
+  (peut inclure des CPV voisins).
 - Rate-limit : requêtes sérialisées, 1 s minimum entre deux appels, retry/backoff commun ARGOS.
 - Seul hôte contacté : `tabular-api.data.gouv.fr` (portail public officiel). Les requêtes ne
   contiennent que le SIRET de l'acheteur (donnée publique) ou un code CPV.

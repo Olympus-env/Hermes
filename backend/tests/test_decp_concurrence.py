@@ -124,12 +124,12 @@ async def test_cache_ttl_et_panne(monkeypatch):
 
     async def faux(filtres, depuis):
         appels.append(filtres)
-        return [_m("a", "T1", 100, 10)]
+        return [_m("a", "T1", 100, 10)], 1
 
     monkeypatch.setattr(decp, "_requeter", faux)
     with Session(get_engine()) as s:
         await decp._marches_en_cache(s, "acheteur:1", {"acheteur_id__exact": "1"})
-        _, _, cache = await decp._marches_en_cache(s, "acheteur:1", {})
+        _, _, _, cache = await decp._marches_en_cache(s, "acheteur:1", {})
         assert cache and len(appels) == 1  # second appel servi par le cache
 
         ligne = s.exec(select(CacheDecp)).one()
@@ -141,7 +141,7 @@ async def test_cache_ttl_et_panne(monkeypatch):
             raise httpx.ConnectError("hors ligne")
 
         monkeypatch.setattr(decp, "_requeter", panne)
-        marches, _, cache = await decp._marches_en_cache(s, "acheteur:1", {})
+        marches, _, _, cache = await decp._marches_en_cache(s, "acheteur:1", {})
         assert cache and marches  # cache périmé plutôt que rien
 
         with pytest.raises(decp.DecpIndisponible):
@@ -162,7 +162,7 @@ def _creer_ao(**kw) -> int:
 
 def test_api_concurrence(monkeypatch):
     async def faux(filtres, depuis):
-        return [_m("a", "T1", 100, 10, 4), _m("b", "T1", 200, 20, 2)]
+        return [_m("a", "T1", 100, 10, 4), _m("b", "T1", 200, 20, 2)], 2
 
     monkeypatch.setattr(decp, "_requeter", faux)
     ao_id = _creer_ao(emetteur_siret="20006973000055", code_cpv="72600000")
@@ -208,7 +208,7 @@ def test_api_rattrapage_siret_boamp(monkeypatch):
         return "20006973000055", "72600000"
 
     async def faux(filtres, depuis):
-        return [_m("a", "T1", 100, 10)]
+        return [_m("a", "T1", 100, 10)], 1
 
     monkeypatch.setattr(api, "recuperer_identifiants", faux_rattrapage)
     monkeypatch.setattr(decp, "_requeter", faux)
@@ -223,3 +223,79 @@ def test_api_rattrapage_siret_boamp(monkeypatch):
         assert client.get(f"/appels-offre/{ao_id}/concurrence").json()["acheteur"] is not None
     with Session(get_engine()) as s:
         assert s.get(AppelOffre, ao_id).emetteur_siret == "20006973000055"
+
+
+def test_api_concurrence_requetes_paralleles(monkeypatch):
+    """3 GET simultanés sur un AO frais : 3×200 et une seule série de requêtes réseau."""
+    import asyncio
+
+    appels: list[dict] = []
+
+    async def lent(filtres, depuis):
+        appels.append(filtres)
+        await asyncio.sleep(0.2)
+        return [_m("a", "T1", 100, 10)], 1
+
+    monkeypatch.setattr(decp, "_requeter", lent)
+    ao_id = _creer_ao(emetteur_siret="20006973000055")
+
+    async def lancer():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1",
+        ) as c:
+            return await asyncio.gather(
+                *[c.get(f"/appels-offre/{ao_id}/concurrence") for _ in range(3)]
+            )
+
+    reponses = asyncio.run(lancer())
+    assert [r.status_code for r in reponses] == [200, 200, 200]
+    assert all(r.json()["acheteur"]["nb_marches"] == 1 for r in reponses)
+    assert len(appels) == 1
+    with Session(get_engine()) as s:
+        assert len(s.exec(select(CacheDecp)).all()) == 1
+
+
+def test_echantillon_plafonne_sur_lignes_brutes(monkeypatch):
+    """Le plafond se juge avant le filtre de préfixe CPV ; période et total exposés."""
+    n = decp.TAILLE_PAGE * decp.MAX_PAGES
+    brut = [_m(f"u{i}", "T1", 100, 10 + i, cpv="77310000" if i % 2 else "01000000")
+            for i in range(n)]  # ~600 jours couverts seulement
+
+    async def faux(filtres, depuis):
+        return brut, 10022
+
+    monkeypatch.setattr(decp, "_requeter", faux)
+    ao_id = _creer_ao(code_cpv="77310000")
+    with TestClient(app) as client:
+        j = client.get(f"/appels-offre/{ao_id}/concurrence").json()
+    s = j["secteur"]
+    assert s["nb_marches"] == n // 2 < n  # le filtre réduit le nombre affiché
+    assert s["echantillon_plafonne"] is True
+    assert s["total_reel"] == 10022
+    assert s["periode_debut"] and s["periode_fin"]
+    assert s["tendance"]["precedent_couvert"] is False
+    assert s["tendance"]["sens"] == "indeterminee"
+
+
+def test_rattrapage_boamp_cache_negatif(monkeypatch):
+    from hermes.api import concurrence as api
+
+    appels = []
+
+    async def vide(idweb):
+        appels.append(idweb)
+        return None, None
+
+    api._rattrapages_vides.clear()
+    monkeypatch.setattr(api, "recuperer_identifiants", vide)
+    with Session(get_engine()) as s:
+        p = Portail(nom="boamp", url_base="https://www.boamp.fr")
+        s.add(p)
+        s.commit()
+        s.refresh(p)
+        pid = p.id
+    ao_id = _creer_ao(portail_id=pid, reference_externe="26-2")
+    with TestClient(app) as client:
+        client.get(f"/appels-offre/{ao_id}/concurrence")
+        client.get(f"/appels-offre/{ao_id}/concurrence")
+    assert len(appels) == 1

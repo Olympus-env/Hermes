@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { api, type AnalyseConcurrence } from "../lib/api";
 import { useApi } from "../lib/useApi";
 
@@ -7,8 +8,14 @@ import { useApi } from "../lib/useApi";
  * 3 ans — titulaires récurrents, montant médian, tendance.
  */
 export function ConcurrenceDecp({ aoId }: { aoId: number }) {
+  // `actualiser` n'est vrai que pour le clic explicite (ignore le cache 24 h).
+  const forcer = useRef(false);
   const { data, error, loading, reload } = useApi(
-    (signal) => api.concurrenceAO(aoId, false, signal),
+    (signal) => {
+      const actualiser = forcer.current;
+      forcer.current = false;
+      return api.concurrenceAO(aoId, actualiser, signal);
+    },
     [aoId],
   );
 
@@ -20,8 +27,11 @@ export function ConcurrenceDecp({ aoId }: { aoId: number }) {
           className="btn btn--ghost"
           style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 11 }}
           disabled={loading}
-          onClick={() => void reload()}
-          title="Relit le cache local (renouvelé toutes les 24 h)"
+          onClick={() => {
+            forcer.current = true;
+            void reload();
+          }}
+          title="Réinterroge les DECP en ignorant le cache local (24 h)"
         >
           {loading ? "Chargement…" : "Actualiser"}
         </button>
@@ -57,6 +67,10 @@ const TENDANCES: Record<string, string> = {
   indeterminee: "indéterminée",
 };
 
+function frDate(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleDateString("fr-FR") : "?";
+}
+
 function euros(v: number | null): string {
   return v == null ? "—" : `${Math.round(v).toLocaleString("fr-FR")} €`;
 }
@@ -76,10 +90,17 @@ function Bloc({ titre, analyse }: { titre: string; analyse: AnalyseConcurrence }
         {titre}
       </div>
       <dl className="kv">
-        <dt>Marchés ({analyse.periode_annees} ans)</dt>
+        <dt>
+          {analyse.echantillon_plafonne ? "Échantillon" : `Marchés (${analyse.periode_annees} ans)`}
+        </dt>
         <dd>
-          {analyse.nb_marches}
-          {analyse.echantillon_plafonne ? " (échantillon des plus récents)" : ""}
+          {analyse.echantillon_plafonne
+            ? `${analyse.nb_marches} marchés les plus récents${
+                analyse.total_reel
+                  ? ` sur ${analyse.total_reel.toLocaleString("fr-FR")} au total`
+                  : ""
+              }, du ${frDate(analyse.periode_debut)} au ${frDate(analyse.periode_fin)}`
+            : analyse.nb_marches}
         </dd>
         <dt>Montant médian</dt>
         <dd>{euros(analyse.montant_median)}</dd>
@@ -87,8 +108,9 @@ function Bloc({ titre, analyse }: { titre: string; analyse: AnalyseConcurrence }
         <dd>{analyse.offres_moyennes ?? "—"}</dd>
         <dt>Tendance 12 mois</dt>
         <dd>
-          {TENDANCES[t.sens] ?? t.sens} — {t.nb_recent} marché(s) vs {t.nb_precedent} l'an
-          précédent, médiane {euros(t.montant_median_recent)} vs {euros(t.montant_median_precedent)}
+          {t.precedent_couvert
+            ? `${TENDANCES[t.sens] ?? t.sens} — ${t.nb_recent} marché(s) vs ${t.nb_precedent} l'an précédent, médiane ${euros(t.montant_median_recent)} vs ${euros(t.montant_median_precedent)}`
+            : "non calculée (l'échantillon ne couvre pas l'année précédente)"}
         </dd>
       </dl>
       <div style={{ fontSize: 11, color: "var(--fg-3)", margin: "8px 0 4px" }}>
