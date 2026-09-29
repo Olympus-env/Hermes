@@ -61,14 +61,16 @@ CHAMPS_TED: tuple[str, ...] = (
 # vérifiée le 2026-09-29) constituant un **appel à concurrence** : liste
 # d'INCLUSION (une exclusion ne suit pas la codelist : pin-only, pin-tran,
 # qu-sy, compl, subco, brin-*… passaient entre les mailles).
-TYPES_AVIS_APPEL_TED: tuple[str, ...] = ("cn-standard", "cn-social", "cn-desg")
+TYPES_AVIS_APPEL_TED: tuple[str, ...] = (
+    "cn-standard", "cn-social", "cn-desg", "pin-cfc-standard", "pin-cfc-social",
+)
 
 # Types TED connus qui ne sont PAS des appels à concurrence : sert à la
 # migration/au re-filtrage des AO déjà ingérés (`type_marche` = code brut).
 TYPES_AVIS_HORS_APPEL_TED: frozenset[str] = frozenset({
     "brin-ecs", "brin-eeig", "can-desg", "can-modif", "can-social",
-    "can-standard", "can-tran", "compl", "pin-buyer", "pin-cfc-social",
-    "pin-cfc-standard", "pin-only", "pin-rtl", "pin-tran", "pmc", "qu-sy",
+    "can-standard", "can-tran", "compl", "pin-buyer",
+    "pin-only", "pin-rtl", "pin-tran", "pmc", "qu-sy",
     "subco", "veat",
 })
 

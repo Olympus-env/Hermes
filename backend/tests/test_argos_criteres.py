@@ -129,7 +129,7 @@ def test_where_sans_clause_positive_reste_none():
 # --------------------------------------------------------------------------- #
 
 
-_SANS_ATTRIBUTIONS = "notice-type IN (cn-standard cn-social cn-desg)"
+_SANS_ATTRIBUTIONS = "notice-type IN (cn-standard cn-social cn-desg pin-cfc-standard pin-cfc-social)"
 
 
 def test_query_cpv_nature_dates():
