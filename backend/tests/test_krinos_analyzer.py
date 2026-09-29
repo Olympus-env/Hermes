@@ -81,8 +81,8 @@ def test_analyser_ao_persiste_resultat_et_passe_en_analyse(monkeypatch):
         ao = _ao_avec_document(session, "CCTP isolation thermique extérieure")
         ao_id = ao.id
 
-    async def fake_generer(prompt, *, system=None, format_json=False, **_):
-        assert format_json is True
+    async def fake_generer(prompt, *, system=None, format_schema=None, **_):
+        assert format_schema is not None
         assert "Rénovation thermique" in prompt
         assert "CCTP isolation thermique" in prompt
         return _faux_pythia_reponse(
@@ -357,8 +357,8 @@ def test_endpoint_analyser_extrait_document_deja_attache(monkeypatch):
     from hermes.agents.krinos import analyzer
     from hermes.main import app
 
-    async def fake_generer(prompt, *, system=None, format_json=False, **_):
-        assert format_json is True
+    async def fake_generer(prompt, *, system=None, format_schema=None, **_):
+        assert format_schema is not None
         assert "CCTP notifications SMS prioritaire" in prompt
         return _faux_pythia_reponse(
             {

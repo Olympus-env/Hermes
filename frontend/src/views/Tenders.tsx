@@ -595,6 +595,12 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
           <div className="tender-panel__section-title">
             <AgentChip agent="krinos" state="active" compact /> Résumé d'analyse
           </div>
+          {analyse?.degradee && (
+            <p className="tender-panel__summary" role="alert">
+              <strong>Analyse dégradée</strong> : PYTHIA n'a pas fourni de réponse exploitable,
+              ce résumé et ce score sont une estimation locale à confirmer (relancez l'analyse).
+            </p>
+          )}
           <p className="tender-panel__summary">{analyse?.resume ?? tender.summary}</p>
         </div>
 

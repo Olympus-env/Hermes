@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     pythia_modele_embeddings: str = "nomic-embed-text"
     pythia_timeout_secondes: float = 180.0
     pythia_temperature: float = 0.2
+    # Fenêtre de contexte demandée à Ollama (`options.num_ctx`). Son défaut
+    # (2-4k tokens) tronque le prompt KRINOS (~5k tokens).
+    pythia_num_ctx: int = 16384
+    # Raisonnement Qwen3 pour les appels JSON (KRINOS, filtre, workflow) : coupé
+    # par défaut, il ne fait que consommer du contexte et du temps.
+    pythia_think_json: bool = False
+    # Durée de maintien du modèle en mémoire (`keep_alive` Ollama : "30m", "-1"…).
+    # Vide = défaut d'Ollama (5 min).
+    pythia_keep_alive: str = "30m"
     # Inférences LLM simultanées autorisées. Ollama traite les requêtes une à
     # une : au-delà de 1, KRINOS et HERMION s'empilent et saturent la machine
     # (issue #4). On sérialise donc par défaut.
@@ -63,7 +72,8 @@ class Settings(BaseSettings):
     hermion_section_timeout_secondes: float = 420.0
     hermion_section_timeout_par_100_mots_secondes: float = 45.0
     # Nb max de caractères de contenu documentaire injectés dans le prompt KRINOS
-    krinos_contexte_max_caracteres: int = 12000
+    # (borné à l'exécution selon `pythia_num_ctx`, cf. analyzer.budget_caracteres).
+    krinos_contexte_max_caracteres: int = 24000
 
     def model_post_init(self, __context: object) -> None:
         self.host = "127.0.0.1"

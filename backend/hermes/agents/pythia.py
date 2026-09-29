@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -50,9 +51,28 @@ class ReponsePythia:
     duree_ms: int
 
 
+# Qwen3 « réfléchit » avant de répondre ; selon la version d'Ollama, le raisonnement
+# arrive dans un champ `thinking` séparé ou en tête de `response` entre balises.
+_RE_THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def retirer_raisonnement(texte: str) -> str:
+    """Retire les blocs `<think>…</think>` (et un bloc non refermé en tête)."""
+    texte = _RE_THINK.sub("", texte)
+    # Bloc tronqué (num_predict atteint pendant la réflexion) ou balise orpheline.
+    if "</think>" in texte:
+        texte = texte.rsplit("</think>", 1)[1]
+    elif texte.lstrip().lower().startswith("<think>"):
+        texte = ""
+    return texte.strip()
+
+
 def _options() -> dict[str, Any]:
     return {
         "temperature": settings.pythia_temperature,
+        # Sans num_ctx, Ollama applique son défaut (2-4k tokens) et tronque
+        # silencieusement le prompt KRINOS (issue #16).
+        "num_ctx": settings.pythia_num_ctx,
         # Réduit la verbosité / le « bavardage » du modèle.
         "top_p": 0.9,
         "repeat_penalty": 1.1,
@@ -60,7 +80,7 @@ def _options() -> dict[str, Any]:
 
 
 def _timeout_effectif(timeout: float | None) -> float:
-    return timeout or settings.pythia_timeout_secondes
+    return settings.pythia_timeout_secondes if timeout is None else timeout
 
 
 async def generer(
@@ -68,6 +88,8 @@ async def generer(
     *,
     system: str | None = None,
     format_json: bool = False,
+    format_schema: dict[str, Any] | None = None,
+    think: bool | None = None,
     modele: str | None = None,
     options: dict[str, Any] | None = None,
     timeout: float | None = None,
@@ -75,7 +97,13 @@ async def generer(
     """Appelle `/api/generate` d'Ollama et renvoie la sortie textuelle.
 
     Si `format_json` est vrai, Ollama force le modèle à produire du JSON valide
-    (mode "format": "json" supporté nativement par Ollama).
+    (`"format": "json"`) ; `format_schema` (JSON Schema, ex. Pydantic
+    `model_json_schema()`) contraint en plus la structure (sorties structurées).
+
+    `think` pilote le raisonnement de Qwen3 : par défaut il est désactivé pour
+    les appels JSON (`pythia_think_json`, gain de temps et de tokens) et laissé
+    au comportement du modèle pour le texte libre (HERMION). Les éventuels blocs
+    `<think>…</think>` sont retirés de la sortie.
     """
     modele_utilise = modele or settings.pythia_modele
     payload: dict[str, Any] = {
@@ -88,8 +116,17 @@ async def generer(
         payload["options"].update(options)
     if system:
         payload["system"] = system
-    if format_json:
+    structure = format_json or format_schema is not None
+    if format_schema is not None:
+        payload["format"] = format_schema
+    elif format_json:
         payload["format"] = "json"
+    if think is None and structure:
+        think = settings.pythia_think_json
+    if think is not None:
+        payload["think"] = think
+    if settings.pythia_keep_alive:
+        payload["keep_alive"] = settings.pythia_keep_alive
 
     url = f"{settings.ollama_base_url.rstrip('/')}/api/generate"
     timeout_effectif = _timeout_effectif(timeout)
@@ -111,10 +148,11 @@ async def generer(
     texte = data.get("response")
     if not isinstance(texte, str):
         raise ErreurPythia("Réponse PYTHIA invalide : champ 'response' manquant")
+    texte = retirer_raisonnement(texte)
 
     duree_ns = int(data.get("total_duration") or 0)
     return ReponsePythia(
-        texte=texte.strip(),
+        texte=texte,
         modele=modele_utilise,
         duree_ms=duree_ns // 1_000_000,
     )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import html
 import re
@@ -66,18 +67,11 @@ def extraire_documents_appel_offre(
     if appel_offre.id is None:
         return RapportExtractionDocuments(documents_traites=0, caracteres_extraits=0)
 
-    documents = session.exec(
-        select(Document)
-        .where(Document.appel_offre_id == appel_offre.id)
-        .order_by(Document.id)
-    ).all()
-
+    documents = _documents_a_extraire(session, appel_offre, seulement_non_extraits)
     traites = 0
     caracteres = 0
     erreurs: list[str] = []
     for document in documents:
-        if seulement_non_extraits and document.contenu_extrait:
-            continue
         try:
             extraction = extraire_document(document)
         except ErreurExtractionDocument as exc:
@@ -85,13 +79,8 @@ def extraire_documents_appel_offre(
                 raise
             erreurs.append(f"Document {document.id}: {exc}")
             continue
-
-        document.contenu_extrait = extraction.texte
-        document.checksum_sha256 = extraction.checksum_sha256
-        document.taille_octets = extraction.taille_octets
-        session.add(document)
+        caracteres += _appliquer_extraction(session, document, extraction)
         traites += 1
-        caracteres += len(extraction.texte)
 
     if traites:
         session.commit()
@@ -101,6 +90,68 @@ def extraire_documents_appel_offre(
         caracteres_extraits=caracteres,
         erreurs=tuple(erreurs),
     )
+
+
+async def extraire_documents_appel_offre_async(
+    session: Session,
+    appel_offre: AppelOffre,
+    *,
+    seulement_non_extraits: bool = True,
+    best_effort: bool = False,
+) -> RapportExtractionDocuments:
+    """Variante non bloquante pour les endpoints/agents async.
+
+    pdfplumber/PyMuPDF sont synchrones et lents sur de gros DCE : l'extraction
+    tourne dans un thread (`asyncio.to_thread`) pour ne pas figer la boucle
+    d'événements ; la persistance reste sur le thread courant (session SQLite).
+    """
+    if appel_offre.id is None:
+        return RapportExtractionDocuments(documents_traites=0, caracteres_extraits=0)
+
+    documents = _documents_a_extraire(session, appel_offre, seulement_non_extraits)
+    traites = 0
+    caracteres = 0
+    erreurs: list[str] = []
+    for document in documents:
+        try:
+            extraction = await asyncio.to_thread(extraire_document, document)
+        except ErreurExtractionDocument as exc:
+            if not best_effort:
+                raise
+            erreurs.append(f"Document {document.id}: {exc}")
+            continue
+        caracteres += _appliquer_extraction(session, document, extraction)
+        traites += 1
+
+    if traites:
+        session.commit()
+
+    return RapportExtractionDocuments(
+        documents_traites=traites,
+        caracteres_extraits=caracteres,
+        erreurs=tuple(erreurs),
+    )
+
+
+def _documents_a_extraire(
+    session: Session, appel_offre: AppelOffre, seulement_non_extraits: bool
+) -> list[Document]:
+    documents = session.exec(
+        select(Document)
+        .where(Document.appel_offre_id == appel_offre.id)
+        .order_by(Document.id)
+    ).all()
+    return [d for d in documents if not (seulement_non_extraits and d.contenu_extrait)]
+
+
+def _appliquer_extraction(
+    session: Session, document: Document, extraction: ExtractionDocument
+) -> int:
+    document.contenu_extrait = extraction.texte
+    document.checksum_sha256 = extraction.checksum_sha256
+    document.taille_octets = extraction.taille_octets
+    session.add(document)
+    return len(extraction.texte)
 
 
 def _chemin_document(chemin_local: str) -> Path:
@@ -131,7 +182,11 @@ def _extraire_pdf(chemin: Path) -> str:
         import pdfplumber
 
         with pdfplumber.open(chemin) as pdf:
-            return "\n".join(page.extract_text() or "" for page in pdf.pages)
+            texte = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        if texte.strip():
+            return texte
+        # Texte vide (PDF mal encodé) : on tente PyMuPDF avant d'abandonner.
+        erreurs.append("pdfplumber : texte vide")
     except ImportError as exc:
         erreurs.append(f"pdfplumber indisponible : {exc}")
     except Exception as exc:  # noqa: BLE001
