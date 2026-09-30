@@ -19,6 +19,8 @@ os.environ["HERMES_STORAGE_PATH"] = str(_TMP_DIR / "storage")
 os.environ["HERMES_LOG_PATH"] = str(_TMP_DIR / "logs")
 os.environ["HERMES_DEBUG"] = "true"
 os.environ["HERMES_SCHEDULER_AUTO_START"] = "false"
+# Juge local PYTHIA : coupé par défaut en test (les tests dédiés l'activent).
+os.environ["HERMES_JUGE_LOCAL_ACTIF"] = "false"
 # TestClient envoie `Host: testserver` : autorisé uniquement en test.
 os.environ["HERMES_HOTES_AUTORISES"] = '["127.0.0.1","localhost","testserver"]'
 

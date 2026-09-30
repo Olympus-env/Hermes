@@ -125,6 +125,8 @@ class Settings(BaseSettings):
     # publiques d'avis (jamais HERMION, credentials, documents internes).
     # La clé vient de l'environnement / .env, jamais de la base, jamais loguée.
     jev_actif: bool = False
+    # Juge local PYTHIA anti-manipulation (2e couche) : actif par défaut, hors ligne.
+    juge_local_actif: bool = True
     jev_api_key: SecretStr | None = None
     jev_url: str = "https://api.typesafe.ai/v1/systemone"
     jev_modele: str = "jev-latest"

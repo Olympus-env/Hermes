@@ -596,6 +596,12 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ actif }),
     }),
+  lireConfigJugeLocal: () => fetchJson<{ actif: boolean }>("/krinos/juge-local"),
+  ecrireConfigJugeLocal: (actif: boolean) =>
+    fetchJson<{ actif: boolean }>("/krinos/juge-local", {
+      method: "PUT",
+      body: JSON.stringify({ actif }),
+    }),
   lireConfigOrchestration: () =>
     fetchJson<ConfigOrchestration>("/orchestration/config"),
   ecrireConfigOrchestration: (c: ConfigOrchestration) =>
