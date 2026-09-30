@@ -236,6 +236,43 @@ def tokens_consommes(session: Session) -> int:
         return 0
 
 
+def _jour_courant() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+def tokens_consommes_jour(session: Session) -> int:
+    """Tokens Jev consommés aujourd'hui (UTC), remis à zéro à chaque nouveau jour."""
+    data = _lire_json(session, CLE_BUDGET)
+    if data.get("jour") != _jour_courant():
+        return 0
+    try:
+        return max(0, int(data.get("tokens_jour", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _ecrire_compteurs(session: Session, total_mois: int, total_jour: int) -> None:
+    _ecrire_json(
+        session,
+        CLE_BUDGET,
+        {
+            "mois": _mois_courant(),
+            "tokens": total_mois,
+            "jour": _jour_courant(),
+            "tokens_jour": total_jour,
+        },
+        "Juge Jev — tokens consommés dans le mois et le jour (JSON)",
+    )
+
+
+def estimation_eur(tokens: int) -> float | None:
+    """Coût estimé en € ; None si aucun tarif n'est configuré (jamais de chiffre inventé)."""
+    prix = settings.jev_prix_eur_par_mtokens
+    if prix is None or prix < 0:
+        return None
+    return round(tokens * prix / 1_000_000, 4)
+
+
 def budget_epuise(session: Session) -> bool:
     return tokens_consommes(session) >= settings.jev_budget_tokens_mois
 
@@ -258,11 +295,8 @@ def _reserver(session: Session, estimation: int) -> None:
                 f"budget mensuel insuffisant ({consommes}+{estimation} estimés > "
                 f"{plafond} tokens)"
             )
-        _ecrire_json(
-            session,
-            CLE_BUDGET,
-            {"mois": _mois_courant(), "tokens": consommes + estimation},
-            "Juge Jev — tokens consommés dans le mois (JSON)",
+        _ecrire_compteurs(
+            session, consommes + estimation, tokens_consommes_jour(session) + estimation
         )
 
 
@@ -270,12 +304,8 @@ def _regulariser(session: Session, estimation: int, reel: int) -> None:
     """Remplace la réservation par la consommation réelle (0 si l'appel a échoué)."""
     with _verrou_budget:
         total = max(0, tokens_consommes(session) - estimation + max(0, reel))
-        _ecrire_json(
-            session,
-            CLE_BUDGET,
-            {"mois": _mois_courant(), "tokens": total},
-            "Juge Jev — tokens consommés dans le mois (JSON)",
-        )
+        jour = max(0, tokens_consommes_jour(session) - estimation + max(0, reel))
+        _ecrire_compteurs(session, total, jour)
 
 
 # --------------------------------------------------------------------------- #

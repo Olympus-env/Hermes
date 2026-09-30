@@ -130,6 +130,10 @@ class Settings(BaseSettings):
     jev_modele: str = "jev-latest"
     jev_timeout_secondes: float = 30.0
     jev_budget_tokens_mois: int = 2_000_000
+    # Tarif €/million de tokens. Aucun tarif public trouvé dans docs.typesafe.ai
+    # (llms.txt, 30/09/2026) : pas de défaut, donc pas d'estimation en € tant que
+    # l'utilisateur ne le renseigne pas (HERMES_JEV_PRIX_EUR_PAR_MTOKENS).
+    jev_prix_eur_par_mtokens: float | None = None
 
     def model_post_init(self, __context: object) -> None:
         self.host = "127.0.0.1"

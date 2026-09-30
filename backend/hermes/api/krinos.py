@@ -114,6 +114,13 @@ class JevConfigIO(BaseModel):
     cle_configuree: bool = False
     budget_tokens_mois: int = 0
     tokens_consommes: int = 0
+    tokens_consommes_jour: int = 0
+    tokens_restants: int = 0
+    pourcentage_budget: float = 0.0
+    # Tarif configuré (€/M tokens) ; None = inconnu, donc aucune estimation.
+    prix_eur_par_mtokens: float | None = None
+    cout_estime_mois_eur: float | None = None
+    cout_estime_jour_eur: float | None = None
 
 
 class JevConfigUpdate(BaseModel):
@@ -335,11 +342,20 @@ async def analyser_appel_offre(
 
 
 def _jev_config_io(session: Session) -> JevConfigIO:
+    mois = jev.tokens_consommes(session)
+    jour = jev.tokens_consommes_jour(session)
+    budget = settings.jev_budget_tokens_mois
     return JevConfigIO(
         actif=jev.reglage_actif(session),
         cle_configuree=jev.cle_configuree(),
-        budget_tokens_mois=settings.jev_budget_tokens_mois,
-        tokens_consommes=jev.tokens_consommes(session),
+        budget_tokens_mois=budget,
+        tokens_consommes=mois,
+        tokens_consommes_jour=jour,
+        tokens_restants=max(0, budget - mois),
+        pourcentage_budget=round(100 * mois / budget, 1) if budget > 0 else 0.0,
+        prix_eur_par_mtokens=settings.jev_prix_eur_par_mtokens,
+        cout_estime_mois_eur=jev.estimation_eur(mois),
+        cout_estime_jour_eur=jev.estimation_eur(jour),
     )
 
 

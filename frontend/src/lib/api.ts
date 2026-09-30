@@ -243,6 +243,13 @@ export type ConfigJev = {
   cle_configuree: boolean;
   budget_tokens_mois: number;
   tokens_consommes: number;
+  tokens_consommes_jour: number;
+  tokens_restants: number;
+  pourcentage_budget: number;
+  /** null = tarif inconnu : aucune estimation en € n'est affichée. */
+  prix_eur_par_mtokens: number | null;
+  cout_estime_mois_eur: number | null;
+  cout_estime_jour_eur: number | null;
 };
 
 /** Profil métier structuré (sans aucune donnée d'identité : nom, email, SIRET…). */
