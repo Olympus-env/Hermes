@@ -1,0 +1,1242 @@
+[
+ {
+  "id": "reel:26-94029",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "La consultation porte sur la fourniture, la mise en uvre, l'hébergement et la maintenance d'une solution logicielle intégrée de gestion scolaire, périscolaire et extrascolaire",
+   "objet": "La consultation porte sur la fourniture, la mise en uvre, l'hébergement et la maintenance d'une solution logicielle intégrée de gestion scolaire, périscolaire et extrascolaire",
+   "acheteur": "Ville de Saint-François",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-23"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "logiciel",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-94029"
+  }
+ },
+ {
+  "id": "reel:26-93227",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Marché de fourniture, d'intégration et de maintenance d'un logiciel métier pour la gestion des activités de la SEMRRE",
+   "objet": "Marché de fourniture, d'intégration et de maintenance d'un logiciel métier pour la gestion des activités de la SEMRRE",
+   "acheteur": "SEM Réunion Recyclage Environnement",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": ""
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "logiciel",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93227"
+  }
+ },
+ {
+  "id": "reel:26-93142",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Fourniture de réactifs et consommables ainsi que la maintenance forfaitaire pour l'automate PHADIA CAP 250 et logiciels associés du CHU de la Réunion",
+   "objet": "Fourniture de réactifs et consommables ainsi que la maintenance forfaitaire pour l'automate PHADIA CAP 250 et logiciels associés du CHU de la Réunion",
+   "acheteur": "CHU de la Réunion",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-09"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "logiciel",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93142"
+  }
+ },
+ {
+  "id": "reel:26-93014",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "RENOUVELLEMENT DE LA GTB AINSI QUE DU LOGICIEL DE SUPERVISION DU PARC DES EXPOSITIONS D’ANGERS",
+   "objet": "RENOUVELLEMENT DE LA GTB AINSI QUE DU LOGICIEL DE SUPERVISION DU PARC DES EXPOSITIONS D’ANGERS",
+   "acheteur": "ANGERS LOIRE TOURISME EXPO CONGRES",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-23"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "logiciel",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93014"
+  }
+ },
+ {
+  "id": "reel:26-92827",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Conception, mise en oeuvre et déploiement de la nouvelle identité graphique et du site internet du Domaine d'O",
+   "objet": "Conception, mise en oeuvre et déploiement de la nouvelle identité graphique et du site internet du Domaine d'O",
+   "acheteur": "Cité Euro Théâtre AA Domaine d'O Montp",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": ""
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "site internet",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92827"
+  }
+ },
+ {
+  "id": "reel:26-92621",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Commercialisation par régie des espaces publicitaires des sites Internet de Météo-France à la Réunion et à Mayotte",
+   "objet": "Commercialisation par régie des espaces publicitaires des sites Internet de Météo-France à la Réunion et à Mayotte",
+   "acheteur": "METEO FRANCE",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-23"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "site internet",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92621"
+  }
+ },
+ {
+  "id": "reel:26-92387",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Marché de prestations de refonte architecturale, créative et technique, de maintenance et d'hébergement du site internet du Musée de l'Air et de l'Espace",
+   "objet": "Marché de prestations de refonte architecturale, créative et technique, de maintenance et d'hébergement du site internet du Musée de l'Air et de l'Espace",
+   "acheteur": "Musée de l'Air et de l'Espace",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-26"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "site internet",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92387"
+  }
+ },
+ {
+  "id": "reel:26-91790",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Hébergement et TMA du site internet du Cnap",
+   "objet": "Hébergement et TMA du site internet du Cnap",
+   "acheteur": "CENTRE NATIONAL DES ARTS PLASTIQUES",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-04"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "site internet",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-91790"
+  }
+ },
+ {
+  "id": "reel:26-89994",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Hébergement, maintenance, gestion et création des sites internet de la Métropole du Grand Paris",
+   "objet": "Hébergement, maintenance, gestion et création des sites internet de la Métropole du Grand Paris",
+   "acheteur": "Métropole du Grand Paris",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-19"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "site internet",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-89994"
+  }
+ },
+ {
+  "id": "reel:26-89656",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Hébergement, maintenance évolutive des sites internet et refonte de l'intranet du Département de Tarn et Garonne",
+   "objet": "Hébergement, maintenance évolutive des sites internet et refonte de l'intranet du Département de Tarn et Garonne",
+   "acheteur": "Departement De Tarn Et Garonne",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-12"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "site internet",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-89656"
+  }
+ },
+ {
+  "id": "reel:26-92856",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Réalisation, mise en service et garantie d'une application mobile touristique pour la vallée de l'Ubaye Serre Ponçon et d'un tableau de bord analytique connecté pour le pilotage du flux touristique.",
+   "objet": "Réalisation, mise en service et garantie d'une application mobile touristique pour la vallée de l'Ubaye Serre Ponçon et d'un tableau de bord analytique connecté pour le pilotage du flux touristique.",
+   "acheteur": "Communauté de Communes de la Vallée de l'Ubaye Serre Ponçon (04)",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-26"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "application mobile",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92856"
+  }
+ },
+ {
+  "id": "reel:26-89705",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Infogérance (MCO, TMA) et hébergement du site et des applications mobiles SYTADIN",
+   "objet": "Infogérance (MCO, TMA) et hébergement du site et des applications mobiles SYTADIN",
+   "acheteur": "Direction régionale et interdépartementale de l'Environnement, de l’Aménagement et des Transports d’Île-de-France (DRIEAT IF)",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-22"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "application mobile",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-89705"
+  }
+ },
+ {
+  "id": "reel:26-89844",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Marché de travaux de mise en application de l'article GN8 - évacuation des personnes à mobilité réduite du Nouveau Forum des Halles, Paris 1er",
+   "objet": "Marché de travaux de mise en application de l'article GN8 - évacuation des personnes à mobilité réduite du Nouveau Forum des Halles, Paris 1er",
+   "acheteur": "SPL PARISEINE",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-12"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "application mobile",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-89844"
+  }
+ },
+ {
+  "id": "reel:26-47955",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Développement d’une application de réalité augmentée avec une interface back office, autour d’une maquette pédagogique et d’un musée mobile sur la biodiversité.",
+   "objet": "Développement d’une application de réalité augmentée avec une interface back office, autour d’une maquette pédagogique et d’un musée mobile sur la biodiversité.",
+   "acheteur": "SYNDICAT MIXTE DES GORGES DU GARDON",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-06-03"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "application mobile",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-47955"
+  }
+ },
+ {
+  "id": "reel:26-47737",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "REFONTE DU SITE INTERNET DE LA VILLE ET APPLICATION MOBILE",
+   "objet": "REFONTE DU SITE INTERNET DE LA VILLE ET APPLICATION MOBILE",
+   "acheteur": "Ville d'Orange (84)",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-06-03"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "application mobile",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-47737"
+  }
+ },
+ {
+  "id": "reel:26-46750",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Travaux de mise en conformité des arrêts de bus en application de la Loi d'Orientation des Mobilités (Lom)",
+   "objet": "Travaux de mise en conformité des arrêts de bus en application de la Loi d'Orientation des Mobilités (Lom)",
+   "acheteur": "Communauté d'agglomération du Boulonnais",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-06-01"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "application mobile",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-46750"
+  }
+ },
+ {
+  "id": "reel:26-84045",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Accord cadre mono-attributaire à bons de commande\r\nFourniture, location et maintenance de matériels et de services informatique, infogérance, cybersécurité et prestations d'accompagnement",
+   "objet": "Accord cadre mono-attributaire à bons de commande\r\nFourniture, location et maintenance de matériels et de services informatique, infogérance, cybersécurité et prestations d'accompagnement",
+   "acheteur": "COLMARIENNE DES EAUX",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-09-25"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "cybersécurité",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-84045"
+  }
+ },
+ {
+  "id": "reel:26-81640",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Prestations d'audits de cybersécurité - Ligne C du métro Toulousain",
+   "objet": "Prestations d'audits de cybersécurité - Ligne C du métro Toulousain",
+   "acheteur": "Tisséo Ingénierie, agissant au nom et pour le compte de Tisséo Collectivités",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "cybersécurité",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-81640"
+  }
+ },
+ {
+  "id": "reel:26-75585",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "fourniture, la mise en oeuvre, l’exploitation, la maintenance et le support de solutions de cybersécurité au bénéfice du syndicat mixte régional e-Collectivités et de ses collectivités adhérentes.",
+   "objet": "fourniture, la mise en oeuvre, l’exploitation, la maintenance et le support de solutions de cybersécurité au bénéfice du syndicat mixte régional e-Collectivités et de ses collectivités adhérentes.",
+   "acheteur": "Syndicat Mixte e-Collectivités",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-09-09"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "cybersécurité",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-75585"
+  }
+ },
+ {
+  "id": "reel:26-64681",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Marché public de prestations de services en cybersécurité des systèmes d'information",
+   "objet": "Marché public de prestations de services en cybersécurité des systèmes d'information",
+   "acheteur": "Gip Grades Corse e-santé",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-07-27"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "cybersécurité",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-64681"
+  }
+ },
+ {
+  "id": "reel:26-92948",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Prestation d’infogérance d'un centre d'appels et d'assistance téléphonique aux utilisateurs et du support informatique de proximité pour le groupe CCIR Paris Ile-de-France",
+   "objet": "Prestation d’infogérance d'un centre d'appels et d'assistance téléphonique aux utilisateurs et du support informatique de proximité pour le groupe CCIR Paris Ile-de-France",
+   "acheteur": "GIE GROUPE CCIR PARIS ILE DE FRANCE",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-28"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "infogérance",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92948"
+  }
+ },
+ {
+  "id": "reel:26-92365",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "2027 - AO infogérances",
+   "objet": "2027 - AO infogérances",
+   "acheteur": "AUVERGNE RHONE ALPES TOURISME",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-29"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "infogérance",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92365"
+  }
+ },
+ {
+  "id": "reel:26-92354",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "INFOGÉRANCE DES INFRASTRUCTURES SERVEURS ET APPLICATIONS (ISA) DU CONSEIL DÉPARTEMENTAL DES BOUCHES-DU-RHÔNE",
+   "objet": "INFOGÉRANCE DES INFRASTRUCTURES SERVEURS ET APPLICATIONS (ISA) DU CONSEIL DÉPARTEMENTAL DES BOUCHES-DU-RHÔNE",
+   "acheteur": "Conseil départemental des Bouches-du-Rhône",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": ""
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "infogérance",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92354"
+  }
+ },
+ {
+  "id": "reel:26-91870",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Infogérance des systèmes d'information de la COPAMO - 2027 - 2030",
+   "objet": "Infogérance des systèmes d'information de la COPAMO - 2027 - 2030",
+   "acheteur": "COPAMO Communauté de Communes du Pays Mornantais",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-15"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "infogérance",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-91870"
+  }
+ },
+ {
+  "id": "reel:26-91336",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Marché d’infogérance informatique",
+   "objet": "Marché d’infogérance informatique",
+   "acheteur": "OPPIC",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-21"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "infogérance",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-91336"
+  }
+ },
+ {
+  "id": "reel:26-91027",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Le présent marché public a pour objet la fourniture de prestations de services informatiques, comprenant notamment l'installation, l'exploitation, la maintenance et l'infogérance d",
+   "objet": "Le présent marché public a pour objet la fourniture de prestations de services informatiques, comprenant notamment l'installation, l'exploitation, la maintenance et l'infogérance d",
+   "acheteur": "Mairie de Saint-Victoret",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "infogérance",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-91027"
+  }
+ },
+ {
+  "id": "reel:26-93467",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "TRAVAUX PREVENTIFS DE REPRISES PONCTUELLES DES VOIRIES DE LA METROPOLE DE LYON",
+   "objet": "TRAVAUX PREVENTIFS DE REPRISES PONCTUELLES DES VOIRIES DE LA METROPOLE DE LYON",
+   "acheteur": "Métropole de Lyon DGEEP",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "travaux de voirie",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93467"
+  }
+ },
+ {
+  "id": "reel:26-93605",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Accord-cadre mono-attributaire à bons de commande de travaux d'entretien de voirie et réseaux divers (Vrd) pour la commune de Thoiry (78) - relance du lot n°1",
+   "objet": "Accord-cadre mono-attributaire à bons de commande de travaux d'entretien de voirie et réseaux divers (Vrd) pour la commune de Thoiry (78) - relance du lot n°1",
+   "acheteur": "Commune de Thoiry",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-28"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "travaux de voirie",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93605"
+  }
+ },
+ {
+  "id": "reel:26-93394",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Travaux de rénovation des voiries communales de Sainte-Marie",
+   "objet": "Travaux de rénovation des voiries communales de Sainte-Marie",
+   "acheteur": "Commune de Sainte-Marie de la Réunion",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-19"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "travaux de voirie",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93394"
+  }
+ },
+ {
+  "id": "reel:26-93346",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Travaux de voirie sur le territoire communal",
+   "objet": "Travaux de voirie sur le territoire communal",
+   "acheteur": "Mairie de Raismes",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-23"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "travaux de voirie",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93346"
+  }
+ },
+ {
+  "id": "reel:26-92752",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Travaux de voiries et réseaux divers",
+   "objet": "Travaux de voiries et réseaux divers",
+   "acheteur": "Mairie d&#039;ivry-sur-seine",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-28"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "travaux de voirie",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92752"
+  }
+ },
+ {
+  "id": "reel:26-92967",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "TRAVAUX D'ENTRETIEN DES VOIRIES 2027 en secteur France",
+   "objet": "TRAVAUX D'ENTRETIEN DES VOIRIES 2027 en secteur France",
+   "acheteur": "Aéroport de Bâle Mulhouse (68)",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-03"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "travaux de voirie",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92967"
+  }
+ },
+ {
+  "id": "reel:26-93701",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Restauration scolaire et périscolaire",
+   "objet": "Restauration scolaire et périscolaire",
+   "acheteur": "Commune d&#039;Enghien-les-Bains",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "restauration scolaire",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93701"
+  }
+ },
+ {
+  "id": "reel:26-93613",
+  "groupe": "reel_pertinent",
+  "avis": {
+   "titre": "Installation, hébergement et maintenance du progiciel de gestion de la restauration scolaire des lycées de Bourgogne Franche-Comté",
+   "objet": "Installation, hébergement et maintenance du progiciel de gestion de la restauration scolaire des lycées de Bourgogne Franche-Comté",
+   "acheteur": "Région Bourgogne Franche-Comté",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-09-30"
+  },
+  "documents": "",
+  "attendu_pertinent": true,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "restauration scolaire",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93613"
+  }
+ },
+ {
+  "id": "reel:26-93110",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Accord-cadre de restauration scolaire : fourniture et livraison de repas en liaison froide et goûters pour la commune d'Orvilliers (78)",
+   "objet": "Accord-cadre de restauration scolaire : fourniture et livraison de repas en liaison froide et goûters pour la commune d'Orvilliers (78)",
+   "acheteur": "Commune d'Orvilliers",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-16"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "restauration scolaire",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93110"
+  }
+ },
+ {
+  "id": "reel:26-92914",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Accord-cadre de restauration scolaire : fourniture et livraison de repas en liaison froide pour le restaurant scolaire pour la commune de Lainville-en-Vexin (78)",
+   "objet": "Accord-cadre de restauration scolaire : fourniture et livraison de repas en liaison froide pour le restaurant scolaire pour la commune de Lainville-en-Vexin (78)",
+   "acheteur": "Commune de Lainville-En-Vexin",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-22"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "restauration scolaire",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92914"
+  }
+ },
+ {
+  "id": "reel:26-91585",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "MARCHE DE FOURNITURE ET LIVRAISON DE REPAS EN LIAISON FROIDE POUR LA RESTAURATION SCOLAIRE, PÉRISCOLAIRE AINSI QUE DE REPAS ET GOUTERS POUR LA PETITE ENFANCE",
+   "objet": "MARCHE DE FOURNITURE ET LIVRAISON DE REPAS EN LIAISON FROIDE POUR LA RESTAURATION SCOLAIRE, PÉRISCOLAIRE AINSI QUE DE REPAS ET GOUTERS POUR LA PETITE ENFANCE",
+   "acheteur": "Mairie de Menucourt",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-06"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "restauration scolaire",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-91585"
+  }
+ },
+ {
+  "id": "reel:26-90782",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Fourniture et livraison de repas en liaison froide pour la restauration collective municipale (restauration scolaire, accueils de loisirs, adultes, séniors foyer et bénéficiaires du portage à domicile",
+   "objet": "Fourniture et livraison de repas en liaison froide pour la restauration collective municipale (restauration scolaire, accueils de loisirs, adultes, séniors foyer et bénéficiaires du portage à domicile",
+   "acheteur": "Ville d'Eyguières",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-16"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "restauration scolaire",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-90782"
+  }
+ },
+ {
+  "id": "reel:26-93225",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "RÉALISATION DE PRESTATIONS DE BALAYAGE ET NETTOYAGE DES LOCAUX DE LA CHAMBRE DE COMMERCE ET D’INDUSTRIE DE MAYOTTE",
+   "objet": "RÉALISATION DE PRESTATIONS DE BALAYAGE ET NETTOYAGE DES LOCAUX DE LA CHAMBRE DE COMMERCE ET D’INDUSTRIE DE MAYOTTE",
+   "acheteur": "Chambre de Commerce et D’industrie de Mayotte",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-29"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "nettoyage des locaux",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93225"
+  }
+ },
+ {
+  "id": "reel:26-93054",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Entretien et nettoyage des locaux et vitrages du Conseil départemental de l'Ariège",
+   "objet": "Entretien et nettoyage des locaux et vitrages du Conseil départemental de l'Ariège",
+   "acheteur": "Conseil Départemental de l'Ariège (09)",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "nettoyage des locaux",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93054"
+  }
+ },
+ {
+  "id": "reel:26-92838",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "PRESTATION DE NETTOYAGE DES LOCAUX DU SDIS DE LA CHARENTE",
+   "objet": "PRESTATION DE NETTOYAGE DES LOCAUX DU SDIS DE LA CHARENTE",
+   "acheteur": "Service départemental d'incendie et de secours de la Charente",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "nettoyage des locaux",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92838"
+  }
+ },
+ {
+  "id": "reel:26-92766",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Nettoyage des locaux et des vitres pour les besoins de la CCI Moselle Metz sur la Moselle Nord.",
+   "objet": "Nettoyage des locaux et des vitres pour les besoins de la CCI Moselle Metz sur la Moselle Nord.",
+   "acheteur": "CCI MOSELLE",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-28"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "nettoyage des locaux",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92766"
+  }
+ },
+ {
+  "id": "reel:26-92922",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Prestations de nettoyage des locaux, de la vitrerie ainsi que la fourniture des consommables sanitaires et d'évacuation des déchets pour les antennes de l'ODARC",
+   "objet": "Prestations de nettoyage des locaux, de la vitrerie ainsi que la fourniture des consommables sanitaires et d'évacuation des déchets pour les antennes de l'ODARC",
+   "acheteur": "ODARC - Etablissement public à caractère industriel et commercial",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-20"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "nettoyage des locaux",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92922"
+  }
+ },
+ {
+  "id": "reel:26-92284",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "NETTOYAGE DES LOCAUX ADMINISTRATIFS D'HABITAT ET MÉTROPOLE",
+   "objet": "NETTOYAGE DES LOCAUX ADMINISTRATIFS D'HABITAT ET MÉTROPOLE",
+   "acheteur": "HABITAT ET METROPOLE SAINT-ETIENNE",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "nettoyage des locaux",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92284"
+  }
+ },
+ {
+  "id": "reel:26-93617",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Marché pour la fourniture et livraison de denrées alimentaires",
+   "objet": "Marché pour la fourniture et livraison de denrées alimentaires",
+   "acheteur": "SPL Ti Baba",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-29"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "fourniture de denrées alimentaires",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93617"
+  }
+ },
+ {
+  "id": "reel:26-93438",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Fourniture de denrées alimentaires pour la Ville et le CCAS de Laval",
+   "objet": "Fourniture de denrées alimentaires pour la Ville et le CCAS de Laval",
+   "acheteur": "VILLE DE LAVAL",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-02"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "fourniture de denrées alimentaires",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93438"
+  }
+ },
+ {
+  "id": "reel:26-93382",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Prestation d’assistance technique et de fourniture de denrées alimentaires par un prestataire d'approvisionnement alimentaire",
+   "objet": "Prestation d’assistance technique et de fourniture de denrées alimentaires par un prestataire d'approvisionnement alimentaire",
+   "acheteur": "Agglomération du Gard Rhodanien (30)",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-13"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "fourniture de denrées alimentaires",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93382"
+  }
+ },
+ {
+  "id": "reel:26-93320",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Fourniture et livraison de denrées alimentaires : Fruits et légumes frais",
+   "objet": "Fourniture et livraison de denrées alimentaires : Fruits et légumes frais",
+   "acheteur": "COMMUNE DE SOISY-SOUS-MONTMORENCY",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-05"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "fourniture de denrées alimentaires",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93320"
+  }
+ },
+ {
+  "id": "reel:26-92854",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Fourniture de denrées alimentaires pour SDH",
+   "objet": "Fourniture de denrées alimentaires pour SDH",
+   "acheteur": "SOLIDARITE DOUBS HANDICAP",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-02"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "fourniture de denrées alimentaires",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92854"
+  }
+ },
+ {
+  "id": "reel:26-92849",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Fourniture de repas et de denrées alimentaires pour la Ville d'Armentières",
+   "objet": "Fourniture de repas et de denrées alimentaires pour la Ville d'Armentières",
+   "acheteur": "Marie d&#039;Armentières",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-26"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "fourniture de denrées alimentaires",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-92849"
+  }
+ },
+ {
+  "id": "reel:26-93563",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Entretien des espaces verts",
+   "objet": "Entretien des espaces verts",
+   "acheteur": "COMMUNE DE SAINT LYS",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-29"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "entretien des espaces verts",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93563"
+  }
+ },
+ {
+  "id": "reel:26-93475",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Entretien des espaces verts du domaine privé de la CU GPSEO",
+   "objet": "Entretien des espaces verts du domaine privé de la CU GPSEO",
+   "acheteur": "CU Grand Paris Seine & Oise",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "entretien des espaces verts",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93475"
+  }
+ },
+ {
+  "id": "reel:26-93833",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Entretien des espaces verts et naturels des gymnases de la Communauté d'Agglomération du Saint-Quentinois",
+   "objet": "Entretien des espaces verts et naturels des gymnases de la Communauté d'Agglomération du Saint-Quentinois",
+   "acheteur": "Ca du Saint-Quentinois",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-27"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "entretien des espaces verts",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93833"
+  }
+ },
+ {
+  "id": "reel:26-93747",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Prestations transitoires d’entretien des espaces verts, d'élagage et d'abattage du patrimoine arboré",
+   "objet": "Prestations transitoires d’entretien des espaces verts, d'élagage et d'abattage du patrimoine arboré",
+   "acheteur": "Commune de Senlis",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-21"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "entretien des espaces verts",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93747"
+  }
+ },
+ {
+  "id": "reel:26-93308",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Entretien des espaces verts du Port de Calais",
+   "objet": "Entretien des espaces verts du Port de Calais",
+   "acheteur": "Société d'Exploitation des Ports du Détroit",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "entretien des espaces verts",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93308"
+  }
+ },
+ {
+  "id": "reel:26-93155",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Entretien des espaces verts des différents sites de la COR",
+   "objet": "Entretien des espaces verts des différents sites de la COR",
+   "acheteur": "Communauté d'agglomération de l'Ouest Rhodanien",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-06"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "entretien des espaces verts",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93155"
+  }
+ },
+ {
+  "id": "reel:26-93795",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Services d'assurances pour la Communauté de Communes du Liancourtois",
+   "objet": "Services d'assurances pour la Communauté de Communes du Liancourtois",
+   "acheteur": "COM COM du Liancourtois Vallée Dorée",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-06"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "assurances",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93795"
+  }
+ },
+ {
+  "id": "reel:26-93697",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Prestations d'assurances",
+   "objet": "Prestations d'assurances",
+   "acheteur": "INSTITUT MINES TELECOM ALBI",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-10"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "assurances",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93697"
+  }
+ },
+ {
+  "id": "reel:26-93598",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Marché public d'assurances",
+   "objet": "Marché public d'assurances",
+   "acheteur": "Communauté de Communes Aunis Sud",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "assurances",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93598"
+  }
+ },
+ {
+  "id": "reel:26-93505",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Marché de services relatif à la prestation d'assurances pour les besoins de la COMMUNE D'EGUISHEIM.",
+   "objet": "Marché de services relatif à la prestation d'assurances pour les besoins de la COMMUNE D'EGUISHEIM.",
+   "acheteur": "COMMUNE DE EGUISHEIM",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-11-02"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "assurances",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93505"
+  }
+ },
+ {
+  "id": "reel:26-93504",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Souscription de différents contrats d’assurances pour le compte de SMDO.",
+   "objet": "Souscription de différents contrats d’assurances pour le compte de SMDO.",
+   "acheteur": "Syndicat Mixte du Département de l'Oise (60)",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-28"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "assurances",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93504"
+  }
+ },
+ {
+  "id": "reel:26-93441",
+  "groupe": "reel_hors_profil",
+  "avis": {
+   "titre": "Prestations d'assurances pour les Établissements du GHT Haute Corse",
+   "objet": "Prestations d'assurances pour les Établissements du GHT Haute Corse",
+   "acheteur": "GHT HAUTE CORSE",
+   "type_marche": "Avis de marché",
+   "budget": "",
+   "date_limite": "2026-10-30"
+  },
+  "documents": "",
+  "attendu_pertinent": false,
+  "attendu_manipulation": false,
+  "score_attendu": null,
+  "extra": {
+   "requete": "assurances",
+   "url": "https://www.boamp.fr/pages/avis/?q=idweb:26-93441"
+  }
+ }
+]

@@ -38,7 +38,7 @@ hiddenimports += [
 # de l'analyse statique de PyInstaller.
 datas: list = []
 binaries: list = []
-for _paquet in ("rapidocr", "onnxruntime"):
+for _paquet in ("rapidocr", "onnxruntime", "tokenizers"):
     _d, _b, _h = collect_all(_paquet)
     datas += _d
     binaries += _b

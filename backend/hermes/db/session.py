@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
@@ -40,11 +42,97 @@ def init_db() -> None:
     settings.ensure_dirs()
     SQLModel.metadata.create_all(_engine)
     with _engine.connect() as conn:
+        _renommer_colonnes_jev_vers_laya(conn)
         _migrer_colonnes(conn)
+        _migrer_reglages_jev_vers_laya(conn)
         _dedoublonner_appels_offre(conn)
         _migrer_versions_uniques(conn)
         _marquer_avis_ted_hors_appel(conn)
         conn.commit()
+
+
+# (table, ancien nom, nouveau nom) : Jev (TypeSafe) remplacé par Laya (issue #56).
+_RENOMMAGES_JEV_LAYA: list[tuple[str, str, str]] = [
+    ("analyses_krinos", "score_jev", "score_laya"),
+    ("analyses_krinos", "confiance_jev", "confiance_laya"),
+    ("analyses_krinos", "details_jev", "details_laya"),
+    ("appels_offre", "hors_profil_jev", "hors_profil_laya"),
+    ("appels_offre", "pertinence_jev", "pertinence_laya"),
+]
+
+
+def _renommer_colonnes_jev_vers_laya(conn) -> None:
+    """`ALTER TABLE … RENAME COLUMN` des colonnes `*_jev` (bases existantes).
+
+    Idempotent : ne renomme que si l'ancienne colonne existe et pas la nouvelle
+    (donc sans effet sur une base neuve, déjà migrée, ou à moitié migrée). Les
+    drapeaux `jev:*` / `divergence_jev_pythia` déjà stockés sont réécrits à l'identique
+    côté Laya pour que le routage et le rejeu des seuils continuent de les reconnaître.
+    """
+    for table, ancien, nouveau in _RENOMMAGES_JEV_LAYA:
+        cols = {
+            row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info('{table}')").fetchall()
+        }
+        if ancien in cols and nouveau not in cols:
+            conn.exec_driver_sql(f"ALTER TABLE {table} RENAME COLUMN {ancien} TO {nouveau}")
+    cols = {
+        row[1] for row in conn.exec_driver_sql("PRAGMA table_info('analyses_krinos')").fetchall()
+    }
+    if "drapeaux" in cols:
+        conn.exec_driver_sql(
+            "UPDATE analyses_krinos SET drapeaux = "
+            "REPLACE(REPLACE(drapeaux, '\"jev:', '\"laya:'), "
+            "'divergence_jev_pythia', 'divergence_laya_pythia') "
+            "WHERE drapeaux LIKE '%jev%'"
+        )
+
+
+def _migrer_reglages_jev_vers_laya(conn) -> None:
+    """Migration douce des réglages `krinos.jev.*` vers `krinos.laya.*` (idempotent).
+
+    Seuils et pré-tri (seuil) sont conservés ; les interrupteurs `actif` repartent à
+    faux (Laya est un autre juge, à activer explicitement, après téléchargement
+    consenti du modèle). Le compteur de budget TypeSafe disparaît. Les anciennes clés
+    sont supprimées une fois copiées ; une clé `krinos.laya.*` déjà présente prime.
+    """
+    if not conn.exec_driver_sql(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='parametres'"
+    ).fetchone():
+        return
+    for ancienne, nouvelle in (
+        ("krinos.jev.seuils", "krinos.laya.seuils"),
+        ("krinos.jev.config", "krinos.laya.config"),
+        ("krinos.jev.pretri", "krinos.laya.pretri"),
+    ):
+        ligne = conn.exec_driver_sql(
+            "SELECT valeur, description FROM parametres WHERE cle = ?", (ancienne,)
+        ).fetchone()
+        if ligne is None:
+            continue
+        deja = conn.exec_driver_sql(
+            "SELECT 1 FROM parametres WHERE cle = ?", (nouvelle,)
+        ).fetchone()
+        if deja is None:
+            try:
+                data = json.loads(ligne[0]) if ligne[0] else {}
+            except ValueError:
+                data = {}
+            if not isinstance(data, dict):
+                data = {}
+            if "actif" in data:
+                data["actif"] = False
+            description = (ligne[1] or "").replace("Jev (TypeSafe)", "Laya").replace("Jev", "Laya")
+            conn.exec_driver_sql(
+                "INSERT INTO parametres (cle, valeur, description, maj_le) VALUES (?, ?, ?, ?)",
+                (
+                    nouvelle,
+                    json.dumps(data, ensure_ascii=False),
+                    description,
+                    datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f"),
+                ),
+            )
+        conn.exec_driver_sql("DELETE FROM parametres WHERE cle = ?", (ancienne,))
+    conn.exec_driver_sql("DELETE FROM parametres WHERE cle = 'krinos.jev.budget'")
 
 
 def _migrer_colonnes(conn) -> None:
@@ -59,11 +147,11 @@ def _migrer_colonnes(conn) -> None:
         ("analyses_krinos", "suspect_injection", "BOOLEAN NOT NULL DEFAULT 0"),
         ("analyses_krinos", "a_verifier", "BOOLEAN NOT NULL DEFAULT 0"),
         ("analyses_krinos", "drapeaux", "TEXT"),
-        ("analyses_krinos", "score_jev", "FLOAT"),
-        ("analyses_krinos", "confiance_jev", "FLOAT"),
-        ("analyses_krinos", "details_jev", "TEXT"),
-        ("appels_offre", "hors_profil_jev", "BOOLEAN NOT NULL DEFAULT 0"),
-        ("appels_offre", "pertinence_jev", "FLOAT"),
+        ("analyses_krinos", "score_laya", "FLOAT"),
+        ("analyses_krinos", "confiance_laya", "FLOAT"),
+        ("analyses_krinos", "details_laya", "TEXT"),
+        ("appels_offre", "hors_profil_laya", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("appels_offre", "pertinence_laya", "FLOAT"),
     ]
     for table, colonne, definition in migrations:
         cols = {

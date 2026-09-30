@@ -36,6 +36,11 @@ pdfplumber==0.11.5
 rapidocr==3.9.2
 onnxruntime==1.30.0
 
+# --- KRINOS — juge Laya (Apache-2.0) : ONNX Runtime ci-dessus + tokenizer Rust ---
+# Pas de PyTorch ni de transformers. Les poids (~0,7 Go) ne sont PAS embarqués :
+# téléchargés après consentement explicite de l'utilisateur.
+tokenizers==0.23.2
+
 # --- KRINOS — parsing XML sûr (XLSX/DOCX) ---
 defusedxml==0.7.1
 

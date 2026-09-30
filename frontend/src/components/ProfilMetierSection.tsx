@@ -36,7 +36,7 @@ function Ligne({ label, hint, children }: { label: string; hint: string; childre
 }
 
 /**
- * Profil métier envoyé à KRINOS (PYTHIA, Jev). Aucune donnée d'identité :
+ * Profil métier envoyé à KRINOS (PYTHIA, Laya). Aucune donnée d'identité :
  * nom, email et SIRET ne sont ni demandés ni acceptés par le backend.
  */
 export function ProfilMetierSection({ legacy }: { legacy: UserProfile | null }) {
@@ -105,7 +105,7 @@ export function ProfilMetierSection({ legacy }: { legacy: UserProfile | null }) 
     <div className="settings-section">
       <h2>Profil métier</h2>
       <p className="settings-section__desc">
-        Décrit ton savoir-faire pour l'analyse KRINOS (PYTHIA et second avis Jev).
+        Décrit ton savoir-faire pour l'analyse KRINOS (PYTHIA et second avis Laya).
         N'y mets aucune donnée d'identité : nom, email et SIRET sont refusés.
       </p>
       <Ligne label="Activité" hint="ex : ESN Java, cabinet AMO">

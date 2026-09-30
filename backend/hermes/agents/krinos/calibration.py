@@ -1,4 +1,4 @@
-"""KRINOS — calibration de Jev / PYTHIA / composite contre la décision humaine (#44).
+"""KRINOS — calibration de Laya / PYTHIA / composite contre la décision humaine (#44).
 
 Heuristique de « décision humaine » (documentée, lecture seule, aucune donnée ne sort) :
     - accepté  : l'AO est `repondu`, OU il a une réponse HERMION validée/exportée
@@ -9,9 +9,9 @@ humain. Les autres statuts (`brut`, `analyse`, `expire`, `hors_filtre`) sont ign
 pas de décision avérée, donc rien à comparer. On s'appuie sur les statuts et les
 réponses plutôt que sur `logs_agents`, qui ne trace pas ces transitions.
 
-Pour chaque source (PYTHIA, Jev, composite) et chaque seuil de score testé, on
+Pour chaque source (PYTHIA, Laya, composite) et chaque seuil de score testé, on
 construit une matrice de confusion « la source aurait dit go » vs « l'humain a
-accepté ». Jev et le composite ne comptent que les AO où Jev a réellement répondu.
+accepté ». Laya et le composite ne comptent que les AO où Laya a réellement répondu.
 """
 
 from __future__ import annotations
@@ -34,8 +34,8 @@ SEUILS_TESTES = (40, 50, 60, 70, 80)
 HEURISTIQUE = (
     "Décision humaine avérée : accepté = AO repondu ou réponse HERMION validée/exportée ; "
     "rejeté = rejete. a_repondre/en_redaction (posables par l'orchestrateur) et les autres "
-    "statuts sont ignorés. Un score « go » signifie score >= seuil. Jev et composite ne "
-    "portent que sur les AO où Jev a répondu."
+    "statuts sont ignorés. Un score « go » signifie score >= seuil. Laya et composite ne "
+    "portent que sur les AO où Laya a répondu."
 )
 
 
@@ -88,7 +88,7 @@ def calibrer(session: Session, config: ConfigComposite | None = None) -> dict[st
     # Une seule analyse (la plus récente) par AO ; les analyses de secours sont exclues.
     vues: set[int] = set()
     pythia: list[tuple[float, bool]] = []
-    jev_: list[tuple[float, bool]] = []
+    scores_laya: list[tuple[float, bool]] = []
     composite: list[tuple[float, bool]] = []
     ecarts: list[float] = []
     acceptes = rejetes = 0
@@ -105,20 +105,20 @@ def calibrer(session: Session, config: ConfigComposite | None = None) -> dict[st
         acceptes += accepte
         rejetes += not accepte
         pythia.append((analyse.score, accepte))
-        if analyse.score_jev is None:
+        if analyse.score_laya is None:
             continue
-        jev_.append((analyse.score_jev, accepte))
-        ecarts.append(abs(analyse.score_jev - analyse.score))
+        scores_laya.append((analyse.score_laya, accepte))
+        ecarts.append(abs(analyse.score_laya - analyse.score))
         pertinence = None
         try:
-            details = json.loads(analyse.details_jev) if analyse.details_jev else {}
+            details = json.loads(analyse.details_laya) if analyse.details_laya else {}
             pertinence = details.get("pertinence") if isinstance(details, dict) else None
         except ValueError:
             pass
         valeur = calculer_composite(
             score_pythia=analyse.score,
-            score_jev=analyse.score_jev,
-            pertinence_jev=pertinence if isinstance(pertinence, int | float) else None,
+            score_laya=analyse.score_laya,
+            pertinence_laya=pertinence if isinstance(pertinence, int | float) else None,
             config=config,
         )
         if valeur is not None:
@@ -129,13 +129,13 @@ def calibrer(session: Session, config: ConfigComposite | None = None) -> dict[st
             "total": len(pythia),
             "acceptes": acceptes,
             "rejetes": rejetes,
-            "avec_jev": len(jev_),
+            "avec_laya": len(scores_laya),
         },
-        "ecart_moyen_jev_pythia": _moyenne(ecarts),
+        "ecart_moyen_laya_pythia": _moyenne(ecarts),
         "seuil_go": config.seuil_go,
         "sources": {
             "pythia": _source(pythia, config.seuil_go),
-            "jev": _source(jev_, config.seuil_go),
+            "laya": _source(scores_laya, config.seuil_go),
             "composite": _source(composite, config.seuil_go),
         },
         "heuristique": HEURISTIQUE,

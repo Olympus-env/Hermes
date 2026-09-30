@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from hermes.agents.krinos import jev, juge_local
+from hermes.agents.krinos import juge_local, laya
 from hermes.agents.krinos.analyzer import ErreurAnalyseKrinos, analyser_ao
 from hermes.agents.krinos.calibration import calibrer
 from hermes.agents.krinos.downloader import (
@@ -32,7 +32,6 @@ from hermes.agents.krinos.ponderation import (
     enregistrer_ponderation,
     verdict_composite,
 )
-from hermes.config import settings
 from hermes.db.models import (
     AnalyseKrinos,
     AppelOffre,
@@ -103,11 +102,11 @@ class AnalyseRead(BaseModel):
     suspect_injection: bool = False
     a_verifier: bool = False
     drapeaux: list[str] = Field(default_factory=list)
-    # Juge Jev (optionnel), séparé du score PYTHIA (`score`).
-    score_jev: float | None = None
-    confiance_jev: float | None = None
-    details_jev: dict | None = None
-    # Go/no-go composite (PYTHIA + Jev + pertinence), recalculé à la lecture.
+    # Juge Laya (optionnel), séparé du score PYTHIA (`score`).
+    score_laya: float | None = None
+    confiance_laya: float | None = None
+    details_laya: dict | None = None
+    # Go/no-go composite (PYTHIA + Laya + pertinence), recalculé à la lecture.
     composite: float | None = None
     verdict_composite: str | None = None
     tags: list[str]
@@ -117,36 +116,9 @@ class AnalyseRead(BaseModel):
     cree_le: str
 
 
-class JevConfigIO(BaseModel):
-    actif: bool
-    # Lecture seule : la clé n'est jamais exposée ni modifiable via l'API.
-    cle_configuree: bool = False
-    budget_tokens_mois: int = 0
-    tokens_consommes: int = 0
-    # Pré-tri de pertinence avant KRINOS (réglage séparé, désactivé par défaut).
-    pretri_actif: bool = False
-    pretri_seuil: float = jev.SEUIL_PRETRI_DEFAUT
-
-
-class JevConfigUpdate(BaseModel):
-    actif: bool
-
-
-class JevPretriUpdate(BaseModel):
-    pretri_actif: bool
-    pretri_seuil: float = Field(default=jev.SEUIL_PRETRI_DEFAUT, ge=0, le=1)
-
-
-class SeuilsJevIO(BaseModel):
-    divergence: float = Field(default=jev.SEUIL_DIVERGENCE, gt=0, le=100, allow_inf_nan=False)
-    manipulation: float = Field(default=jev.SEUIL_MANIPULATION, ge=0, le=1, allow_inf_nan=False)
-    pertinence: float = Field(default=jev.SEUIL_PERTINENCE, ge=0, le=1, allow_inf_nan=False)
-    confiance: float = Field(default=jev.SEUIL_CONFIANCE, ge=0, le=1, allow_inf_nan=False)
-
-
 class CompositeIO(BaseModel):
     poids_pythia: int = Field(default=50, ge=0, le=100)
-    poids_jev: int = Field(default=35, ge=0, le=100)
+    poids_laya: int = Field(default=35, ge=0, le=100)
     poids_pertinence: int = Field(default=15, ge=0, le=100)
     seuil_go: int = Field(default=60, ge=0, le=100)
 
@@ -354,9 +326,9 @@ async def analyser_appel_offre(
             appel_offre_id=ao_id,
         )
 
-    # Analyse demandée à la main : lève le marquage « hors profil (Jev) ».
-    if ao.hors_profil_jev:
-        ao.hors_profil_jev = False
+    # Analyse demandée à la main : lève le marquage « hors profil (Laya) ».
+    if ao.hors_profil_laya:
+        ao.hors_profil_laya = False
         session.add(ao)
         session.commit()
     try:
@@ -368,28 +340,6 @@ async def analyser_appel_offre(
         analyse=_analyse_read(resultat.analyse, session),
         nouveau=resultat.nouveau,
     )
-
-
-def _jev_config_io(session: Session) -> JevConfigIO:
-    return JevConfigIO(
-        actif=jev.reglage_actif(session),
-        cle_configuree=jev.cle_configuree(),
-        budget_tokens_mois=settings.jev_budget_tokens_mois,
-        tokens_consommes=jev.tokens_consommes(session),
-        pretri_actif=jev.pretri_reglage(session),
-        pretri_seuil=jev.pretri_seuil(session),
-    )
-
-
-@router.get("/jev", response_model=JevConfigIO)
-def lire_config_jev(session: SessionDep) -> JevConfigIO:
-    return _jev_config_io(session)
-
-
-@router.put("/jev", response_model=JevConfigIO)
-def ecrire_config_jev(payload: JevConfigUpdate, session: SessionDep) -> JevConfigIO:
-    jev.enregistrer_actif(session, payload.actif)
-    return _jev_config_io(session)
 
 
 class JugeLocalConfigIO(BaseModel):
@@ -409,23 +359,6 @@ def ecrire_config_juge_local(
     return JugeLocalConfigIO(actif=juge_local.reglage_actif(session))
 
 
-@router.put("/jev/pretri", response_model=JevConfigIO)
-def ecrire_pretri_jev(payload: JevPretriUpdate, session: SessionDep) -> JevConfigIO:
-    jev.enregistrer_pretri(session, payload.pretri_actif, payload.pretri_seuil)
-    return _jev_config_io(session)
-
-
-@router.get("/jev/seuils", response_model=SeuilsJevIO)
-def lire_seuils_jev(session: SessionDep) -> SeuilsJevIO:
-    return SeuilsJevIO(**jev.charger_seuils(session).en_dict())
-
-
-@router.put("/jev/seuils", response_model=SeuilsJevIO)
-def ecrire_seuils_jev(payload: SeuilsJevIO, session: SessionDep) -> SeuilsJevIO:
-    jev.enregistrer_seuils(session, jev.SeuilsJev(**payload.model_dump()))
-    return payload
-
-
 @router.get("/composite", response_model=CompositeIO)
 def lire_composite(session: SessionDep) -> CompositeIO:
     return CompositeIO(**charger_composite(session).en_dict())
@@ -433,7 +366,7 @@ def lire_composite(session: SessionDep) -> CompositeIO:
 
 @router.put("/composite", response_model=CompositeIO)
 def ecrire_composite(payload: CompositeIO, session: SessionDep) -> CompositeIO:
-    if payload.poids_pythia + payload.poids_jev + payload.poids_pertinence == 0:
+    if payload.poids_pythia + payload.poids_laya + payload.poids_pertinence == 0:
         raise HTTPException(status_code=422, detail="Au moins un poids doit être non nul")
     enregistrer_composite(session, ConfigComposite(**payload.model_dump()))
     return payload
@@ -441,7 +374,7 @@ def ecrire_composite(payload: CompositeIO, session: SessionDep) -> CompositeIO:
 
 @router.get("/calibration")
 def lire_calibration(session: SessionDep) -> dict:
-    """Jev / PYTHIA / composite face à la décision humaine (lecture seule)."""
+    """Laya / PYTHIA / composite face à la décision humaine (lecture seule)."""
     return calibrer(session)
 
 
@@ -519,38 +452,38 @@ def recalculer_score_ao(
         )
 
     analyse.score = calculer_score_final(scores, charger_ponderation(session))
-    _rejouer_routage_jev(session, analyse)
+    _rejouer_routage_laya(session, analyse)
     session.add(analyse)
     session.commit()
     session.refresh(analyse)
     return _analyse_read(analyse, session)
 
 
-def _rejouer_routage_jev(session: Session, analyse: AnalyseKrinos) -> None:
-    """Réévalue l'avis Jev avec les seuils et le score PYTHIA courants, sans
-    ré-inférence (valeurs stockées). Rejeu additif : les drapeaux déjà levés (Jev,
+def _rejouer_routage_laya(session: Session, analyse: AnalyseKrinos) -> None:
+    """Réévalue l'avis Laya avec les seuils et le score PYTHIA courants, sans
+    ré-inférence (valeurs stockées). Rejeu additif : les drapeaux déjà levés (Laya,
     injection, juge local `pythia:*`…) sont conservés dans leur ordre et on n'en
     ajoute que de nouveaux. Le rejeu ne fait donc jamais passer `a_verifier` de vrai à
     faux : seul un humain lève un doute (jamais de promotion automatique)."""
-    details = _dict_json(analyse.details_jev)
-    if analyse.score_jev is None or details is None:
+    details = _dict_json(analyse.details_laya)
+    if analyse.score_laya is None or details is None:
         return
     drapeaux = _liste_json(analyse.drapeaux)
-    for d in jev.drapeaux_jev(
-        score_jev=analyse.score_jev,
-        confiance=analyse.confiance_jev,
+    for d in laya.drapeaux_laya(
+        score_laya=analyse.score_laya,
+        confiance=analyse.confiance_laya,
         pertinence=details.get("pertinence"),
         manipulation=details.get("manipulation"),
         score_pythia=analyse.score,
         degradee=analyse.degradee,
-        seuils=jev.charger_seuils(session),
+        seuils=laya.charger_seuils(session),
     ):
         if d not in drapeaux:
             drapeaux.append(d)
     analyse.drapeaux = json.dumps(drapeaux) if drapeaux else None
     analyse.a_verifier = analyse.a_verifier or bool(drapeaux)
     analyse.suspect_injection = analyse.suspect_injection or any(
-        d.startswith(("injection:", "pythia:manipulation")) or d == "jev:manipulation"
+        d.startswith(("injection:", "pythia:manipulation")) or d == "laya:manipulation"
         for d in drapeaux
     )
 
@@ -565,14 +498,14 @@ def _analyse_read(analyse: AnalyseKrinos, session: Session | None = None) -> Ana
         except json.JSONDecodeError:
             tags = []
 
-    details = _dict_json(analyse.details_jev)
+    details = _dict_json(analyse.details_laya)
     composite = verdict = None
     if session is not None:
         config = charger_composite(session)
         composite = calculer_composite(
             score_pythia=analyse.score,
-            score_jev=analyse.score_jev,
-            pertinence_jev=(details or {}).get("pertinence"),
+            score_laya=analyse.score_laya,
+            pertinence_laya=(details or {}).get("pertinence"),
             config=config,
         )
         verdict = verdict_composite(composite, config, analyse.a_verifier)
@@ -588,9 +521,9 @@ def _analyse_read(analyse: AnalyseKrinos, session: Session | None = None) -> Ana
         suspect_injection=analyse.suspect_injection,
         a_verifier=analyse.a_verifier,
         drapeaux=_liste_json(analyse.drapeaux),
-        score_jev=analyse.score_jev,
-        confiance_jev=analyse.confiance_jev,
-        details_jev=details,
+        score_laya=analyse.score_laya,
+        confiance_laya=analyse.confiance_laya,
+        details_laya=details,
         composite=composite,
         verdict_composite=verdict,
         tags=tags,

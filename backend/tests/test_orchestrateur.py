@@ -150,7 +150,7 @@ def test_pipeline_complet_analyse_puis_redige(monkeypatch):
         assert reponse.statut == StatutReponse.EN_ATTENTE
 
 
-def test_pipeline_analyse_leve_le_marquage_hors_profil_jev(monkeypatch):
+def test_pipeline_analyse_leve_le_marquage_hors_profil_laya(monkeypatch):
     """Pré-tri coupé après marquage : l'AO est analysé et perd son badge « Hors profil »."""
     monkeypatch.setattr(orch, "telecharger_documents_ao", _noop_docs)
     monkeypatch.setattr(orch, "analyser_ao", _fake_analyser(40.0))
@@ -159,7 +159,7 @@ def test_pipeline_analyse_leve_le_marquage_hors_profil_jev(monkeypatch):
     with Session(get_engine()) as s:
         ao_id = _ao_brut(s)
         ao = s.get(AppelOffre, ao_id)
-        ao.hors_profil_jev = True
+        ao.hors_profil_laya = True
         s.add(ao)
         s.commit()
         orch.enregistrer_config(s, orch.ConfigOrchestration(seuil_score=70.0))
@@ -171,7 +171,7 @@ def test_pipeline_analyse_leve_le_marquage_hors_profil_jev(monkeypatch):
     with Session(get_engine()) as s:
         ao = s.get(AppelOffre, ao_id)
         assert ao.statut == StatutAO.ANALYSE
-        assert ao.hors_profil_jev is False
+        assert ao.hors_profil_laya is False
 
 
 def test_pipeline_sous_seuil_reste_en_analyse(monkeypatch):

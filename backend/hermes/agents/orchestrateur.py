@@ -30,7 +30,7 @@ from hermes.agents.hermion import ErreurRedactionHermion, rediger_reponse
 from hermes.agents.krinos import (
     ErreurAnalyseKrinos,
     analyser_ao,
-    jev,
+    laya,
     telecharger_documents_ao,
 )
 from hermes.agents.krinos.analyzer import _profil_metier
@@ -41,10 +41,8 @@ from hermes.db.models import (
     LogAgent,
     NiveauLog,
     Parametre,
-    Portail,
     ReponseHermion,
     StatutAO,
-    TypePortail,
 )
 
 CLE_PARAMETRE = "orchestration.config"
@@ -265,26 +263,26 @@ async def _phase_analyse(
 ) -> None:
     """AO BRUT → docs (best-effort) → analyse KRINOS."""
     requete = select(AppelOffre).where(AppelOffre.statut == StatutAO.BRUT)
-    # Le marquage « hors profil (Jev) » n'écarte de PYTHIA que tant que le pré-tri
+    # Le marquage « hors profil (Laya) » n'écarte de PYTHIA que tant que le pré-tri
     # est actif : sinon (réglage coupé, clé retirée) l'AO redevient analysable
     # et ne reste jamais BRUT en silence.
-    if jev.pretri_actif(session):
-        requete = requete.where(AppelOffre.hors_profil_jev == False)  # noqa: E712
+    if laya.pretri_actif(session):
+        requete = requete.where(AppelOffre.hors_profil_laya == False)  # noqa: E712
     bruts = session.exec(requete.order_by(AppelOffre.cree_le).limit(plafond)).all()
 
     for ao in bruts:
         ao_id = ao.id
         try:
-            if await _pretri_jev(session, ao):
-                rapport.details.append({"ao_id": ao_id, "action": "hors_profil_jev"})
+            if await _pretri_laya(session, ao):
+                rapport.details.append({"ao_id": ao_id, "action": "hors_profil_laya"})
                 continue
             await _documents_best_effort(session, ao)
             resultat = await analyser_ao(session, ao)
             rapport.ao_analyses += 1
-            # Analysé : le badge « Hors profil (Jev) » n'a plus lieu d'être (pré-tri
+            # Analysé : le badge « Hors profil (Laya) » n'a plus lieu d'être (pré-tri
             # coupé depuis le marquage, par exemple).
-            if ao.hors_profil_jev:
-                ao.hors_profil_jev = False
+            if ao.hors_profil_laya:
+                ao.hors_profil_laya = False
                 session.add(ao)
                 session.commit()
             rapport.details.append(
@@ -314,24 +312,21 @@ async def _phase_analyse(
             )
 
 
-async def _pretri_jev(session: Session, ao: AppelOffre) -> bool:
-    """Pré-tri Jev (opt-in) : True si l'AO est jugé hors profil (donc non analysé).
+async def _pretri_laya(session: Session, ao: AppelOffre) -> bool:
+    """Pré-tri Laya (opt-in) : True si l'AO est jugé hors profil (donc non analysé).
 
-    Portails publics uniquement. Toute panne / budget épuisé / portail non public
-    → False (analyse normale). L'AO n'est jamais supprimé ni rejeté : il reste
+    Laya est local : tous les portails (publics et privés) sont triés. Toute panne
+    ou modèle absent → False (analyse normale). L'AO n'est jamais supprimé ni rejeté : il reste
     BRUT, marqué, et l'utilisateur peut forcer l'analyse.
     """
-    if not jev.pretri_actif(session):
+    if not laya.pretri_actif(session):
         return False
     # Déjà évalué (jugé pertinent puis analyse échouée, ou analyse forcée par
-    # l'utilisateur) : ne pas consommer de budget Jev à chaque cycle.
-    if ao.pertinence_jev is not None:
-        return False
-    portail = session.get(Portail, ao.portail_id) if ao.portail_id else None
-    if portail is None or portail.type != TypePortail.PUBLIC:
+    # l'utilisateur) : ne pas relancer l'inférence à chaque cycle.
+    if ao.pertinence_laya is not None:
         return False
     ao_id = ao.id
-    state = jev.construire_state(
+    state = laya.construire_state(
         titre=ao.titre or "",
         objet=ao.objet or "",
         acheteur=ao.emetteur or "",
@@ -342,32 +337,32 @@ async def _pretri_jev(session: Session, ao: AppelOffre) -> bool:
         extrait_documents="",
     )
     try:
-        pertinence = await jev.evaluer_pertinence(session, state)
-    except jev.ErreurJev as exc:
+        pertinence = await laya.evaluer_pertinence(session, state)
+    except laya.ErreurLaya as exc:
         _journaliser(
             session,
             niveau=NiveauLog.INFO,
-            message=f"Pré-tri Jev ignoré pour AO {ao_id} (analyse normale) : {exc}",
+            message=f"Pré-tri Laya ignoré pour AO {ao_id} (analyse normale) : {exc}",
             appel_offre_id=ao_id,
         )
         return False
     except Exception as exc:  # noqa: BLE001 — le pré-tri ne doit jamais bloquer le pipeline
-        logger.warning("Pré-tri Jev : erreur inattendue AO {} — {}", ao_id, type(exc).__name__)
+        logger.warning("Pré-tri Laya : erreur inattendue AO {} — {}", ao_id, type(exc).__name__)
         return False
-    seuil = jev.pretri_seuil(session)
-    ao.pertinence_jev = pertinence
+    seuil = laya.pretri_seuil(session)
+    ao.pertinence_laya = pertinence
     if pertinence >= seuil:
         session.add(ao)
         session.commit()
         return False
-    ao.hors_profil_jev = True
+    ao.hors_profil_laya = True
     session.add(ao)
     session.commit()
     _journaliser(
         session,
         niveau=NiveauLog.INFO,
         message=(
-            f"AO {ao_id} hors profil (Jev) : pertinence {pertinence:.2f} < seuil "
+            f"AO {ao_id} hors profil (Laya) : pertinence {pertinence:.2f} < seuil "
             f"{seuil:.2f} — non analysé par PYTHIA, analyse forçable"
         ),
         appel_offre_id=ao_id,

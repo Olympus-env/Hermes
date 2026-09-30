@@ -1,57 +1,32 @@
-"""Tests du pré-tri de pertinence Jev avant KRINOS (issue #45).
+"""Tests du pré-tri de pertinence Laya avant KRINOS (issues #45 et #56).
 
-Aucun appel réseau : transport httpx simulé (`jev._transport`).
+Aucun modèle ni réseau : moteur simulé (`tests/laya_faux.py`).
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 from types import SimpleNamespace
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 from sqlmodel import Session
 
 from hermes.agents import orchestrateur as orch
-from hermes.agents.krinos import jev
+from hermes.agents.krinos import laya
 from hermes.config import settings
 from hermes.db.models import AppelOffre, Portail, StatutAO, TypePortail
 from hermes.db.session import get_engine, init_db
 from tests.test_orchestrateur import _fake_analyser, _noop_docs
 
+from .laya_faux import MoteurSimule
+
 
 @pytest.fixture(autouse=True)
-def _jev_isole(monkeypatch):
-    monkeypatch.setattr(settings, "jev_actif", True)
-    monkeypatch.setattr(settings, "jev_api_key", SecretStr("cle-de-test"))
-    monkeypatch.setattr(settings, "jev_budget_tokens_mois", 2_000_000)
-    monkeypatch.setattr(jev, "_transport", None)
+def _laya_actif(monkeypatch):
+    monkeypatch.setattr(settings, "laya_actif", True)
     monkeypatch.setattr(orch, "telecharger_documents_ao", _noop_docs)
     monkeypatch.setattr(orch, "_documents_best_effort", _noop_docs)
-
-    async def pas_de_sommeil(_):
-        return None
-
-    monkeypatch.setattr(jev, "_dormir", pas_de_sommeil)
-
-
-def _transport(pertinence: float, appels: list, statut: int = 200):
-    def handler(request: httpx.Request) -> httpx.Response:
-        appels.append(json.loads(request.content))
-        if statut != 200:
-            return httpx.Response(statut)
-        return httpx.Response(
-            200,
-            json={
-                "answers": {"pertinence": {"type": "noul", "noul": pertinence}},
-                "usage": {"input_tokens": 300, "output_tokens": 20},
-            },
-        )
-
-    return httpx.MockTransport(handler)
 
 
 def _ao(s: Session, type_portail: TypePortail | None = TypePortail.PUBLIC) -> int:
@@ -74,28 +49,29 @@ def _ao(s: Session, type_portail: TypePortail | None = TypePortail.PUBLIC) -> in
     return ao.id  # type: ignore[return-value]
 
 
-def _lancer(monkeypatch, pertinence, appels, **kw):
-    monkeypatch.setattr(jev, "_transport", _transport(pertinence, appels, **kw))
+def _lancer(monkeypatch, pertinence, moteur=None, **kw):
+    moteur = moteur or MoteurSimule(pertinence=pertinence, **kw)
+    monkeypatch.setattr(laya, "_moteur", moteur)
     monkeypatch.setattr(orch, "analyser_ao", _fake_analyser(50.0))
     with Session(get_engine()) as s:
-        return asyncio.run(orch.traiter_pipeline(s))
+        rapport = asyncio.run(orch.traiter_pipeline(s))
+    return rapport, moteur
 
 
 def _activer_pretri(seuil=0.3):
     with Session(get_engine()) as s:
-        jev.enregistrer_pretri(s, True, seuil)
+        laya.enregistrer_pretri(s, True, seuil)
 
 
 def test_desactive_par_defaut(monkeypatch):
     init_db()
     with Session(get_engine()) as s:
         ao_id = _ao(s)
-    appels: list = []
-    rapport = _lancer(monkeypatch, 0.0, appels)
-    assert appels == []
+    rapport, moteur = _lancer(monkeypatch, 0.0)
+    assert moteur.appels == []
     assert rapport.ao_analyses == 1
     with Session(get_engine()) as s:
-        assert s.get(AppelOffre, ao_id).hors_profil_jev is False
+        assert s.get(AppelOffre, ao_id).hors_profil_laya is False
 
 
 def test_hors_profil_non_analyse_mais_conserve(monkeypatch):
@@ -103,20 +79,18 @@ def test_hors_profil_non_analyse_mais_conserve(monkeypatch):
     _activer_pretri(0.3)
     with Session(get_engine()) as s:
         ao_id = _ao(s)
-    appels: list = []
-    rapport = _lancer(monkeypatch, 0.1, appels)
-    assert len(appels) == 1
-    assert list(appels[0]["questions"]) == ["pertinence"]  # une seule question
+    rapport, moteur = _lancer(monkeypatch, 0.1)
+    assert len(moteur.appels) == 1
+    assert list(moteur.appels[0][1]) == ["pertinence"]  # une seule question
     assert rapport.ao_analyses == 0
     with Session(get_engine()) as s:
         ao = s.get(AppelOffre, ao_id)
-        assert ao.hors_profil_jev is True
-        assert ao.pertinence_jev == pytest.approx(0.1)
+        assert ao.hors_profil_laya is True
+        assert ao.pertinence_laya == pytest.approx(0.1)
         assert ao.statut == StatutAO.BRUT  # ni supprimé ni rejeté
-        assert jev.tokens_consommes(s) > 0  # budget partagé
-    # Cycle suivant : pas de nouvel appel Jev, toujours pas analysé.
-    rapport = _lancer(monkeypatch, 0.1, appels)
-    assert len(appels) == 1
+    # Cycle suivant : pas de nouvelle inférence, toujours pas analysé.
+    rapport, _ = _lancer(monkeypatch, 0.1, moteur)
+    assert len(moteur.appels) == 1
     assert rapport.ao_analyses == 0
 
 
@@ -125,48 +99,48 @@ def test_pertinent_est_analyse(monkeypatch):
     _activer_pretri(0.3)
     with Session(get_engine()) as s:
         ao_id = _ao(s)
-    appels: list = []
-    rapport = _lancer(monkeypatch, 0.8, appels)
+    rapport, _ = _lancer(monkeypatch, 0.8)
     assert rapport.ao_analyses == 1
     with Session(get_engine()) as s:
         ao = s.get(AppelOffre, ao_id)
-        assert ao.hors_profil_jev is False
-        assert ao.pertinence_jev == pytest.approx(0.8)
+        assert ao.hors_profil_laya is False
+        assert ao.pertinence_laya == pytest.approx(0.8)
 
 
-@pytest.mark.parametrize("type_portail", [TypePortail.PRIVE, None])
-def test_portail_prive_ou_absent_jamais_envoye(monkeypatch, type_portail):
+@pytest.mark.parametrize("type_portail", [TypePortail.PUBLIC, TypePortail.PRIVE, None])
+def test_tous_les_portails_sont_tries(monkeypatch, type_portail):
+    """Laya est local : les portails privés et les AO sans portail sont triés aussi (#56)."""
     init_db()
     _activer_pretri(0.9)
     with Session(get_engine()) as s:
-        _ao(s, type_portail)
-    appels: list = []
-    rapport = _lancer(monkeypatch, 0.0, appels)
-    assert appels == []
-    assert rapport.ao_analyses == 1
+        ao_id = _ao(s, type_portail)
+    rapport, moteur = _lancer(monkeypatch, 0.1)
+    assert len(moteur.appels) == 1
+    assert rapport.ao_analyses == 0
+    with Session(get_engine()) as s:
+        assert s.get(AppelOffre, ao_id).hors_profil_laya is True
 
 
-def test_panne_jev_analyse_normale(monkeypatch):
+def test_panne_laya_analyse_normale(monkeypatch):
     init_db()
     _activer_pretri(0.9)
     with Session(get_engine()) as s:
         ao_id = _ao(s)
-    appels: list = []
-    rapport = _lancer(monkeypatch, 0.0, appels, statut=401)
+    rapport, _ = _lancer(monkeypatch, 0.0, MoteurSimule(erreur=RuntimeError("boum")))
     assert rapport.ao_analyses == 1
     with Session(get_engine()) as s:
-        assert s.get(AppelOffre, ao_id).hors_profil_jev is False
+        assert s.get(AppelOffre, ao_id).hors_profil_laya is False
 
 
-def test_budget_epuise_analyse_normale(monkeypatch):
+def test_modele_absent_analyse_normale(monkeypatch):
+    """Pré-tri voulu mais poids non installés : pas de pré-tri, analyse normale."""
     init_db()
     _activer_pretri(0.9)
-    monkeypatch.setattr(settings, "jev_budget_tokens_mois", 10)
     with Session(get_engine()) as s:
         _ao(s)
-    appels: list = []
-    rapport = _lancer(monkeypatch, 0.0, appels)
-    assert appels == []
+    monkeypatch.setattr(orch, "analyser_ao", _fake_analyser(50.0))
+    with Session(get_engine()) as s:  # `laya._moteur` est None : aucun modèle sur disque
+        rapport = asyncio.run(orch.traiter_pipeline(s))
     assert rapport.ao_analyses == 1
 
 
@@ -176,20 +150,20 @@ def test_forcer_analyse_leve_le_marquage_et_reglage_api(monkeypatch):
 
     init_db()
     client = TestClient(app)
-    assert client.get("/krinos/jev").json()["pretri_actif"] is False
-    r = client.put("/krinos/jev/pretri", json={"pretri_actif": True, "pretri_seuil": 0.4})
+    assert client.get("/krinos/laya").json()["pretri_actif"] is False
+    r = client.put("/krinos/laya/pretri", json={"pretri_actif": True, "pretri_seuil": 0.4})
     assert r.json()["pretri_actif"] is True
     assert r.json()["pretri_seuil"] == 0.4
-    r = client.put("/krinos/jev/pretri", json={"pretri_actif": True, "pretri_seuil": 2})
+    r = client.put("/krinos/laya/pretri", json={"pretri_actif": True, "pretri_seuil": 2})
     assert r.status_code == 422
 
     with Session(get_engine()) as s:
         ao_id = _ao(s)
         ao = s.get(AppelOffre, ao_id)
-        ao.hors_profil_jev = True
+        ao.hors_profil_laya = True
         s.add(ao)
         s.commit()
-    assert client.get(f"/appels-offre/{ao_id}").json()["hors_profil_jev"] is True
+    assert client.get(f"/appels-offre/{ao_id}").json()["hors_profil_laya"] is True
 
     async def faux_analyser(session, ao, forcer=False):
         raise api_krinos.ErreurAnalyseKrinos("PYTHIA absent")
@@ -202,7 +176,7 @@ def test_forcer_analyse_leve_le_marquage_et_reglage_api(monkeypatch):
     monkeypatch.setattr(api_krinos, "analyser_ao", faux_analyser)
     monkeypatch.setattr(api_krinos, "extraire_documents_appel_offre_async", faux_extraire)
     client.post(f"/krinos/appels-offre/{ao_id}/analyser", json={"forcer": True})
-    assert client.get(f"/appels-offre/{ao_id}").json()["hors_profil_jev"] is False
+    assert client.get(f"/appels-offre/{ao_id}").json()["hors_profil_laya"] is False
 
 
 def test_marquage_non_bloquant_si_pretri_desactive(monkeypatch):
@@ -210,13 +184,12 @@ def test_marquage_non_bloquant_si_pretri_desactive(monkeypatch):
     with Session(get_engine()) as s:
         ao_id = _ao(s)
         ao = s.get(AppelOffre, ao_id)
-        ao.hors_profil_jev = True
-        ao.pertinence_jev = 0.05
+        ao.hors_profil_laya = True
+        ao.pertinence_laya = 0.05
         s.add(ao)
         s.commit()
-    appels: list = []
-    rapport = _lancer(monkeypatch, 0.0, appels)  # pré-tri désactivé
-    assert appels == []
+    rapport, moteur = _lancer(monkeypatch, 0.0)  # pré-tri désactivé
+    assert moteur.appels == []
     assert rapport.ao_analyses == 1
 
 
@@ -226,12 +199,11 @@ def test_ao_deja_evalue_pas_reevalue(monkeypatch):
     with Session(get_engine()) as s:
         ao_id = _ao(s)
         ao = s.get(AppelOffre, ao_id)
-        ao.pertinence_jev = 0.05  # p. ex. analyse forcée puis échec
+        ao.pertinence_laya = 0.05  # p. ex. analyse forcée puis échec
         s.add(ao)
         s.commit()
-    appels: list = []
-    rapport = _lancer(monkeypatch, 0.0, appels)
-    assert appels == []
+    rapport, moteur = _lancer(monkeypatch, 0.0)
+    assert moteur.appels == []
     assert rapport.ao_analyses == 1
 
 
@@ -247,8 +219,6 @@ def test_state_pretri_contient_budget_et_date_limite(monkeypatch):
         ao.date_limite = datetime(2026, 12, 1, tzinfo=UTC)
         s.add(ao)
         s.commit()
-    appels: list = []
-    _lancer(monkeypatch, 0.8, appels)
-    avis = appels[0]["state"]["avis"]
-    assert "120000" in avis["budget_estime"]
-    assert avis["date_limite"].startswith("2026-12-01")
+    _, moteur = _lancer(monkeypatch, 0.8)
+    etat = moteur.appels[0][0]
+    assert "120000" in etat and "Date limite : 2026-12-01" in etat

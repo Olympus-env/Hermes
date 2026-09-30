@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from hermes.agents.argos.filtre import FiltreVeille, enregistrer_filtre
-from hermes.agents.krinos import analyzer, jev
+from hermes.agents.krinos import analyzer, laya
 from hermes.agents.profil_metier import (
     LONGUEUR_MAX_TEXTE,
     ProfilMetier,
@@ -68,9 +68,9 @@ def test_profil_metier_analyzer_combine_profil_et_mots_cles():
     assert len(texte) <= LONGUEUR_MAX_TEXTE
 
 
-def test_state_jev_conserve_profil_long_sans_identite():
+def test_state_laya_conserve_profil_long_sans_identite():
     profil = composer_texte(ProfilMetier(activite="a" * 400, secteurs=["b" * 190] * 5))
-    state = jev.construire_state(
+    args = dict(
         titre="t",
         objet="o",
         acheteur="a",
@@ -80,5 +80,11 @@ def test_state_jev_conserve_profil_long_sans_identite():
         profil_metier=profil,
         extrait_documents="",
     )
-    assert state["profil_metier"] == profil
-    assert "@" not in str(state)
+    # Contexte large (8192 tokens) : le profil est conservé en entier.
+    state = laya.construire_state(**args, max_caracteres=laya.max_caracteres_state(8192))
+    assert f"Profil métier : {' '.join(profil.split())}" in state  # blancs écrasés
+    assert "@" not in state
+    # Contexte par défaut (1024 tokens) : profil borné au quart du budget, état borné.
+    court = laya.construire_state(**args)
+    assert len(court) <= laya.max_caracteres_state()
+    assert profil[:400] in court

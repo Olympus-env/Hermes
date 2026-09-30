@@ -29,7 +29,7 @@ export type Tender = {
   // État documents (Boucle 3/4) : liens détectés par ARGOS vs téléchargés.
   documentsDetectes?: number;
   documentsTelecharges?: number;
-  horsProfilJev?: boolean;
+  horsProfilLaya?: boolean;
 };
 
 export type ResponseStatus =

@@ -48,9 +48,9 @@ export type AppelOffre = {
   documents_detectes: number;
   documents_telecharges: number;
   documents_manquants: number;
-  // Pré-tri Jev : AO jugé « hors profil », non analysé par PYTHIA (analyse forçable).
-  hors_profil_jev?: boolean;
-  pertinence_jev?: number | null;
+  // Pré-tri Laya : AO jugé « hors profil », non analysé par PYTHIA (analyse forçable).
+  hors_profil_laya?: boolean;
+  pertinence_laya?: number | null;
 };
 
 // Analyse concurrentielle DECP (GET /appels-offre/{id}/concurrence).
@@ -221,19 +221,20 @@ export type AnalyseKrinos = {
   degradee?: boolean;
   /** Motif d'injection détecté dans le texte de l'AO : décision humaine requise. */
   suspect_injection?: boolean;
-  /** Drapeau global (injection, incohérence, divergence Jev/PYTHIA). */
+  /** Drapeau global (injection, incohérence, divergence Laya/PYTHIA). */
   a_verifier?: boolean;
   drapeaux?: string[];
-  /** Juge Jev (optionnel), séparé du score PYTHIA. */
-  score_jev?: number | null;
-  /** Confiance Jev 0-1. */
-  confiance_jev?: number | null;
-  details_jev?: {
+  /** Juge Laya (optionnel, local), séparé du score PYTHIA. */
+  score_laya?: number | null;
+  /** Confiance Laya 0-1 (après température de calibration). */
+  confiance_laya?: number | null;
+  details_laya?: {
     pertinence?: number | null;
     manipulation?: number | null;
     tokens?: number;
+    temperature?: number;
   } | null;
-  /** Go/no-go composite (PYTHIA + Jev + pertinence), recalculé sans ré-inférence. */
+  /** Go/no-go composite (PYTHIA + Laya + pertinence), recalculé sans ré-inférence. */
   composite?: number | null;
   verdict_composite?: "go" | "no_go" | "a_verifier" | "indetermine" | null;
   tags: string[];
@@ -243,16 +244,46 @@ export type AnalyseKrinos = {
   cree_le: string;
 };
 
-export type ConfigJev = {
+export type PrecisionLaya = "fp16" | "fp32";
+
+export type ProgressionLaya = {
+  precision: string;
+  en_cours: boolean;
+  statut: string;
+  fichier: string;
+  octets_telecharges: number;
+  octets_total: number;
+  pourcent: number;
+  erreur: string | null;
+  termine_le: number | null;
+};
+
+export type ModeleLaya = {
+  precision: PrecisionLaya;
+  installe: boolean;
+  manquants: string[];
+  /** Taille indicative à télécharger pour cette précision. */
+  taille_octets: number;
+  dossier: string;
+  espace_disque_libre_octets: number;
+  progression: ProgressionLaya;
+};
+
+/** Réglages du juge Laya (local, ONNX) : ni clé, ni budget, rien ne sort de la machine. */
+export type ConfigLaya = {
+  /** Voulu par l'utilisateur. */
   actif: boolean;
-  /** La clé (HERMES_JEV_API_KEY) n'est jamais exposée, seulement sa présence. */
-  cle_configuree: boolean;
-  budget_tokens_mois: number;
-  tokens_consommes: number;
+  /** Voulu ET poids installés : Laya répond réellement. */
+  operationnel: boolean;
+  precision: PrecisionLaya;
+  /** Température de calibration (0,5 à 5) : > 1 aplatit les probabilités. */
+  temperature: number;
+  max_tokens: number;
   /** Pré-tri de pertinence avant KRINOS (désactivé par défaut). */
   pretri_actif?: boolean;
-  /** Probabilité 0-1 sous laquelle un AO est marqué « hors profil (Jev) ». */
+  /** Probabilité 0-1 sous laquelle un AO est marqué « hors profil (Laya) ». */
   pretri_seuil?: number;
+  modele: ModeleLaya;
 };
 
 /** Profil métier structuré (sans aucune donnée d'identité : nom, email, SIRET…). */
@@ -268,7 +299,7 @@ export type ProfilMetier = {
   references_types: string[];
 };
 
-export type SeuilsJev = {
+export type SeuilsLaya = {
   divergence: number;
   manipulation: number;
   pertinence: number;
@@ -277,7 +308,7 @@ export type SeuilsJev = {
 
 export type ConfigComposite = {
   poids_pythia: number;
-  poids_jev: number;
+  poids_laya: number;
   poids_pertinence: number;
   seuil_go: number;
 };
@@ -300,10 +331,10 @@ export type SourceCalibration = {
 };
 
 export type Calibration = {
-  echantillon: { total: number; acceptes: number; rejetes: number; avec_jev: number };
-  ecart_moyen_jev_pythia: number | null;
+  echantillon: { total: number; acceptes: number; rejetes: number; avec_laya: number };
+  ecart_moyen_laya_pythia: number | null;
   seuil_go: number;
-  sources: Record<"pythia" | "jev" | "composite", SourceCalibration>;
+  sources: Record<"pythia" | "laya" | "composite", SourceCalibration>;
   heuristique: string;
 };
 
@@ -658,26 +689,37 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(p),
     }),
-  lireConfigJev: () => fetchJson<ConfigJev>("/krinos/jev"),
-  ecrireConfigJev: (actif: boolean) =>
-    fetchJson<ConfigJev>("/krinos/jev", {
+  lireConfigLaya: () => fetchJson<ConfigLaya>("/krinos/laya"),
+  ecrireConfigLaya: (
+    c: Partial<{ actif: boolean; temperature: number; precision: PrecisionLaya }>,
+  ) =>
+    fetchJson<ConfigLaya>("/krinos/laya", {
       method: "PUT",
-      body: JSON.stringify({ actif }),
+      body: JSON.stringify(c),
     }),
+  /** Consentement explicite : `confirme` doit être vrai (jamais lancé sans clic). */
+  telechargerModeleLaya: (precision: PrecisionLaya) =>
+    fetchJson<ProgressionLaya>("/krinos/laya/modele/telecharger", {
+      method: "POST",
+      body: JSON.stringify({ precision, confirme: true }),
+    }),
+  annulerTelechargementLaya: () =>
+    fetchJson<ProgressionLaya>("/krinos/laya/modele/annuler", { method: "POST" }),
+  statutModeleLaya: () => fetchJson<ModeleLaya>("/krinos/laya/modele"),
   lireConfigJugeLocal: () => fetchJson<{ actif: boolean }>("/krinos/juge-local"),
   ecrireConfigJugeLocal: (actif: boolean) =>
     fetchJson<{ actif: boolean }>("/krinos/juge-local", {
       method: "PUT",
       body: JSON.stringify({ actif }),
     }),
-  ecrireConfigPretriJev: (pretri_actif: boolean, pretri_seuil: number) =>
-    fetchJson<ConfigJev>("/krinos/jev/pretri", {
+  ecrireConfigPretriLaya: (pretri_actif: boolean, pretri_seuil: number) =>
+    fetchJson<ConfigLaya>("/krinos/laya/pretri", {
       method: "PUT",
       body: JSON.stringify({ pretri_actif, pretri_seuil }),
     }),
-  lireSeuilsJev: () => fetchJson<SeuilsJev>("/krinos/jev/seuils"),
-  ecrireSeuilsJev: (seuils: SeuilsJev) =>
-    fetchJson<SeuilsJev>("/krinos/jev/seuils", {
+  lireSeuilsLaya: () => fetchJson<SeuilsLaya>("/krinos/laya/seuils"),
+  ecrireSeuilsLaya: (seuils: SeuilsLaya) =>
+    fetchJson<SeuilsLaya>("/krinos/laya/seuils", {
       method: "PUT",
       body: JSON.stringify(seuils),
     }),

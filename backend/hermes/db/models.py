@@ -143,10 +143,10 @@ class AppelOffre(SQLModel, table=True):
 
     statut: StatutAO = Field(default=StatutAO.BRUT, index=True)
 
-    # Pré-tri de pertinence Jev (opt-in) : AO jugé « hors profil », laissé BRUT et
+    # Pré-tri de pertinence Laya (opt-in) : AO jugé « hors profil », laissé BRUT et
     # non analysé par PYTHIA tant que l'utilisateur ne force pas l'analyse.
-    hors_profil_jev: bool = Field(default=False, sa_column_kwargs={"server_default": "0"})
-    pertinence_jev: Optional[float] = None
+    hors_profil_laya: bool = Field(default=False, sa_column_kwargs={"server_default": "0"})
+    pertinence_laya: Optional[float] = None
 
     cree_le: datetime = Field(default_factory=_utcnow, index=True)
     maj_le: datetime = Field(default_factory=_utcnow, sa_column_kwargs={"onupdate": _utcnow})
@@ -210,11 +210,11 @@ class AnalyseKrinos(SQLModel, table=True):
     # Codes des drapeaux levés (JSON : ["injection:ignorer_instructions", …]).
     drapeaux: Optional[str] = Field(default=None, sa_column=Column(Text))
 
-    # Juge Jev (optionnel), stocké séparément du score PYTHIA (`score`).
-    score_jev: Optional[float] = None  # 0-100
-    confiance_jev: Optional[float] = None  # 0-1
-    # Détail Jev (JSON) : dimensions, pertinence, manipulation, tokens.
-    details_jev: Optional[str] = Field(default=None, sa_column=Column(Text))
+    # Juge Laya (optionnel, local), stocké séparément du score PYTHIA (`score`).
+    score_laya: Optional[float] = None  # 0-100
+    confiance_laya: Optional[float] = None  # 0-1
+    # Détail Laya (JSON) : dimensions, pertinence, manipulation, tokens, température.
+    details_laya: Optional[str] = Field(default=None, sa_column=Column(Text))
 
     duree_analyse_ms: Optional[int] = None
     modele_llm: Optional[str] = None  # ex: qwen3:8b

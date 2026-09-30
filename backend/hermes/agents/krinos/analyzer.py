@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from hermes.agents import pythia
-from hermes.agents.krinos import jev, juge_local
+from hermes.agents.krinos import juge_local, laya
 from hermes.agents.krinos.garde_fous import (
     detecter_injection,
     passages_suspects,
@@ -40,9 +40,7 @@ from hermes.db.models import (
     Document,
     LogAgent,
     NiveauLog,
-    Portail,
     StatutAO,
-    TypePortail,
 )
 
 SYSTEM_PROMPT = (
@@ -155,21 +153,21 @@ async def analyser_ao(
             drapeaux.append(f"pythia:passage={verdict_local.passage}")
         codes_injection.append("pythia")
 
-    # Juge Jev optionnel : second avis, jamais bloquant.
-    resultat_jev = await _consulter_jev(session, appel_offre, contexte, ponderation)
-    if resultat_jev is not None:
-        drapeaux_j = jev.drapeaux_jev(
-            score_jev=resultat_jev.score,
-            confiance=resultat_jev.confiance,
-            pertinence=resultat_jev.pertinence,
-            manipulation=resultat_jev.manipulation,
+    # Juge Laya optionnel (local) : second avis, jamais bloquant.
+    resultat_laya = await _consulter_laya(session, appel_offre, contexte, ponderation)
+    if resultat_laya is not None:
+        drapeaux_j = laya.drapeaux_laya(
+            score_laya=resultat_laya.score,
+            confiance=resultat_laya.confiance,
+            pertinence=resultat_laya.pertinence,
+            manipulation=resultat_laya.manipulation,
             score_pythia=score_final,
             degradee=degradee,
-            seuils=jev.charger_seuils(session),
+            seuils=laya.charger_seuils(session),
         )
         drapeaux += drapeaux_j
-        if "jev:manipulation" in drapeaux_j:
-            codes_injection.append("jev")
+        if "laya:manipulation" in drapeaux_j:
+            codes_injection.append("laya")
     suspect_injection = bool(codes_injection)
     a_verifier = bool(drapeaux)
 
@@ -193,10 +191,10 @@ async def analyser_ao(
         suspect_injection=suspect_injection,
         a_verifier=a_verifier,
         drapeaux=json.dumps(drapeaux) if drapeaux else None,
-        score_jev=resultat_jev.score if resultat_jev else None,
-        confiance_jev=resultat_jev.confiance if resultat_jev else None,
-        details_jev=(
-            json.dumps(resultat_jev.en_dict(), ensure_ascii=False) if resultat_jev else None
+        score_laya=resultat_laya.score if resultat_laya else None,
+        confiance_laya=resultat_laya.confiance if resultat_laya else None,
+        details_laya=(
+            json.dumps(resultat_laya.en_dict(), ensure_ascii=False) if resultat_laya else None
         ),
         duree_analyse_ms=duree_ms,
         modele_llm=reponse.modele,
@@ -241,7 +239,7 @@ async def analyser_ao(
 
 
 def _profil_metier(session: Session) -> str:
-    """Profil métier borné pour Jev et PYTHIA : profil structuré + mots-clés ARGOS."""
+    """Profil métier borné pour Laya et PYTHIA : profil structuré + mots-clés ARGOS."""
     from hermes.agents.argos.filtre import charger_filtre
     from hermes.agents.profil_metier import charger_profil, composer_texte
 
@@ -260,32 +258,20 @@ async def _consulter_juge_local(
     )
 
 
-async def _consulter_jev(
+async def _consulter_laya(
     session: Session,
     appel_offre: AppelOffre,
     contexte: dict[str, Any],
     ponderation: Ponderation,
-) -> jev.ResultatJev | None:
-    """Second avis Jev si activé ; toute panne est transparente (None)."""
-    if not jev.est_actif(session):
+) -> laya.ResultatLaya | None:
+    """Second avis Laya si activé et installé ; toute panne est transparente (None).
+
+    Laya tourne dans le process, sans réseau : les portails privés sont jugés comme
+    les publics (rien ne sort de la machine).
+    """
+    if not laya.est_actif(session):
         return None
-    # Données privées : un portail non public (documents téléchargés derrière
-    # authentification) ne part JAMAIS chez Jev — analyse locale seule. Un AO
-    # sans portail connu est traité comme non public (défaut prudent).
-    portail = session.get(Portail, appel_offre.portail_id) if appel_offre.portail_id else None
-    if portail is None or portail.type != TypePortail.PUBLIC:
-        logger.info("KRINOS : Jev non appelé pour AO {} (portail non public)", appel_offre.id)
-        _journaliser(
-            session,
-            niveau=NiveauLog.INFO,
-            message=(
-                f"Jev non appelé pour AO {appel_offre.id} : portail non public "
-                "(analyse locale seule)"
-            ),
-            appel_offre_id=appel_offre.id,  # type: ignore[arg-type]
-        )
-        return None
-    state = jev.construire_state(
+    state = laya.construire_state(
         titre=contexte["titre"],
         objet=contexte["objet"],
         acheteur=contexte["emetteur"],
@@ -297,18 +283,18 @@ async def _consulter_jev(
         passages_suspects=passages_suspects(contexte["texte_documents"]),
     )
     try:
-        return await jev.juger(session, state, ponderation)
-    except jev.ErreurJev as exc:
-        logger.warning("KRINOS : Jev ignoré pour AO {} — {}", appel_offre.id, exc)
+        return await laya.juger(session, state, ponderation)
+    except laya.ErreurLaya as exc:
+        logger.warning("KRINOS : Laya ignoré pour AO {} — {}", appel_offre.id, exc)
         _journaliser(
             session,
             niveau=NiveauLog.WARNING,
-            message=f"Jev ignoré pour AO {appel_offre.id} (analyse locale conservée) : {exc}",
+            message=f"Laya ignoré pour AO {appel_offre.id} (analyse locale conservée) : {exc}",
             appel_offre_id=appel_offre.id,  # type: ignore[arg-type]
         )
-    except Exception as exc:  # noqa: BLE001 — Jev ne doit jamais casser l'analyse
+    except Exception as exc:  # noqa: BLE001 — Laya ne doit jamais casser l'analyse
         logger.warning(
-            "KRINOS : erreur Jev inattendue AO {} — {}", appel_offre.id, type(exc).__name__
+            "KRINOS : erreur Laya inattendue AO {} — {}", appel_offre.id, type(exc).__name__
         )
     return None
 

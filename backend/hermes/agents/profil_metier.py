@@ -1,8 +1,8 @@
-"""Profil métier structuré — contexte d'entreprise pour KRINOS (PYTHIA + Jev).
+"""Profil métier structuré — contexte d'entreprise pour KRINOS (PYTHIA + Laya).
 
 Stocké dans MNEMOSYNE (`parametres`, clé `profil.metier`) au format JSON. Il ne
 contient AUCUNE donnée d'identité (nom, prénom, email, SIRET…) : seul le
-savoir-faire de la structure, pour pouvoir partir chez Jev sans fuite. Le
+savoir-faire de la structure, pour rester exploitable par tout juge sans fuite. Le
 modèle refuse les champs inconnus et les valeurs qui ressemblent à un email ou
 à un SIRET/SIREN.
 """
@@ -106,7 +106,7 @@ def enregistrer_profil(session: Session, profil: ProfilMetier) -> ProfilMetier:
     entree = session.get(Parametre, CLE_PARAMETRE) or Parametre(
         cle=CLE_PARAMETRE,
         valeur="",
-        description="Profil métier structuré (KRINOS, Jev, PYTHIA)",
+        description="Profil métier structuré (KRINOS, Laya, PYTHIA)",
     )
     entree.valeur = profil.model_dump_json()
     entree.maj_le = datetime.now(UTC)
