@@ -15,8 +15,8 @@
         "title": "HERMES — Veille & Réponse AO",
         "width": 1400,
         "height": 900,
-        "minWidth": 1024,
-        "minHeight": 600,
+        "minWidth": 1100,
+        "minHeight": 700,
         "resizable": true,
         "fullscreen": false,
         "decorations": true

@@ -1,5 +1,19 @@
-import { AGENTS, RESPONSES, TENDERS, deadlineInfo, type AgentKey, type AgentState } from "../lib/data";
+import { AnimatePresence, motion } from "motion/react";
+import { AGENTS, type AgentKey, type AgentState } from "../lib/data";
+import { api, type ActiviteAgent } from "../lib/api";
+import { useApi } from "../lib/useApi";
 import { AgentDot } from "../components/AgentChip";
+import { Compteur } from "../components/Compteur";
+import {
+  COURBE,
+  DECALAGE_TUILES,
+  DELAI_ACTIVITE,
+  DELAI_FILET,
+  DUREE,
+  VARIANTES_BADGE,
+  VARIANTES_ELEMENT,
+  delaiCascade,
+} from "../lib/motion";
 import { Icon } from "../components/Icon";
 import type { ViewKey } from "../components/Sidebar";
 
@@ -8,40 +22,51 @@ type Props = {
   agents: Record<AgentKey, AgentState>;
   isLoading: boolean;
   onTriggerCycle: () => void;
+  /** Incrémenté par l'App après une collecte : relit les agrégats. */
+  refreshKey?: number;
 };
 
 type PipelineSeg = { key: string; label: string; n: number; color: string };
 
-const PIPELINE: PipelineSeg[] = [
-  { key: "veille",     label: "Veille",     n: 1284, color: "#5A6070" },
-  { key: "collectes",  label: "Collectés",  n: 142,  color: "#7A8190" },
-  { key: "pertinents", label: "Pertinents", n: 38,   color: "#C8A951" },
-  { key: "a-repondre", label: "À répondre", n: 6,    color: "#7F77DD" },
-  { key: "rediges",    label: "Rédigés",    n: 3,    color: "#D85A30" },
-  { key: "deposes",    label: "Déposés",    n: 2,    color: "#1D9E75" },
+// Étapes du pipeline = statuts StatutAO « vivants », dans l'ordre du flux.
+const ETAPES_PIPELINE: { key: string; label: string; color: string }[] = [
+  { key: "brut",         label: "Collectés",    color: "#7A8190" },
+  { key: "analyse",      label: "Analysés",     color: "#C8A951" },
+  { key: "a_repondre",   label: "À répondre",   color: "#7F77DD" },
+  { key: "en_redaction", label: "En rédaction", color: "#D85A30" },
+  { key: "repondu",      label: "Répondus",     color: "#1D9E75" },
 ];
 
-const ACTIVITY: { time: string; agent: AgentKey; msg: string }[] = [
-  { time: "09:42", agent: "argos",   msg: "Cycle terminé — nouveaux AO collectés depuis BOAMP" },
-  { time: "09:43", agent: "krinos",  msg: "Scoring de 14 AO — 3 marqués pertinents (≥ 70), 6 à arbitrer" },
-  { time: "09:51", agent: "krinos",  msg: "AO 26S0067412 — score 87 / forte affinité avec références Naval Group" },
-  { time: "10:08", agent: "hermion", msg: "Brouillon de réponse généré pour « Marché-cadre AMO transformation »" },
-  { time: "10:15", agent: "argos",   msg: "Portails privés en attente d'un scraper backend dédié" },
-  { time: "10:21", agent: "hermion", msg: "PDF généré — Refonte SI direction des affaires maritimes (84 p.)" },
-];
+const heure = (iso: string): string => {
+  const d = new Date(iso);
+  const memeJour = d.toDateString() === new Date().toDateString();
+  const hm = d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  return memeJour
+    ? hm
+    : `${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${hm}`;
+};
 
-export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props) {
-  const tenders = TENDERS;
-  const responses = RESPONSES;
+const agentDe = (ligne: ActiviteAgent): AgentKey => ligne.agent.toLowerCase() as AgentKey;
+
+export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle, refreshKey = 0 }: Props) {
+  const { data, error } = useApi((signal) => api.tableauDeBord(signal), [refreshKey]);
 
   const counts = {
-    total: tenders.length,
-    urgent: tenders.filter((t) => deadlineInfo(t.deadline).urgent).length,
-    high: tenders.filter((t) => t.score >= 70).length,
-    toAnswer: tenders.filter((t) => t.status === "à répondre").length,
+    total: data?.total_ao ?? 0,
+    urgent: data?.urgents ?? 0,
+    high: data?.score_eleve ?? 0,
+    toAnswer: data?.a_repondre ?? 0,
   };
+  const reponses = data?.reponses ?? {};
+  const enValidation = (reponses["en_attente"] ?? 0) + (reponses["a_modifier"] ?? 0);
+  const activite = data?.activite ?? [];
 
-  const pipelineMax = Math.max(...PIPELINE.map((p) => p.n));
+  const pipeline: PipelineSeg[] = ETAPES_PIPELINE.map((e) => ({
+    ...e,
+    n: data?.par_statut[e.key] ?? 0,
+  }));
+
+  const pipelineMax = Math.max(1, ...pipeline.map((p) => p.n));
 
   return (
     <div className="view">
@@ -66,84 +91,93 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
       )}
 
       <div className="view__scroll">
-        <div className="accueil-grid">
+        {error && !data && (
+          <div className="loading-banner" role="alert">
+            <span>Impossible de lire MNEMOSYNE : {error}</span>
+          </div>
+        )}
+        <motion.div
+          className="accueil-grid"
+          initial="initial"
+          animate="animate"
+          variants={{ initial: {}, animate: { transition: { staggerChildren: DECALAGE_TUILES } } }}
+        >
           {/* KPI tiles */}
-          <div className="tile col-3">
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-3">
             <div className="tile__label">
-              AO en veille <span className="kbd">7j</span>
+              AO détectés
             </div>
-            <div className="tile__value">{counts.total}</div>
-            <div className="tile__sub">+{counts.urgent} urgents (J−7)</div>
-            <div className="tile__bar" />
-          </div>
-          <div className="tile col-3">
+            <div className="tile__value"><Compteur valeur={counts.total} /></div>
+            <div className="tile__sub">{counts.urgent} urgents (J−7)</div>
+            <Barre />
+          </motion.div>
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-3">
             <div className="tile__label">Score ≥ 70</div>
-            <div className="tile__value" style={{ color: "var(--argos)" }}>{counts.high}</div>
+            <div className="tile__value" style={{ color: "var(--argos)" }}><Compteur valeur={counts.high} /></div>
             <div className="tile__sub">Pertinence haute selon KRINOS</div>
-            <div
-              className="tile__bar"
-              style={{ background: "linear-gradient(90deg, var(--argos), transparent)" }}
-            />
-          </div>
-          <div className="tile col-3">
+<Barre fond="linear-gradient(90deg, var(--argos), transparent)" />
+          </motion.div>
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-3">
             <div className="tile__label">À répondre</div>
-            <div className="tile__value" style={{ color: "var(--krinos)" }}>{counts.toAnswer}</div>
+            <div className="tile__value" style={{ color: "var(--krinos)" }}><Compteur valeur={counts.toAnswer} /></div>
             <div className="tile__sub">Marqués par l'opérateur</div>
-            <div
-              className="tile__bar"
-              style={{ background: "linear-gradient(90deg, var(--krinos), transparent)" }}
-            />
-          </div>
-          <div className="tile col-3">
+<Barre fond="linear-gradient(90deg, var(--krinos), transparent)" />
+          </motion.div>
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-3">
             <div className="tile__label">Réponses en validation</div>
             <div className="tile__value" style={{ color: "var(--warn)" }}>
-              {responses.filter((r) => r.status === "en-attente" || r.status === "a-modifier").length}
+              <Compteur valeur={enValidation} />
             </div>
             <div className="tile__sub">
-              {responses.filter((r) => r.status === "validee").length} validées ·{" "}
-              {responses.filter((r) => r.status === "exportee").length} exportées
+              {reponses["validee"] ?? 0} validées · {reponses["exportee"] ?? 0} exportées
             </div>
-            <div
-              className="tile__bar"
-              style={{ background: "linear-gradient(90deg, var(--hermion), transparent)" }}
-            />
-          </div>
+<Barre fond="linear-gradient(90deg, var(--hermion), transparent)" />
+          </motion.div>
 
           {/* Pipeline */}
-          <div className="tile col-8">
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-8">
             <div className="tile__label">
-              <span>Pipeline — 7 derniers jours</span>
+              <span>Pipeline des appels d'offre</span>
               <button className="btn btn--ghost btn--sm" onClick={onTriggerCycle}>
                 <Icon.refresh size={11} /> Forcer un cycle
               </button>
             </div>
             <div className="pipeline">
-              {PIPELINE.map((p) => (
-                <div
+              {pipeline.map((p, i) => (
+                <motion.div
                   key={p.key}
                   className="pipeline__seg"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: DUREE.lente,
+                    delay: delaiCascade(i + 2),
+                    ease: [...COURBE.sortie],
+                  }}
                   style={{
                     ["--w" as any]: (p.n / pipelineMax) * 6 + 1,
                     background: `linear-gradient(180deg, ${p.color}33 0%, ${p.color}22 100%)`,
                     borderLeft: `2px solid ${p.color}`,
                   }}
                 >
-                  <span>{p.n.toLocaleString("fr-FR")}</span>
-                </div>
+                  <span>
+                    <Compteur valeur={p.n} formater={(n) => n.toLocaleString("fr-FR")} />
+                  </span>
+                </motion.div>
               ))}
             </div>
             <div className="pipeline__legend">
-              {PIPELINE.map((p) => (
+              {pipeline.map((p) => (
                 <span className="pipeline__legend-item" key={p.key}>
                   <span className="pipeline__legend-dot" style={{ background: p.color }} />
                   {p.label}
                 </span>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           {/* Quick actions */}
-          <div className="tile col-4">
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-4">
             <div className="tile__label">Actions rapides</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
               <button className="btn btn--gold" onClick={() => onNavigate("tenders")}>
@@ -156,10 +190,10 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
                 <Icon.settings size={13} /> Configurer les portails
               </button>
             </div>
-          </div>
+          </motion.div>
 
           {/* Activity feed */}
-          <div className="tile col-8">
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-8">
             <div className="tile__label">
               <span>Activité des agents</span>
               <span
@@ -171,31 +205,51 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
                   letterSpacing: 0,
                 }}
               >
-                Aujourd'hui · 14 mai 2026
+                {new Date().toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
               </span>
             </div>
             <div style={{ marginTop: 6 }}>
-              {ACTIVITY.map((row, i) => {
-                const a = AGENTS[row.agent];
+              {activite.length === 0 && (
+                <div style={{ padding: "14px 0", fontSize: 12, color: "var(--fg-3)" }}>
+                  Aucune activité d'agent enregistrée pour le moment.
+                </div>
+              )}
+              {activite.map((row, i) => {
+                const cle = agentDe(row);
+                const a = AGENTS[cle] ?? { name: row.agent, color: "var(--fg-3)", role: "" };
                 return (
-                  <div className="activity-row" key={i}>
-                    <span className="activity-row__time">{row.time}</span>
+                  <motion.div
+                    className="activity-row"
+                    key={row.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      duration: DUREE.base,
+                      delay: DELAI_ACTIVITE + delaiCascade(i),
+                      ease: [...COURBE.sortie],
+                    }}
+                  >
+                    <span className="activity-row__time">{heure(row.cree_le)}</span>
                     <span className="activity-row__msg">
                       <span className="activity-row__agent" style={{ color: a.color }}>{a.name}</span>
                       <span style={{ color: "var(--fg-4)", margin: "0 8px" }}>·</span>
-                      {row.msg}
+                      {row.message}
                     </span>
                     <span>
-                      <AgentDot agent={row.agent} state="active" size={6} />
+                      <AgentDot agent={cle} state="active" size={6} />
                     </span>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
-          </div>
+          </motion.div>
 
           {/* Status of agents */}
-          <div className="tile col-4">
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-4">
             <div className="tile__label">État des agents</div>
             <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
               {(Object.entries(AGENTS) as [AgentKey, (typeof AGENTS)[AgentKey]][]).map(
@@ -237,9 +291,20 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
                         >
                           {a.name}
                         </span>
-                        <span style={{ fontSize: 11, color: stateColor, fontWeight: 500 }}>
-                          ● {stateLabel}
-                        </span>
+                        {/* L'état s'enchaîne : ancien libellé sorti, nouveau entré */}
+                        <AnimatePresence mode="wait" initial={false}>
+                          <motion.span
+                            key={state}
+                            className={state === "running" ? "etat-agent--en-cours" : undefined}
+                            variants={VARIANTES_BADGE}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            style={{ fontSize: 11, color: stateColor, fontWeight: 500 }}
+                          >
+                            ● {stateLabel}
+                          </motion.span>
+                        </AnimatePresence>
                       </div>
                       <div style={{ fontSize: 11.5, color: "var(--fg-3)", marginTop: 4 }}>
                         {a.role}
@@ -249,9 +314,22 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
                 },
               )}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
     </div>
+  );
+}
+
+/** Filet de tuile : se trace de gauche à droite (transform seulement). */
+function Barre({ fond }: { fond?: string }) {
+  return (
+    <motion.div
+      className="tile__bar"
+      initial={{ scaleX: 0 }}
+      animate={{ scaleX: 1 }}
+      transition={{ duration: DUREE.lente, delay: DELAI_FILET, ease: [...COURBE.sortie] }}
+      style={{ transformOrigin: "left center", ...(fond ? { background: fond } : {}) }}
+    />
   );
 }

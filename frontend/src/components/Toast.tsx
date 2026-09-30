@@ -1,4 +1,6 @@
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect } from "react";
+import { VARIANTES_TOAST } from "../lib/motion";
 import { AGENTS } from "../lib/data";
 import type { ToastInput } from "../lib/toast";
 import { HermesMark } from "./HermesMark";
@@ -16,13 +18,28 @@ export function Toast({ toast, onClose }: Props) {
     return () => clearTimeout(t);
   }, [toast, onClose]);
 
-  if (!toast) return null;
+  return (
+    <AnimatePresence>
+      {toast && (
+        <ToastCarte key={`${toast.title}|${toast.app}|${toast.msg}`} toast={toast} onClose={onClose} />
+      )}
+    </AnimatePresence>
+  );
+}
 
+function ToastCarte({ toast, onClose }: { toast: ToastInput; onClose: () => void }) {
   const agent = AGENTS[toast.agent];
   const agentColor = agent ? agent.color : "var(--hermion)";
 
   return (
-    <div className="toast">
+    <motion.div
+      className="toast"
+      role="status"
+      variants={VARIANTES_TOAST}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+    >
       <div
         className="toast__icon"
         style={{
@@ -46,6 +63,6 @@ export function Toast({ toast, onClose }: Props) {
       <button className="toast__close" onClick={onClose}>
         <Icon.close size={12} />
       </button>
-    </div>
+    </motion.div>
   );
 }

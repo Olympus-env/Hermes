@@ -17,6 +17,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -459,14 +460,170 @@ fn start_services(app: &tauri::AppHandle) {
 }
 
 // --------------------------------------------------------------------------- //
+// Intégration système : zone de notification (tray) et commandes frontend
+// --------------------------------------------------------------------------- //
+
+/// Réglage « fermer la fenêtre = réduire dans la zone de notification ».
+/// Faux par défaut : tant que le frontend n'a rien synchronisé, fermer la
+/// fenêtre quitte réellement HERMES (et arrête backend + PYTHIA).
+#[derive(Default)]
+struct ReglageTray {
+    reduire_a_la_fermeture: AtomicBool,
+}
+
+/// Événements émis vers le frontend par le menu du tray.
+const EVENT_TRAY_VEILLE: &str = "hermes-tray-veille";
+const EVENT_TRAY_PAUSE: &str = "hermes-tray-pause";
+
+/// Vraie sortie : arrête backend + PYTHIA puis quitte le processus.
+fn quitter_hermes(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(state) = app.try_state::<SharedState>() {
+        if let Ok(mut guard) = state.lock() {
+            guard.shutdown();
+        }
+    }
+    app.exit(0);
+}
+
+fn afficher_fenetre(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(fenetre) = app.get_webview_window("main") {
+        let _ = fenetre.show();
+        let _ = fenetre.unminimize();
+        let _ = fenetre.set_focus();
+    }
+}
+
+fn construire_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    use tauri::Emitter;
+
+    let menu = MenuBuilder::new(app)
+        .item(&MenuItemBuilder::with_id("ouvrir", "Ouvrir HERMES").build(app)?)
+        .item(&MenuItemBuilder::with_id("veille", "Lancer une veille maintenant").build(app)?)
+        .item(&MenuItemBuilder::with_id("pause", "Mettre en pause / reprendre").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("quitter", "Quitter").build(app)?)
+        .build()?;
+
+    let mut tray = TrayIconBuilder::with_id("hermes")
+        .tooltip("HERMES")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "ouvrir" => afficher_fenetre(app),
+            "veille" => {
+                afficher_fenetre(app);
+                let _ = app.emit(EVENT_TRAY_VEILLE, ());
+            }
+            "pause" => {
+                let _ = app.emit(EVENT_TRAY_PAUSE, ());
+            }
+            "quitter" => quitter_hermes(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                afficher_fenetre(tray.app_handle());
+            }
+        });
+    if let Some(icone) = app.default_window_icon() {
+        tray = tray.icon(icone.clone());
+    }
+    tray.build(app)?;
+    Ok(())
+}
+
+/// Synchronisé par le frontend (réglage Paramètres) au démarrage et à chaque changement.
+#[tauri::command]
+fn definir_reduire_dans_tray(actif: bool, reglage: tauri::State<'_, ReglageTray>) {
+    reglage
+        .reduire_a_la_fermeture
+        .store(actif, Ordering::Relaxed);
+}
+
+/// Écrit un export PDF à l'emplacement choisi via le dialogue natif « Enregistrer sous ».
+/// Corps brut = octets du fichier ; chemin en en-tête `chemin` (encodeURIComponent).
+#[tauri::command]
+fn enregistrer_fichier(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(octets) = request.body() else {
+        return Err("Contenu du fichier manquant.".into());
+    };
+    let brut = request
+        .headers()
+        .get("chemin")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| "Chemin de destination manquant.".to_string())?;
+    let chemin = PathBuf::from(decoder_url(brut));
+    let extension = chemin
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    if extension.as_deref() != Some("pdf") {
+        return Err("Seuls les exports PDF peuvent être enregistrés.".into());
+    }
+    fs::write(&chemin, octets).map_err(|e| format!("Écriture de {} : {e}", chemin.display()))
+}
+
+/// Décodage « percent-encoding » minimal (en-tête produit par encodeURIComponent).
+fn decoder_url(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Some(v) = s
+                .get(i + 1..i + 3)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+            {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+// --------------------------------------------------------------------------- //
 // Entrée Tauri
 // --------------------------------------------------------------------------- //
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        // Mémorise taille, position et état maximisé. VISIBLE est exclu : une fenêtre
+        // réduite dans le tray à la fermeture doit réapparaître au prochain lancement.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        - tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         .manage(Mutex::<ServiceState>::default())
+        .manage(ReglageTray::default())
+        .invoke_handler(tauri::generate_handler![
+            definir_reduire_dans_tray,
+            enregistrer_fichier
+        ])
         .setup(|app| {
+            if let Err(e) = construire_tray(app) {
+                // Le tray est un confort : sans lui, l'app reste pleinement utilisable.
+                eprintln!("[HERMES] Zone de notification indisponible : {e}");
+            }
             // En dev, on ne touche pas aux services — le développeur les
             // gère lui-même via les scripts PowerShell. En release, on lance
             // tout ce qu'il faut, hors du thread UI (jusqu'à ~60 s d'attente).
@@ -482,18 +639,45 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // À la destruction de la fenêtre principale, on coupe tout ce
-            // que Tauri a démarré. La fenêtre est unique → Destroyed = fin
-            // de l'application.
-            if matches!(event, tauri::WindowEvent::Destroyed) {
+            use tauri::Manager;
+            match event {
+                // Fermer la fenêtre : réduction dans le tray si le réglage est actif,
+                // sinon c'est la vraie sortie (Destroyed, ci-dessous).
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    let reduire = window
+                        .app_handle()
+                        .try_state::<ReglageTray>()
+                        .is_some_and(|r| r.reduire_a_la_fermeture.load(Ordering::Relaxed));
+                    if reduire {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                }
+                // À la destruction de la fenêtre principale, on coupe tout ce
+                // que Tauri a démarré. La fenêtre est unique → Destroyed = fin
+                // de l'application.
+                tauri::WindowEvent::Destroyed => {
+                    if let Some(state) = window.app_handle().try_state::<SharedState>() {
+                        if let Ok(mut guard) = state.lock() {
+                            guard.shutdown();
+                        }
+                    }
+                }
+                _ => {}
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("Erreur au démarrage de HERMES")
+        .run(|app, event| {
+            // Filet de sécurité : quelle que soit la voie de sortie (menu Quitter,
+            // app.exit), backend et PYTHIA sont arrêtés.
+            if matches!(event, tauri::RunEvent::Exit) {
                 use tauri::Manager;
-                if let Some(state) = window.app_handle().try_state::<SharedState>() {
+                if let Some(state) = app.try_state::<SharedState>() {
                     if let Ok(mut guard) = state.lock() {
                         guard.shutdown();
                     }
                 }
             }
-        })
-        .run(tauri::generate_context!())
-        .expect("Erreur au démarrage de HERMES");
+        });
 }

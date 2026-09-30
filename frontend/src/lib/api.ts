@@ -440,6 +440,28 @@ export type LogsPage = {
   offset: number;
 };
 
+export type ActiviteAgent = {
+  id: number;
+  agent: string;
+  niveau: NiveauLog;
+  message: string;
+  cree_le: string;
+};
+
+/** Agrégats de l'Accueil (GET /tableau-de-bord). */
+export type TableauDeBord = {
+  genere_le: string;
+  total_ao: number;
+  urgents: number;
+  score_eleve: number;
+  a_repondre: number;
+  /** Nombre d'AO par StatutAO (brut, analyse, a_repondre, en_redaction, repondu, …). */
+  par_statut: Record<string, number>;
+  /** Dernière version de réponse de chaque AO, comptée par StatutReponseHermion. */
+  reponses: Record<string, number>;
+  activite: ActiviteAgent[];
+};
+
 export type ConfigOrchestration = {
   actif: boolean;
   seuil_score: number;
@@ -596,6 +618,8 @@ export const api = {
     ),
   etatSchedulerArgos: (signal?: AbortSignal) =>
     fetchJson<EtatSchedulerArgos>("/argos/scheduler", { signal }),
+  tableauDeBord: (signal?: AbortSignal) =>
+    fetchJson<TableauDeBord>("/tableau-de-bord", { signal }),
   detailAO: (id: number) => fetchJson<AppelOffre>(`/appels-offre/${id}`),
   // Premier appel : jusqu'à ~3 requêtes espacées vers data.gouv.fr, d'où le délai large.
   concurrenceAO: (id: number, actualiser = false, signal?: AbortSignal) =>
