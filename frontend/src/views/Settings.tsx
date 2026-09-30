@@ -7,6 +7,12 @@ import {
   type UserProfile,
 } from "../lib/userProfile";
 import { Icon } from "../components/Icon";
+import {
+  chargerPreferencesBureau,
+  enregistrerPreferencesBureau,
+  estTauri,
+  type PreferencesBureau,
+} from "../lib/desktop";
 import { ProfilMetierSection } from "../components/ProfilMetierSection";
 import { WorkflowEditor, type WorkflowDraft } from "../components/WorkflowEditor";
 import {
@@ -38,7 +44,8 @@ type SectionId =
   | "filtrage"
   | "scoring"
   | "redaction"
-  | "pipeline";
+  | "pipeline"
+  | "bureau";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "profil",    label: "Profil utilisateur" },
@@ -48,6 +55,7 @@ const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "scoring",   label: "Pondération du scoring" },
   { id: "redaction", label: "Rédaction HERMION" },
   { id: "pipeline",  label: "Pipeline autonome" },
+  { id: "bureau",    label: "Application de bureau" },
 ];
 
 export function Settings({ profile, onSaveProfile }: Props) {
@@ -83,6 +91,7 @@ export function Settings({ profile, onSaveProfile }: Props) {
           {section === "scoring" && <ScoringSection />}
           {section === "redaction" && <RedactionSection />}
           {section === "pipeline" && <OrchestrationSection />}
+          {section === "bureau" && <BureauSection />}
         </div>
       </div>
     </div>
@@ -1609,6 +1618,54 @@ function OrchestrationSection() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+const REGLAGES_BUREAU: { cle: keyof PreferencesBureau; label: string; hint: string }[] = [
+  { cle: "nouvelAo", label: "Nouvel AO pertinent", hint: "Score KRINOS au-dessus du seuil du pipeline" },
+  { cle: "reponsePrete", label: "Réponse HERMION prête", hint: "Une réponse attend votre validation" },
+  { cle: "panneArgos", label: "Panne ARGOS", hint: "Une collecte a échoué" },
+  {
+    cle: "reduireDansTray",
+    label: "Fermer la fenêtre réduit dans la zone de notification",
+    hint: "HERMES continue de veiller ; « Quitter » (menu de l'icône) arrête tout",
+  },
+];
+
+function BureauSection() {
+  const [prefs, setPrefs] = useState<PreferencesBureau>(() => chargerPreferencesBureau());
+  const bureau = estTauri();
+
+  const changer = (cle: keyof PreferencesBureau) => {
+    const suivant = { ...prefs, [cle]: !prefs[cle] };
+    setPrefs(suivant);
+    enregistrerPreferencesBureau(suivant);
+  };
+
+  return (
+    <div className="settings-section">
+      <h2>Application de bureau</h2>
+      <p className="settings-section__desc">
+        Notifications système et zone de notification. Tout reste local à cette machine.
+        {!bureau && " Ces réglages ne s'appliquent que dans l'application de bureau HERMES."}
+      </p>
+      {REGLAGES_BUREAU.map((r) => (
+        <div className="settings-row" key={r.cle}>
+          <div>
+            <div className="settings-row__label">{r.label}</div>
+            <div className="settings-row__hint">{r.hint}</div>
+          </div>
+          <button
+            className={`toggle${prefs[r.cle] ? " toggle--on" : ""}`}
+            onClick={() => changer(r.cle)}
+            role="switch"
+            aria-checked={prefs[r.cle]}
+          >
+            <div className="toggle__thumb" />
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   type StatutReponseHermion,
 } from "../lib/api";
 import { type ResponseStatus } from "../lib/data";
+import { enregistrerPdf } from "../lib/desktop";
 import type { ToastInput } from "../lib/toast";
 import { loadUserProfile } from "../lib/userProfile";
 
@@ -146,17 +147,10 @@ export function Responses({ onToast, externalRefreshKey = 0 }: Props) {
     }
   };
 
-  /** Télécharge le PDF via blob + <a download> (window.open est bloqué dans la webview Tauri). */
+  /** Enregistre le PDF : dialogue natif sous Tauri, téléchargement navigateur en mode web. */
   const telechargerPdf = async (id: number, version: number) => {
     const blob = await api.telechargerExportReponse(id);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `reponse_${id}_v${version}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    await enregistrerPdf(blob, `reponse_${id}_v${version}.pdf`);
   };
 
   const onDownload = async () => {

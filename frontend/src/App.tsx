@@ -11,6 +11,7 @@ import { Topbar } from "./components/Topbar";
 import { api } from "./lib/api";
 import { type AgentKey, type AgentState } from "./lib/data";
 import type { ToastInput } from "./lib/toast";
+import { useIntegrationBureau } from "./lib/useIntegrationBureau";
 import {
   isOnboardingDone,
   loadUserProfile,
@@ -173,6 +174,9 @@ export default function App() {
       });
     }
   }, [rafraichirScheduler]);
+
+  // Intégration système (Tauri) : notifications, menu du tray. Inerte en mode web.
+  useIntegrationBureau({ naviguer: setActive, lancerVeille: triggerCycle });
 
   return (
     <div className="app">
