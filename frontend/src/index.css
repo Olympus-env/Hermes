@@ -52,6 +52,7 @@
   --dur-base:   240ms;
   --dur-lente:  400ms;
   --dur-compteur: 800ms;
+  --dur-souffle: 1400ms;
   --ease-sortie: cubic-bezier(0.2, 0.7, 0.2, 1);
   --ease-entree: cubic-bezier(0.5, 0, 0.9, 0.4);
   --ease-doux:   cubic-bezier(0.4, 0, 0.2, 1);
@@ -506,6 +507,12 @@ button { font-family: inherit; cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 .deadline--urgent { color: var(--hermion); }
+.deadline__echu {
+  color: var(--fg-4);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  margin-left: 2px;
+}
 .deadline__days {
   background: rgba(216,90,48,0.18);
   color: var(--hermion);
@@ -1762,4 +1769,4 @@ button, [role="button"], select, label[for] { cursor: pointer; }
 
 /* Agent « en cours » (Accueil) : le libellé respire en opacité */
 @keyframes souffle { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.etat-agent--en-cours { animation: souffle 1.4s var(--ease-doux) infinite; }
+.etat-agent--en-cours { animation: souffle var(--dur-souffle) var(--ease-doux) infinite; }

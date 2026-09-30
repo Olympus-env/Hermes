@@ -11,7 +11,16 @@ export const DUREE = {
   lente: 0.4,
   /** Compteurs et jauges qui se remplissent (miroir de --dur-compteur). */
   compteur: 0.8,
+  /** Filet de tuile (Accueil) et frise de l'en-tête (App.tsx) qui se tracent. */
+  frise: 0.7,
+  /** Respiration de l'agent « en cours » (miroir de --dur-souffle). */
+  souffle: 1.4,
 } as const;
+
+/** Accueil : décalage entre tuiles, délai des filets et de la liste d'activité. */
+export const DECALAGE_TUILES = 0.05;
+export const DELAI_FILET = 0.2;
+export const DELAI_ACTIVITE = 0.3;
 
 /** Cascade des listes : décalage entre deux éléments, plafonné pour rester vif. */
 export const DECALAGE_CASCADE = 0.04;

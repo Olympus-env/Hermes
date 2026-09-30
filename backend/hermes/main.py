@@ -32,6 +32,7 @@ from hermes.api import (
     orchestration,
     profil,
     pythia,
+    tableau_de_bord,
 )
 from hermes.api import pythia as pythia_api
 from hermes.config import settings
@@ -151,6 +152,7 @@ app.include_router(orchestration.router)
 app.include_router(logs.router)
 app.include_router(pythia.router)
 app.include_router(profil.router)
+app.include_router(tableau_de_bord.router)
 
 
 @app.get("/")

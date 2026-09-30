@@ -18,7 +18,7 @@ import {
   delaiCascade,
 } from "../lib/motion";
 import { EVT_RECHERCHE, consommerDemandeRecherche } from "../lib/natif";
-import { deadlineInfo, type Tender, type TenderTag } from "../lib/data";
+import { STATUTS_ACTIFS, deadlineInfo, type Tender, type TenderTag } from "../lib/data";
 import { AgentChip } from "../components/AgentChip";
 import { Deadline } from "../components/Deadline";
 import { Icon } from "../components/Icon";
@@ -110,7 +110,9 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
     return true;
   });
 
-  const urgentCount = filtered.filter((t) => deadlineInfo(t.deadline).urgent).length;
+  const urgentCount = filtered.filter(
+    (t) => STATUTS_ACTIFS.includes(t.statutApi ?? "") && deadlineInfo(t.deadline).urgent,
+  ).length;
   const selected = filtered.find((t) => t.id === selectedId);
   const loading = isLoading || apiLoading;
 
@@ -330,7 +332,7 @@ function mapAppelOffre(ao: AppelOffre): Tender {
     portal:
       ao.portail_nom?.toUpperCase() ??
       (ao.portail_id ? `Portail #${ao.portail_id}` : "Source directe"),
-    deadline: ao.date_limite ?? ao.cree_le,
+    deadline: ao.date_limite,
     budget: formatBudget(ao.budget_estime, ao.devise),
     reference: ao.reference_externe ?? `AO-${ao.id}`,
     score: ao.score ?? 0,
@@ -346,6 +348,7 @@ function mapAppelOffre(ao: AppelOffre): Tender {
       `Documents : ${ao.documents_telecharges}/${ao.documents_detectes} téléchargé(s)`,
     ],
     status: statutLabel(ao.statut),
+    statutApi: ao.statut,
     documentsDetectes: ao.documents_detectes,
     documentsTelecharges: ao.documents_telecharges,
     horsProfilJev: ao.hors_profil_jev === true,
@@ -466,7 +469,7 @@ type PanelProps = {
 };
 
 function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
-  const { formatted, urgent, days } = deadlineInfo(tender.deadline);
+  const { formatted, urgent, days, echu } = deadlineInfo(tender.deadline);
   const [redigerEnCours, setRedigerEnCours] = useState(false);
   const [progression, setProgression] = useState<ProgressionHermion | null>(null);
   const [analyse, setAnalyse] = useState<AnalyseKrinos | null>(null);
@@ -761,6 +764,7 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
               {urgent && (
                 <span style={{ color: "var(--hermion)", marginLeft: 8 }}>J−{days}</span>
               )}
+              {echu && <span style={{ color: "var(--fg-4)", marginLeft: 8 }}>Échu</span>}
             </dd>
           </dl>
         </div>
