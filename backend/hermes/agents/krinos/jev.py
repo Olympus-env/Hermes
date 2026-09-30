@@ -327,7 +327,7 @@ def construire_state(
             "budget_estime": budget[:60],
             "date_limite": date_limite[:40],
         },
-        "profil_metier": profil_metier[:500],
+        "profil_metier": profil_metier[:1200],
         "extrait_documents": "",
     }
     libre = MAX_CARACTERES_STATE - len(json.dumps(state, ensure_ascii=False))

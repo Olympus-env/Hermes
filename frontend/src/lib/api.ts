@@ -245,6 +245,19 @@ export type ConfigJev = {
   tokens_consommes: number;
 };
 
+/** Profil métier structuré (sans aucune donnée d'identité : nom, email, SIRET…). */
+export type ProfilMetier = {
+  activite: string;
+  secteurs: string[];
+  codes_cpv: string[];
+  zone_geographique: string;
+  effectif: number | null;
+  ca_tranche: string;
+  certifications: string[];
+  types_marches: string[];
+  references_types: string[];
+};
+
 export type ProgressionModele = {
   modele: string;
   en_cours: boolean;
@@ -590,6 +603,12 @@ export const api = {
     q.set("offset", String(params.offset ?? 0));
     return fetchJson<LogsPage>(`/logs?${q.toString()}`, { signal });
   },
+  lireProfilMetier: () => fetchJson<ProfilMetier>("/profil/metier"),
+  ecrireProfilMetier: (p: ProfilMetier) =>
+    fetchJson<ProfilMetier>("/profil/metier", {
+      method: "PUT",
+      body: JSON.stringify(p),
+    }),
   lireConfigJev: () => fetchJson<ConfigJev>("/krinos/jev"),
   ecrireConfigJev: (actif: boolean) =>
     fetchJson<ConfigJev>("/krinos/jev", {
