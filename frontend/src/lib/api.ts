@@ -48,6 +48,9 @@ export type AppelOffre = {
   documents_detectes: number;
   documents_telecharges: number;
   documents_manquants: number;
+  // Pré-tri Jev : AO jugé « hors profil », non analysé par PYTHIA (analyse forçable).
+  hors_profil_jev?: boolean;
+  pertinence_jev?: number | null;
 };
 
 // Analyse concurrentielle DECP (GET /appels-offre/{id}/concurrence).
@@ -243,6 +246,10 @@ export type ConfigJev = {
   cle_configuree: boolean;
   budget_tokens_mois: number;
   tokens_consommes: number;
+  /** Pré-tri de pertinence avant KRINOS (désactivé par défaut). */
+  pretri_actif?: boolean;
+  /** Probabilité 0-1 sous laquelle un AO est marqué « hors profil (Jev) ». */
+  pretri_seuil?: number;
 };
 
 /** Profil métier structuré (sans aucune donnée d'identité : nom, email, SIRET…). */
@@ -620,6 +627,11 @@ export const api = {
     fetchJson<{ actif: boolean }>("/krinos/juge-local", {
       method: "PUT",
       body: JSON.stringify({ actif }),
+    }),
+  ecrireConfigPretriJev: (pretri_actif: boolean, pretri_seuil: number) =>
+    fetchJson<ConfigJev>("/krinos/jev/pretri", {
+      method: "PUT",
+      body: JSON.stringify({ pretri_actif, pretri_seuil }),
     }),
   lireConfigOrchestration: () =>
     fetchJson<ConfigOrchestration>("/orchestration/config"),

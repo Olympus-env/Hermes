@@ -114,10 +114,18 @@ class JevConfigIO(BaseModel):
     cle_configuree: bool = False
     budget_tokens_mois: int = 0
     tokens_consommes: int = 0
+    # Pré-tri de pertinence avant KRINOS (réglage séparé, désactivé par défaut).
+    pretri_actif: bool = False
+    pretri_seuil: float = jev.SEUIL_PRETRI_DEFAUT
 
 
 class JevConfigUpdate(BaseModel):
     actif: bool
+
+
+class JevPretriUpdate(BaseModel):
+    pretri_actif: bool
+    pretri_seuil: float = Field(default=jev.SEUIL_PRETRI_DEFAUT, ge=0, le=1)
 
 
 class AnalyseResponse(BaseModel):
@@ -323,6 +331,11 @@ async def analyser_appel_offre(
             appel_offre_id=ao_id,
         )
 
+    # Analyse demandée à la main : lève le marquage « hors profil (Jev) ».
+    if ao.hors_profil_jev:
+        ao.hors_profil_jev = False
+        session.add(ao)
+        session.commit()
     try:
         resultat = await analyser_ao(session, ao, forcer=bool(payload and payload.forcer))
     except ErreurAnalyseKrinos as exc:
@@ -340,6 +353,8 @@ def _jev_config_io(session: Session) -> JevConfigIO:
         cle_configuree=jev.cle_configuree(),
         budget_tokens_mois=settings.jev_budget_tokens_mois,
         tokens_consommes=jev.tokens_consommes(session),
+        pretri_actif=jev.pretri_reglage(session),
+        pretri_seuil=jev.pretri_seuil(session),
     )
 
 
@@ -369,6 +384,12 @@ def ecrire_config_juge_local(
 ) -> JugeLocalConfigIO:
     juge_local.enregistrer_actif(session, payload.actif)
     return JugeLocalConfigIO(actif=juge_local.reglage_actif(session))
+
+
+@router.put("/jev/pretri", response_model=JevConfigIO)
+def ecrire_pretri_jev(payload: JevPretriUpdate, session: SessionDep) -> JevConfigIO:
+    jev.enregistrer_pretri(session, payload.pretri_actif, payload.pretri_seuil)
+    return _jev_config_io(session)
 
 
 @router.get("/ponderation", response_model=PonderationIO)
