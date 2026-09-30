@@ -16,9 +16,10 @@ avant toute soumission.
 
 1. **Local-first** — aucune donnée ne sort de la machine. FastAPI n'écoute que
    sur `127.0.0.1`, jamais sur `0.0.0.0`. Aucune télémétrie. Aucun appel
-   externe sauf vers les portails AO ciblés (et, uniquement si Joshua l'active
-   — `HERMES_JEV_ACTIF`, désactivé par défaut —, le juge Jev de KRINOS, qui ne
-   reçoit que des données publiques d'avis, plafonné en tokens).
+   externe sauf vers les portails AO ciblés et les téléchargements de modèles
+   **consentis** par Joshua (PYTHIA via Ollama, juge Laya de KRINOS depuis
+   Hugging Face, version épinglée + SHA-256). Laya s'exécute en local (ONNX
+   Runtime) : aucune donnée d'AO ne quitte la machine.
 2. **Validation humaine obligatoire** — la soumission finale d'une réponse à un
    AO est *exclusivement* humaine, sans exception. HERMION rédige, ne soumet
    jamais.
@@ -35,7 +36,7 @@ Toute proposition d'architecture doit respecter ce triptyque.
 |-----|------|
 | **HERMES** | L'application complète (l'orchestrateur) |
 | **ARGOS** | Agent de collecte / scraping (Playwright + APScheduler) |
-| **KRINOS** | Agent d'analyse / extraction / scoring (pdfplumber + pymupdf + Ollama) |
+| **KRINOS** | Agent d'analyse / extraction / scoring (pdfplumber + pymupdf + Ollama ; juge Laya en ONNX) |
 | **HERMION** | Agent de rédaction (Ollama + workflow engine) |
 | **MNEMOSYNE** | La base SQLite locale |
 | **PYTHIA** | Le LLM local (Ollama + Qwen3 8B q4) |
@@ -53,6 +54,8 @@ modules et les logs. C'est l'identité du projet.
 - **BDD** : SQLite (mode WAL) via SQLModel
 - **Scraping** : Playwright Python + APScheduler
 - **LLM** : Ollama (HTTP local sur 11434) + Qwen3 8B q4 (override via `HERMES_PYTHIA_MODELE`)
+- **Juge de décision** : Laya multilingue (ONNX Runtime + `tokenizers`, sans PyTorch),
+  optionnel, téléchargé sur consentement — voir `docs/laya.md`
 - **Crypto** : `cryptography` (AES-256, GCM)
 
 ---
@@ -238,7 +241,7 @@ Définies dans `backend/hermes/db/models.py`.
 | 7 | HERMION rédaction | ✅ |
 | 8 | Interface onglet 2 « Réponses » | |
 | 9 | Paramètres & configuration | |
-| 10 | Finalisation (auto-start, export PDF, mail) | 🚧 sidecar Tauri en place |
+| 10 | Finalisation (auto-start, export PDF, mail) | 🚧 sidecar Tauri, notifications, zone de notification, dialogues natifs |
 
 L'état authoritatif est dans le README + `git log` — toujours vérifier avant
 d'annoncer une avancée.
