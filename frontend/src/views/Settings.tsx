@@ -1382,6 +1382,83 @@ function JugeLocalReglage() {
   );
 }
 
+/** Pré-tri de pertinence Jev avant KRINOS : désactivé par défaut, portails publics seulement. */
+function JevPretriReglage() {
+  const [cfg, setCfg] = useState<ConfigJev | null>(null);
+  const [seuil, setSeuil] = useState(30);
+  const [busy, setBusy] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .lireConfigJev()
+      .then((c) => {
+        if (cancelled) return;
+        setCfg(c);
+        setSeuil(Math.round((c.pretri_seuil ?? 0.3) * 100));
+      })
+      .catch((e) => {
+        if (!cancelled) setErreur(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!cfg) return erreur ? <div className="settings-row__hint">{erreur}</div> : null;
+
+  const enregistrer = async (actif: boolean, pct: number) => {
+    setBusy(true);
+    setErreur(null);
+    try {
+      setCfg(await api.ecrireConfigPretriJev(actif, pct / 100));
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-row">
+      <div>
+        <div className="settings-row__label">Pré-tri de pertinence Jev — optionnel</div>
+        <div className="settings-row__hint">
+          Avant l'analyse KRINOS, Jev juge la pertinence de chaque AO de portail public pour
+          votre profil. Sous le seuil, l'AO est marqué « hors profil (Jev) » et n'est pas
+          analysé par PYTHIA ; il reste visible et vous pouvez forcer l'analyse. Panne ou
+          budget épuisé : analyse normale. Nécessite que Jev soit activé.
+          {erreur ? ` ${erreur}` : ""}
+        </div>
+        <label className="settings-row__hint">
+          Seuil de pertinence : {seuil} %{" "}
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={seuil}
+            disabled={busy}
+            onChange={(e) => setSeuil(Number(e.target.value))}
+            onMouseUp={() => void enregistrer(cfg.pretri_actif === true, seuil)}
+            onKeyUp={() => void enregistrer(cfg.pretri_actif === true, seuil)}
+          />
+        </label>
+      </div>
+      <button
+        className={`toggle${cfg.pretri_actif ? " toggle--on" : ""}`}
+        onClick={() => void enregistrer(!cfg.pretri_actif, seuil)}
+        disabled={busy}
+        role="switch"
+        aria-checked={cfg.pretri_actif === true}
+      >
+        <div className="toggle__thumb" />
+      </button>
+    </div>
+  );
+}
+
 function OrchestrationSection() {
   const [cfg, setCfg] = useState<ConfigOrchestration>(CFG_DEFAUT);
   const [saved, setSaved] = useState<ConfigOrchestration>(CFG_DEFAUT);
@@ -1541,6 +1618,7 @@ function OrchestrationSection() {
 
           <JevReglage />
           <JugeLocalReglage />
+          <JevPretriReglage />
 
           <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center" }}>
             <button

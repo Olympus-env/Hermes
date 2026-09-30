@@ -37,6 +37,10 @@ from hermes.db.models import Parametre
 
 CLE_CONFIG = "krinos.jev.config"
 CLE_BUDGET = "krinos.jev.budget"
+CLE_PRETRI = "krinos.jev.pretri"
+# Pré-tri : probabilité Noul « pertinent » sous laquelle l'AO est « hors profil ».
+SEUIL_PRETRI_DEFAUT = 0.3
+TOKENS_QUESTION_PRETRI = 200
 
 MAX_CARACTERES_STATE = 6000
 MAX_ESSAIS = 3
@@ -378,7 +382,9 @@ def construire_questions() -> dict[str, dict[str, Any]]:
 # --------------------------------------------------------------------------- #
 
 
-async def _appeler(state: dict[str, Any]) -> dict[str, Any]:
+async def _appeler(
+    state: dict[str, Any], questions: dict[str, dict[str, Any]] | None = None
+) -> dict[str, Any]:
     """POST /v1/systemone avec backoff (429/529/5xx/timeouts, 3 essais max).
 
     Ne jamais inclure d'en-têtes ni de corps de requête dans les messages
@@ -387,7 +393,7 @@ async def _appeler(state: dict[str, Any]) -> dict[str, Any]:
     corps = {
         "model": settings.jev_modele,
         "state": state,
-        "questions": construire_questions(),
+        "questions": questions if questions is not None else construire_questions(),
     }
     en_tetes = {
         "Authorization": f"Bearer {settings.jev_api_key.get_secret_value().strip()}",  # type: ignore[union-attr]
@@ -496,3 +502,68 @@ async def juger(
         raise
     _regulariser(session, estimation, resultat.tokens)
     return resultat
+
+
+# --------------------------------------------------------------------------- #
+# Pré-tri de pertinence (avant KRINOS/PYTHIA) — opt-in, désactivé par défaut
+# --------------------------------------------------------------------------- #
+
+
+def pretri_reglage(session: Session) -> bool:
+    """Interrupteur voulu du pré-tri (réglage séparé, désactivé par défaut)."""
+    return _lire_json(session, CLE_PRETRI).get("actif") is True
+
+
+def pretri_actif(session: Session) -> bool:
+    """Pré-tri voulu ET Jev utilisable (activé + clé)."""
+    return pretri_reglage(session) and est_actif(session)
+
+
+def pretri_seuil(session: Session) -> float:
+    valeur = _flottant(_lire_json(session, CLE_PRETRI).get("seuil"))
+    if valeur is None:
+        return SEUIL_PRETRI_DEFAUT
+    return max(0.0, min(1.0, valeur))
+
+
+def enregistrer_pretri(session: Session, actif: bool, seuil: float) -> None:
+    _ecrire_json(
+        session,
+        CLE_PRETRI,
+        {"actif": bool(actif), "seuil": max(0.0, min(1.0, float(seuil)))},
+        "Jev — pré-tri de pertinence avant KRINOS (JSON)",
+    )
+
+
+async def evaluer_pertinence(session: Session, state: dict[str, Any]) -> float:
+    """Une seule question Noul « pertinent pour le profil » (probabilité 0-1).
+
+    Mêmes garde-fous que `juger` (clé, URL, budget partagé) ; lève `ErreurJev`
+    en cas de souci, l'appelant retombe alors sur l'analyse normale.
+    """
+    if not cle_configuree():
+        raise ErreurJev("clé Jev non configurée")
+    if not url_autorisee(settings.jev_url):
+        raise ErreurJev("URL Jev non autorisée (api.typesafe.ai uniquement)")
+    taille = len(json.dumps(state, ensure_ascii=False))
+    if taille > MAX_CARACTERES_STATE:
+        raise ErreurJev("state trop long")
+    question = construire_questions()["pertinence"]
+    estimation = taille // CARACTERES_PAR_TOKEN + TOKENS_QUESTION_PRETRI + TOKENS_MARGE_SORTIE
+    _reserver(session, estimation)
+    try:
+        data = await _appeler(state, {"pertinence": question})
+        reponses = data.get("answers")
+        reponse = reponses.get("pertinence") if isinstance(reponses, dict) else None
+        valeur = _flottant(reponse.get("noul")) if isinstance(reponse, dict) else None
+        if valeur is None:
+            raise ErreurJev("réponse Jev sans pertinence exploitable")
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        tokens = int(_flottant(usage.get("input_tokens")) or 0) + int(
+            _flottant(usage.get("output_tokens")) or 0
+        )
+    except BaseException:
+        _regulariser(session, estimation, 0)
+        raise
+    _regulariser(session, estimation, tokens)
+    return max(0.0, min(1.0, valeur))
