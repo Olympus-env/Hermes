@@ -28,6 +28,7 @@ from hermes.api import (
     health,
     hermion,
     krinos,
+    laya,
     logs,
     orchestration,
     profil,
@@ -147,6 +148,7 @@ app.include_router(appels_offre.router)
 app.include_router(concurrence.router)
 app.include_router(argos.router)
 app.include_router(krinos.router)
+app.include_router(laya.router)
 app.include_router(hermion.router)
 app.include_router(orchestration.router)
 app.include_router(logs.router)

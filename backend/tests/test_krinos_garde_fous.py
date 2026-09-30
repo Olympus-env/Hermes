@@ -192,7 +192,7 @@ def test_analyse_saine_n_est_pas_drapeautee(monkeypatch):
         assert analyse.suspect_injection is False
         assert analyse.a_verifier is False
         assert analyse.drapeaux is None
-        assert analyse.score_jev is None  # Jev désactivé par défaut
+        assert analyse.score_laya is None  # Laya désactivé par défaut
 
 
 def test_orchestrateur_ne_promeut_pas_un_ao_drapeaute(monkeypatch):
@@ -222,7 +222,7 @@ def test_orchestrateur_ne_promeut_pas_un_ao_drapeaute(monkeypatch):
         assert s.exec(select(AnalyseKrinos)).first().score >= 70.0
 
 
-def test_migration_ajoute_les_colonnes_garde_fous_et_jev():
+def test_migration_ajoute_les_colonnes_garde_fous_et_laya():
     from sqlalchemy import text
 
     from hermes.db.session import _migrer_colonnes
@@ -245,7 +245,7 @@ def test_migration_ajoute_les_colonnes_garde_fous_et_jev():
     with engine.connect() as conn:
         _migrer_colonnes(conn)
         ligne = conn.execute(
-            text("SELECT suspect_injection, a_verifier, drapeaux, score_jev FROM analyses_krinos")
+            text("SELECT suspect_injection, a_verifier, drapeaux, score_laya FROM analyses_krinos")
         ).one()
     assert tuple(ligne) == (0, 0, None, None)
 

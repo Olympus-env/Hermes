@@ -351,13 +351,13 @@ function mapAppelOffre(ao: AppelOffre): Tender {
     statutApi: ao.statut,
     documentsDetectes: ao.documents_detectes,
     documentsTelecharges: ao.documents_telecharges,
-    horsProfilJev: ao.hors_profil_jev === true,
+    horsProfilLaya: ao.hors_profil_laya === true,
   };
 }
 
-/** Badge « hors profil (Jev) » : AO non analysé par PYTHIA, analyse forçable. */
+/** Badge « hors profil (Laya) » : AO non analysé par PYTHIA, analyse forçable. */
 function HorsProfilBadge({ tender }: { tender: Tender }) {
-  if (!tender.horsProfilJev) return null;
+  if (!tender.horsProfilLaya) return null;
   return (
     <motion.span
       variants={VARIANTES_BADGE}
@@ -372,9 +372,9 @@ function HorsProfilBadge({ tender }: { tender: Tender }) {
         padding: "2px 6px",
         whiteSpace: "nowrap",
       }}
-      title="Jev juge cet AO hors de votre profil : il n'a pas été analysé par PYTHIA. Ouvrez-le pour forcer l'analyse."
+      title="Laya juge cet AO hors de votre profil : il n'a pas été analysé par PYTHIA. Ouvrez-le pour forcer l'analyse."
     >
-      Hors profil (Jev)
+      Hors profil (Laya)
     </motion.span>
   );
 }
@@ -723,15 +723,15 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
             </motion.p>
           )}
           <p className="tender-panel__summary">{analyse?.resume ?? tender.summary}</p>
-          {analyse?.score_jev != null && (
+          {analyse?.score_laya != null && (
             <p className="tender-panel__summary">
-              <strong>Avis Jev</strong> (juge externe optionnel) : score{" "}
-              {Math.round(analyse.score_jev)} / 100
-              {analyse.confiance_jev != null
-                ? `, confiance ${Math.round(analyse.confiance_jev * 100)} %`
+              <strong>Avis Laya</strong> (juge local optionnel) : score{" "}
+              {Math.round(analyse.score_laya)} / 100
+              {analyse.confiance_laya != null
+                ? `, confiance ${Math.round(analyse.confiance_laya * 100)} %`
                 : ""}
-              {analyse.details_jev?.pertinence != null
-                ? `, pertinence ${Math.round(analyse.details_jev.pertinence * 100)} %`
+              {analyse.details_laya?.pertinence != null
+                ? `, pertinence ${Math.round(analyse.details_laya.pertinence * 100)} %`
                 : ""}
               . Score PYTHIA (local) : {Math.round(analyse.score)} / 100.
               {analyse.composite != null
@@ -870,7 +870,7 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
             <Icon.refresh size={13} />
             {relanceEnCours
               ? "Analyse…"
-              : tender.horsProfilJev
+              : tender.horsProfilLaya
                 ? "Forcer l'analyse"
                 : "Lancer l'analyse"}
           </button>

@@ -51,9 +51,9 @@ class AppelOffreRead(BaseModel):
     documents_detectes: int = 0
     documents_telecharges: int = 0
     documents_manquants: int = 0
-    # Pré-tri Jev : « hors profil » (non analysé par PYTHIA, analyse forçable).
-    hors_profil_jev: bool = False
-    pertinence_jev: float | None = None
+    # Pré-tri Laya : « hors profil » (non analysé par PYTHIA, analyse forçable).
+    hors_profil_laya: bool = False
+    pertinence_laya: float | None = None
 
 
 class AppelsOffrePage(BaseModel):
@@ -246,6 +246,6 @@ def _ao_read(
         documents_detectes=detectes,
         documents_telecharges=docs_telecharges,
         documents_manquants=max(detectes - docs_telecharges, 0),
-        hors_profil_jev=ao.hors_profil_jev,
-        pertinence_jev=ao.pertinence_jev,
+        hors_profil_laya=ao.hors_profil_laya,
+        pertinence_laya=ao.pertinence_laya,
     )

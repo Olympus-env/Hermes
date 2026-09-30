@@ -9,7 +9,7 @@ Zéro cloud, zéro coût récurrent, validation humaine obligatoire avant toute 
 |-----------|-------------|------|
 | **HERMES** | Tauri 2 + React 18 + Tailwind | Application desktop, orchestrateur |
 | **ARGOS** | Playwright + APScheduler | Collecte / scraping des portails AO |
-| **KRINOS** | pymupdf (+ pdfplumber en repli) + RapidOCR ONNX + Ollama | Extraction, analyse, scoring |
+| **KRINOS** | pymupdf (+ pdfplumber en repli) + RapidOCR ONNX + Ollama + juge Laya (ONNX) | Extraction, analyse, scoring |
 | **HERMION** | Ollama + workflow engine | Rédaction des réponses |
 | **MNEMOSYNE** | SQLite + SQLModel | Base de données locale |
 | **PYTHIA** | Ollama + Qwen3 8B | LLM local |
@@ -313,13 +313,37 @@ frontend (requêtes annulables, export PDF) ; desktop portable (plus de `D:` en 
 - **DECP** : encart « concurrence » (titulaires, montant médian, tendance) depuis data.gouv.fr.
 - **Moteurs LLM** : `HERMES_PYTHIA_MOTEUR=ollama|openai_compatible` + banc d'essai (voir plus bas).
 - **Score robuste** : détection d'injection, drapeau « À vérifier » (pas de promotion auto) et
-  **juge Jev (TypeSafe) optionnel**, désactivé par défaut, uniquement sur données publiques
-  (`HERMES_JEV_API_KEY`, budget `HERMES_JEV_BUDGET_TOKENS_MOIS`). Suite : issue #38.
+  **juge Laya optionnel** (modèle open source exécuté en local, voir plus bas), désactivé par
+  défaut. Suite : issue #38.
 
 Nouvelles variables : `HERMES_PYTHIA_MOTEUR`, `HERMES_PYTHIA_URL`, `HERMES_PYTHIA_NUM_CTX`,
-`HERMES_PYTHIA_MODELE_LIBRE`, `HERMES_JEV_ACTIF`, `HERMES_JEV_API_KEY`,
-`HERMES_JEV_BUDGET_TOKENS_MOIS`, `HERMES_DECP_URL`, `HERMES_KRINOS_*` (plafonds d'extraction/OCR),
+`HERMES_PYTHIA_MODELE_LIBRE`, `HERMES_LAYA_ACTIF`, `HERMES_LAYA_PRECISION`,
+`HERMES_LAYA_MAX_TOKENS`, `HERMES_LAYA_DOSSIER`, `HERMES_DECP_URL`, `HERMES_KRINOS_*` (plafonds d'extraction/OCR),
 `HERMES_DEPS_DIR` (scripts Windows).
+
+### Juge Laya (KRINOS, #56)
+
+Laya remplace Jev (TypeSafe) : second avis « System 1 » sur chaque AO, **100 % local**.
+Modèle open source (Apache 2.0) de Convai Innovations, checkpoint multilingue
+(mmBERT-base), exécuté **dans le process backend via ONNX Runtime** (déjà présent pour
+l'OCR) et le paquet `tokenizers` : ni PyTorch, ni serveur, ni clé, ni budget.
+
+- **Téléchargement consenti** : Paramètres › Pipeline › « Juge Laya ». Un clic confirmé
+  télécharge le portage `onnx-community/laya-multilingual-ONNX` (révision épinglée, ~0,7 Go
+  en fp16, ~1,3 Go en fp32) dans `<dossier de données HERMES>/modeles/laya` ; le SHA-256 de
+  chaque fichier est vérifié. Rien n'est téléchargé au démarrage. Sans modèle, Laya reste
+  inactif et l'analyse PYTHIA continue seule.
+- **Questions** : pertinence (Noul), 5 dimensions KRINOS (Score 0-4), manipulation (Noul).
+  Tous les portails sont jugés, privés compris. Seuils de routage, score composite,
+  calibration et drapeau « à vérifier » : inchangés (#44), sans promotion automatique.
+- **Contexte** : 1024 tokens (valeur d'entraînement, `HERMES_LAYA_MAX_TOKENS`, max 8192) :
+  avis + profil métier + extrait de DCE (60 % tête, 40 % queue, passages suspects).
+- **Température de calibration** réglable (0,5 à 5, défaut 1) : le modèle est livré trop
+  confiant ; T > 1 aplatit les probabilités.
+- **Migration** : colonnes `*_jev` renommées `*_laya` et réglages `krinos.jev.*` migrés vers
+  `krinos.laya.*` au premier démarrage (les interrupteurs repartent désactivés).
+- **Banc d'essai** (hors CI, exige le modèle) : `backend/scripts/banc_laya.py` ; résultats et
+  limites dans [`docs/laya.md`](docs/laya.md).
 
 ## Fonctionnalités disponibles
 

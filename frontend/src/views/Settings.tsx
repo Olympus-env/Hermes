@@ -20,8 +20,9 @@ import {
   type CapaciteArgos,
   type Calibration,
   type ConfigComposite,
-  type SeuilsJev,
-  type ConfigJev,
+  type SeuilsLaya,
+  type ConfigLaya,
+  type PrecisionLaya,
   type ConfigOrchestration,
   type CriteresAvances,
   type NatureMarche,
@@ -1273,18 +1274,27 @@ const CFG_DEFAUT: ConfigOrchestration = {
   max_par_cycle: 5,
 };
 
-/** Réglage du juge Jev (TypeSafe) : appliqué immédiatement, désactivé par défaut. */
-function JevReglage() {
-  const [cfg, setCfg] = useState<ConfigJev | null>(null);
+const GO = 1024 * 1024 * 1024;
+const formatGo = (octets: number) => `${(octets / GO).toFixed(2)} Go`;
+
+/**
+ * Juge Laya (local, ONNX) : état du modèle, téléchargement consenti avec progression,
+ * activation et température de calibration. Rien n'est téléchargé sans clic confirmé.
+ */
+function LayaReglage() {
+  const [cfg, setCfg] = useState<ConfigLaya | null>(null);
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [temperature, setTemperature] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
     api
-      .lireConfigJev()
+      .lireConfigLaya()
       .then((c) => {
-        if (!cancelled) setCfg(c);
+        if (cancelled) return;
+        setCfg(c);
+        setTemperature(c.temperature);
       })
       .catch((e) => {
         if (!cancelled) setErreur(e instanceof Error ? e.message : String(e));
@@ -1294,13 +1304,35 @@ function JevReglage() {
     };
   }, []);
 
+  // Suivi par polling tant qu'un téléchargement est en cours.
+  const enCours = cfg?.modele.progression.en_cours === true;
+  useEffect(() => {
+    if (!enCours) return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      api
+        .lireConfigLaya()
+        .then((c) => {
+          if (!cancelled) setCfg(c);
+        })
+        .catch(() => undefined);
+    }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [enCours]);
+
   if (!cfg) return erreur ? <div className="settings-row__hint">{erreur}</div> : null;
 
-  const basculer = async () => {
+  const agir = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setErreur(null);
     try {
-      setCfg(await api.ecrireConfigJev(!cfg.actif));
+      await action();
+      const c = await api.lireConfigLaya();
+      setCfg(c);
+      setTemperature(c.temperature);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1308,29 +1340,140 @@ function JevReglage() {
     }
   };
 
+  const modele = cfg.modele;
+  const prog = modele.progression;
+  const installe = modele.installe;
+
+  const telecharger = () => {
+    const ok = window.confirm(
+      `Télécharger le modèle Laya (${modele.precision}, environ ${formatGo(modele.taille_octets)}) ` +
+        "depuis Hugging Face (dépôt onnx-community/laya-multilingual-ONNX, version épinglée, " +
+        "empreintes SHA-256 vérifiées) ? C'est le seul appel externe de Laya : ensuite " +
+        `il tourne entièrement sur cette machine. Espace libre : ${formatGo(modele.espace_disque_libre_octets)}.`,
+    );
+    if (ok) void agir(() => api.telechargerModeleLaya(modele.precision));
+  };
+
   return (
-    <div className="settings-row">
-      <div>
-        <div className="settings-row__label">Juge Jev (TypeSafe) — optionnel</div>
-        <div className="settings-row__hint">
-          Second avis externe sur le score KRINOS. Envoie uniquement des données publiques de
-          l'avis (titre, objet, acheteur, extrait du dossier) et le profil métier général —
-          jamais les réponses HERMION ni vos identifiants.{" "}
-          {cfg.cle_configuree
-            ? `Budget du mois : ${cfg.tokens_consommes.toLocaleString("fr-FR")} / ${cfg.budget_tokens_mois.toLocaleString("fr-FR")} tokens.`
-            : "Clé absente : définir HERMES_JEV_API_KEY dans l'environnement (jamais stockée ici) ; sans clé, Jev reste inactif."}
-          {erreur ? ` ${erreur}` : ""}
+    <div className="settings-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+        <div>
+          <div className="settings-row__label">Juge Laya (local) — optionnel</div>
+          <div className="settings-row__hint">
+            Second avis sur le score KRINOS, calculé sur cette machine par le modèle open source
+            Laya (Convai Innovations, Apache 2.0) : aucune clé, aucun budget, rien ne sort de
+            l'ordinateur. Il juge tous les portails, publics ou privés. Un écart avec PYTHIA, une
+            faible confiance ou une manipulation placent l'AO « à vérifier ».
+            {erreur ? ` ${erreur}` : ""}
+          </div>
         </div>
+        <button
+          className={`toggle${cfg.actif ? " toggle--on" : ""}`}
+          onClick={() => void agir(() => api.ecrireConfigLaya({ actif: !cfg.actif }))}
+          disabled={busy || (!installe && !cfg.actif)}
+          role="switch"
+          aria-checked={cfg.actif}
+          title={installe ? undefined : "Installez d'abord le modèle"}
+        >
+          <div className="toggle__thumb" />
+        </button>
       </div>
-      <button
-        className={`toggle${cfg.actif ? " toggle--on" : ""}`}
-        onClick={basculer}
-        disabled={busy}
-        role="switch"
-        aria-checked={cfg.actif}
-      >
-        <div className="toggle__thumb" />
-      </button>
+
+      <div className="settings-row__hint" style={{ marginTop: 8 }}>
+        <strong>Modèle :</strong>{" "}
+        {installe
+          ? `installé (${modele.precision}, ${formatGo(modele.taille_octets)}) — ${modele.dossier}`
+          : `non installé — ${formatGo(modele.taille_octets)} à télécharger (${modele.precision})`}
+        {cfg.actif && !cfg.operationnel && " — activé mais inutilisable tant que le modèle manque."}
+        {cfg.operationnel && " — opérationnel."}
+      </div>
+
+      {!installe && !prog.en_cours && (
+        <div style={{ marginTop: 8, display: "flex", gap: 12, alignItems: "center" }}>
+          <label className="settings-row__hint">
+            Précision{" "}
+            <select
+              className="input"
+              value={cfg.precision}
+              disabled={busy}
+              onChange={(e) =>
+                void agir(() => api.ecrireConfigLaya({ precision: e.target.value as PrecisionLaya }))
+              }
+            >
+              <option value="fp16">fp16 (~0,7 Go, recommandé)</option>
+              <option value="fp32">fp32 (~1,3 Go)</option>
+            </select>
+          </label>
+          <button className="btn btn--gold" disabled={busy} onClick={telecharger}>
+            Télécharger le modèle
+          </button>
+        </div>
+      )}
+
+      {prog.en_cours && (
+        <div style={{ marginTop: 8 }}>
+          <div
+            style={{
+              width: "100%",
+              height: 12,
+              background: "var(--bg-2)",
+              border: "1px solid var(--line)",
+              borderRadius: 6,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: `${prog.pourcent}%`,
+                height: "100%",
+                background: "var(--gold)",
+                transition: "width 0.3s ease",
+              }}
+            />
+          </div>
+          <div
+            className="settings-row__hint"
+            style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}
+          >
+            <span>
+              {formatGo(prog.octets_telecharges)} / {formatGo(prog.octets_total)}
+              {prog.fichier ? ` — ${prog.fichier}` : ""}
+            </span>
+            <span>{prog.pourcent.toFixed(1)} %</span>
+          </div>
+          <button
+            className="btn"
+            style={{ marginTop: 6 }}
+            onClick={() => void agir(() => api.annulerTelechargementLaya())}
+          >
+            Annuler le téléchargement
+          </button>
+        </div>
+      )}
+      {prog.erreur && !prog.en_cours && (
+        <div className="settings-row__hint" style={{ marginTop: 6, color: "var(--danger, #c0392b)" }}>
+          Téléchargement échoué : {prog.erreur}
+        </div>
+      )}
+
+      <label className="settings-row__hint" style={{ marginTop: 10 }}>
+        Température de calibration : {temperature.toFixed(1)}{" "}
+        <input
+          type="range"
+          min={0.5}
+          max={5}
+          step={0.1}
+          value={temperature}
+          disabled={busy}
+          onChange={(e) => setTemperature(Number(e.target.value))}
+          onMouseUp={() => void agir(() => api.ecrireConfigLaya({ temperature }))}
+          onKeyUp={() => void agir(() => api.ecrireConfigLaya({ temperature }))}
+        />
+        <span style={{ display: "block" }}>
+          Le modèle est livré trop confiant : au-dessus de 1, les probabilités sont aplaties (la
+          confiance baisse, plus d'AO passent « à vérifier »). 1 = sorties brutes.
+        </span>
+      </label>
     </div>
   );
 }
@@ -1394,9 +1537,9 @@ function JugeLocalReglage() {
   );
 }
 
-/** Pré-tri de pertinence Jev avant KRINOS : désactivé par défaut, portails publics seulement. */
-function JevPretriReglage() {
-  const [cfg, setCfg] = useState<ConfigJev | null>(null);
+/** Pré-tri de pertinence Laya avant KRINOS : désactivé par défaut, tous portails. */
+function LayaPretriReglage() {
+  const [cfg, setCfg] = useState<ConfigLaya | null>(null);
   const [seuil, setSeuil] = useState(30);
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -1404,7 +1547,7 @@ function JevPretriReglage() {
   useEffect(() => {
     let cancelled = false;
     api
-      .lireConfigJev()
+      .lireConfigLaya()
       .then((c) => {
         if (cancelled) return;
         setCfg(c);
@@ -1424,7 +1567,7 @@ function JevPretriReglage() {
     setBusy(true);
     setErreur(null);
     try {
-      setCfg(await api.ecrireConfigPretriJev(actif, pct / 100));
+      setCfg(await api.ecrireConfigPretriLaya(actif, pct / 100));
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1435,12 +1578,12 @@ function JevPretriReglage() {
   return (
     <div className="settings-row">
       <div>
-        <div className="settings-row__label">Pré-tri de pertinence Jev — optionnel</div>
+        <div className="settings-row__label">Pré-tri de pertinence Laya — optionnel</div>
         <div className="settings-row__hint">
-          Avant l'analyse KRINOS, Jev juge la pertinence de chaque AO de portail public pour
-          votre profil. Sous le seuil, l'AO est marqué « hors profil (Jev) » et n'est pas
-          analysé par PYTHIA ; il reste visible et vous pouvez forcer l'analyse. Panne ou
-          budget épuisé : analyse normale. Nécessite que Jev soit activé.
+          Avant l'analyse KRINOS, Laya juge la pertinence de chaque AO pour votre profil. Sous
+          le seuil, l'AO est marqué « hors profil (Laya) » et n'est pas analysé par PYTHIA ; il
+          reste visible et vous pouvez forcer l'analyse. Panne ou modèle absent : analyse
+          normale. Nécessite que Laya soit activé et installé.
           {erreur ? ` ${erreur}` : ""}
         </div>
         <label className="settings-row__hint">
@@ -1471,32 +1614,32 @@ function JevPretriReglage() {
   );
 }
 
-const CHAMPS_SEUILS: { id: keyof SeuilsJev; label: string; max: number; pas: number }[] = [
-  { id: "divergence", label: "Divergence Jev/PYTHIA (points)", max: 100, pas: 1 },
+const CHAMPS_SEUILS: { id: keyof SeuilsLaya; label: string; max: number; pas: number }[] = [
+  { id: "divergence", label: "Divergence Laya/PYTHIA (points)", max: 100, pas: 1 },
   { id: "manipulation", label: "Manipulation (probabilité)", max: 1, pas: 0.05 },
   { id: "pertinence", label: "Pertinence minimale (probabilité)", max: 1, pas: 0.05 },
-  { id: "confiance", label: "Confiance minimale de Jev", max: 1, pas: 0.05 },
+  { id: "confiance", label: "Confiance minimale de Laya", max: 1, pas: 0.05 },
 ];
 
 const CHAMPS_COMPOSITE: { id: keyof ConfigComposite; label: string }[] = [
   { id: "poids_pythia", label: "Poids PYTHIA" },
-  { id: "poids_jev", label: "Poids Jev" },
-  { id: "poids_pertinence", label: "Poids pertinence Jev" },
+  { id: "poids_laya", label: "Poids Laya" },
+  { id: "poids_pertinence", label: "Poids pertinence Laya" },
   { id: "seuil_go", label: "Seuil « go » du composite" },
 ];
 
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)} %`);
 
-/** Seuils de routage Jev, pondérations du composite go/no-go et calibration (lecture seule). */
-function JevSeuilsEtCalibration() {
-  const [seuils, setSeuils] = useState<SeuilsJev | null>(null);
+/** Seuils de routage Laya, pondérations du composite go/no-go et calibration (lecture seule). */
+function LayaSeuilsEtCalibration() {
+  const [seuils, setSeuils] = useState<SeuilsLaya | null>(null);
   const [composite, setComposite] = useState<ConfigComposite | null>(null);
   const [calibration, setCalibration] = useState<Calibration | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.lireSeuilsJev(), api.lireComposite(), api.lireCalibration()])
+    Promise.all([api.lireSeuilsLaya(), api.lireComposite(), api.lireCalibration()])
       .then(([s, c, k]) => {
         setSeuils(s);
         setComposite(c);
@@ -1512,7 +1655,7 @@ function JevSeuilsEtCalibration() {
     setBusy(true);
     setMessage(null);
     try {
-      setSeuils(await api.ecrireSeuilsJev(seuils));
+      setSeuils(await api.ecrireSeuilsLaya(seuils));
       setComposite(await api.ecrireComposite(composite));
       setCalibration(await api.lireCalibration());
       setMessage("Réglages enregistrés (appliqués aux prochaines analyses et au recalcul).");
@@ -1525,11 +1668,11 @@ function JevSeuilsEtCalibration() {
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div className="settings-row__label">Jev : seuils de routage et score composite</div>
+      <div className="settings-row__label">Laya : seuils de routage et score composite</div>
       <div className="settings-row__hint">
         Sous ces seuils, l'AO passe « à vérifier » (décision humaine, jamais de promotion
-        automatique). Le composite (PYTHIA + Jev + pertinence) est indicatif et recalculé sans
-        nouvel appel à Jev.
+        automatique). Le composite (PYTHIA + Laya + pertinence) est indicatif et recalculé sans
+        nouvelle inférence de Laya.
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
         {CHAMPS_SEUILS.map((c) => (
@@ -1572,12 +1715,12 @@ function JevSeuilsEtCalibration() {
         <div className="settings-row__hint" style={{ marginTop: 12 }}>
           <strong>Calibration (lecture seule)</strong> — {calibration.echantillon.total} AO
           décidés ({calibration.echantillon.acceptes} acceptés, {calibration.echantillon.rejetes}{" "}
-          rejetés, {calibration.echantillon.avec_jev} avec avis Jev). Écart moyen Jev/PYTHIA :{" "}
-          {calibration.ecart_moyen_jev_pythia ?? "—"} pts.
+          rejetés, {calibration.echantillon.avec_laya} avec avis Laya). Écart moyen Laya/PYTHIA :{" "}
+          {calibration.ecart_moyen_laya_pythia ?? "—"} pts.
           <ul style={{ margin: "4px 0 0 16px" }}>
-            {(["pythia", "jev", "composite"] as const).map((k) => (
+            {(["pythia", "laya", "composite"] as const).map((k) => (
               <li key={k}>
-                {k === "pythia" ? "PYTHIA" : k === "jev" ? "Jev" : "Composite"} : accord{" "}
+                {k === "pythia" ? "PYTHIA" : k === "laya" ? "Laya" : "Composite"} : accord{" "}
                 {pct(calibration.sources[k].taux_accord)} au seuil {calibration.seuil_go} (n=
                 {calibration.sources[k].n})
                 {calibration.sources[k].n > 0 &&
@@ -1752,10 +1895,10 @@ function OrchestrationSection() {
             />
           </div>
 
-          <JevReglage />
+          <LayaReglage />
           <JugeLocalReglage />
-          <JevPretriReglage />
-          <JevSeuilsEtCalibration />
+          <LayaPretriReglage />
+          <LayaSeuilsEtCalibration />
 
           <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center" }}>
             <button

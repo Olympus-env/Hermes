@@ -152,7 +152,7 @@ def calculer_score_final(
 
 
 # --------------------------------------------------------------------------- #
-# Score composite go/no-go (PYTHIA + Jev + pertinence Jev) — issue #44
+# Score composite go/no-go (PYTHIA + Laya + pertinence Laya) — issue #44
 # --------------------------------------------------------------------------- #
 
 CLE_COMPOSITE = "krinos.composite"
@@ -167,14 +167,14 @@ class ConfigComposite:
     """
 
     poids_pythia: int = 50
-    poids_jev: int = 35
+    poids_laya: int = 35
     poids_pertinence: int = 15
     seuil_go: int = 60
 
     def en_dict(self) -> dict[str, int]:
         return {
             "poids_pythia": self.poids_pythia,
-            "poids_jev": self.poids_jev,
+            "poids_laya": self.poids_laya,
             "poids_pertinence": self.poids_pertinence,
             "seuil_go": self.seuil_go,
         }
@@ -192,7 +192,9 @@ def charger_composite(session: Session) -> ConfigComposite:
     args: dict[str, int] = {}
     for cle, d in defaut.en_dict().items():
         try:
-            args[cle] = max(0, min(100, int(data[cle]))) if cle in data else d
+            # Repli sur l'ancienne clé `poids_jev` (avant le remplacement de Jev par Laya).
+            brut = data.get(cle, data.get("poids_jev") if cle == "poids_laya" else None)
+            args[cle] = d if brut is None else max(0, min(100, int(brut)))
         except (TypeError, ValueError):
             args[cle] = d
     return ConfigComposite(**args)
@@ -218,8 +220,8 @@ def enregistrer_composite(session: Session, config: ConfigComposite) -> ConfigCo
 def calculer_composite(
     *,
     score_pythia: float | None,
-    score_jev: float | None,
-    pertinence_jev: float | None,
+    score_laya: float | None,
+    pertinence_laya: float | None,
     config: ConfigComposite,
 ) -> float | None:
     """Moyenne pondérée 0-100 des composantes disponibles (poids re-normalisés).
@@ -229,8 +231,8 @@ def calculer_composite(
     """
     composantes = (
         (score_pythia, config.poids_pythia),
-        (score_jev, config.poids_jev),
-        (None if pertinence_jev is None else pertinence_jev * 100, config.poids_pertinence),
+        (score_laya, config.poids_laya),
+        (None if pertinence_laya is None else pertinence_laya * 100, config.poids_pertinence),
     )
     somme = 0.0
     poids_total = 0
