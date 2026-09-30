@@ -1,5 +1,14 @@
+import { AnimatePresence, motion } from "motion/react";
 import { AGENTS, RESPONSES, TENDERS, deadlineInfo, type AgentKey, type AgentState } from "../lib/data";
 import { AgentDot } from "../components/AgentChip";
+import { Compteur } from "../components/Compteur";
+import {
+  COURBE,
+  DUREE,
+  VARIANTES_BADGE,
+  VARIANTES_ELEMENT,
+  delaiCascade,
+} from "../lib/motion";
 import { Icon } from "../components/Icon";
 import type { ViewKey } from "../components/Sidebar";
 
@@ -66,51 +75,52 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
       )}
 
       <div className="view__scroll">
-        <div className="accueil-grid">
+        <motion.div
+          className="accueil-grid"
+          initial="initial"
+          animate="animate"
+          variants={{ initial: {}, animate: { transition: { staggerChildren: 0.05 } } }}
+        >
           {/* KPI tiles */}
-          <div className="tile col-3">
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-3">
             <div className="tile__label">
               AO en veille <span className="kbd">7j</span>
             </div>
-            <div className="tile__value">{counts.total}</div>
+            <div className="tile__value"><Compteur valeur={counts.total} /></div>
             <div className="tile__sub">+{counts.urgent} urgents (J−7)</div>
-            <div className="tile__bar" />
-          </div>
-          <div className="tile col-3">
+            <Barre />
+          </motion.div>
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-3">
             <div className="tile__label">Score ≥ 70</div>
-            <div className="tile__value" style={{ color: "var(--argos)" }}>{counts.high}</div>
+            <div className="tile__value" style={{ color: "var(--argos)" }}><Compteur valeur={counts.high} /></div>
             <div className="tile__sub">Pertinence haute selon KRINOS</div>
-            <div
-              className="tile__bar"
-              style={{ background: "linear-gradient(90deg, var(--argos), transparent)" }}
-            />
-          </div>
-          <div className="tile col-3">
+<Barre fond="linear-gradient(90deg, var(--argos), transparent)" />
+          </motion.div>
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-3">
             <div className="tile__label">À répondre</div>
-            <div className="tile__value" style={{ color: "var(--krinos)" }}>{counts.toAnswer}</div>
+            <div className="tile__value" style={{ color: "var(--krinos)" }}><Compteur valeur={counts.toAnswer} /></div>
             <div className="tile__sub">Marqués par l'opérateur</div>
-            <div
-              className="tile__bar"
-              style={{ background: "linear-gradient(90deg, var(--krinos), transparent)" }}
-            />
-          </div>
-          <div className="tile col-3">
+<Barre fond="linear-gradient(90deg, var(--krinos), transparent)" />
+          </motion.div>
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-3">
             <div className="tile__label">Réponses en validation</div>
             <div className="tile__value" style={{ color: "var(--warn)" }}>
-              {responses.filter((r) => r.status === "en-attente" || r.status === "a-modifier").length}
+              <Compteur
+                valeur={
+                  responses.filter((r) => r.status === "en-attente" || r.status === "a-modifier")
+                    .length
+                }
+              />
             </div>
             <div className="tile__sub">
               {responses.filter((r) => r.status === "validee").length} validées ·{" "}
               {responses.filter((r) => r.status === "exportee").length} exportées
             </div>
-            <div
-              className="tile__bar"
-              style={{ background: "linear-gradient(90deg, var(--hermion), transparent)" }}
-            />
-          </div>
+<Barre fond="linear-gradient(90deg, var(--hermion), transparent)" />
+          </motion.div>
 
           {/* Pipeline */}
-          <div className="tile col-8">
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-8">
             <div className="tile__label">
               <span>Pipeline — 7 derniers jours</span>
               <button className="btn btn--ghost btn--sm" onClick={onTriggerCycle}>
@@ -118,18 +128,27 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
               </button>
             </div>
             <div className="pipeline">
-              {PIPELINE.map((p) => (
-                <div
+              {PIPELINE.map((p, i) => (
+                <motion.div
                   key={p.key}
                   className="pipeline__seg"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: DUREE.lente,
+                    delay: delaiCascade(i + 2),
+                    ease: [...COURBE.sortie],
+                  }}
                   style={{
                     ["--w" as any]: (p.n / pipelineMax) * 6 + 1,
                     background: `linear-gradient(180deg, ${p.color}33 0%, ${p.color}22 100%)`,
                     borderLeft: `2px solid ${p.color}`,
                   }}
                 >
-                  <span>{p.n.toLocaleString("fr-FR")}</span>
-                </div>
+                  <span>
+                    <Compteur valeur={p.n} formater={(n) => n.toLocaleString("fr-FR")} />
+                  </span>
+                </motion.div>
               ))}
             </div>
             <div className="pipeline__legend">
@@ -140,10 +159,10 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
                 </span>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           {/* Quick actions */}
-          <div className="tile col-4">
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-4">
             <div className="tile__label">Actions rapides</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
               <button className="btn btn--gold" onClick={() => onNavigate("tenders")}>
@@ -156,10 +175,10 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
                 <Icon.settings size={13} /> Configurer les portails
               </button>
             </div>
-          </div>
+          </motion.div>
 
           {/* Activity feed */}
-          <div className="tile col-8">
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-8">
             <div className="tile__label">
               <span>Activité des agents</span>
               <span
@@ -178,7 +197,17 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
               {ACTIVITY.map((row, i) => {
                 const a = AGENTS[row.agent];
                 return (
-                  <div className="activity-row" key={i}>
+                  <motion.div
+                    className="activity-row"
+                    key={i}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      duration: DUREE.base,
+                      delay: 0.3 + delaiCascade(i),
+                      ease: [...COURBE.sortie],
+                    }}
+                  >
                     <span className="activity-row__time">{row.time}</span>
                     <span className="activity-row__msg">
                       <span className="activity-row__agent" style={{ color: a.color }}>{a.name}</span>
@@ -188,14 +217,14 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
                     <span>
                       <AgentDot agent={row.agent} state="active" size={6} />
                     </span>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
-          </div>
+          </motion.div>
 
           {/* Status of agents */}
-          <div className="tile col-4">
+          <motion.div variants={VARIANTES_ELEMENT} className="tile col-4">
             <div className="tile__label">État des agents</div>
             <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
               {(Object.entries(AGENTS) as [AgentKey, (typeof AGENTS)[AgentKey]][]).map(
@@ -237,9 +266,20 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
                         >
                           {a.name}
                         </span>
-                        <span style={{ fontSize: 11, color: stateColor, fontWeight: 500 }}>
-                          ● {stateLabel}
-                        </span>
+                        {/* L'état s'enchaîne : ancien libellé sorti, nouveau entré */}
+                        <AnimatePresence mode="wait" initial={false}>
+                          <motion.span
+                            key={state}
+                            className={state === "running" ? "etat-agent--en-cours" : undefined}
+                            variants={VARIANTES_BADGE}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            style={{ fontSize: 11, color: stateColor, fontWeight: 500 }}
+                          >
+                            ● {stateLabel}
+                          </motion.span>
+                        </AnimatePresence>
                       </div>
                       <div style={{ fontSize: 11.5, color: "var(--fg-3)", marginTop: 4 }}>
                         {a.role}
@@ -249,9 +289,22 @@ export function Accueil({ onNavigate, agents, isLoading, onTriggerCycle }: Props
                 },
               )}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
     </div>
+  );
+}
+
+/** Filet de tuile : se trace de gauche à droite (transform seulement). */
+function Barre({ fond }: { fond?: string }) {
+  return (
+    <motion.div
+      className="tile__bar"
+      initial={{ scaleX: 0 }}
+      animate={{ scaleX: 1 }}
+      transition={{ duration: DUREE.lente, delay: 0.2, ease: [...COURBE.sortie] }}
+      style={{ transformOrigin: "left center", ...(fond ? { background: fond } : {}) }}
+    />
   );
 }

@@ -9,7 +9,15 @@ export const DUREE = {
   rapide: 0.15,
   base: 0.24,
   lente: 0.4,
+  /** Compteurs et jauges qui se remplissent (miroir de --dur-compteur). */
+  compteur: 0.8,
 } as const;
+
+/** Cascade des listes : décalage entre deux éléments, plafonné pour rester vif. */
+export const DECALAGE_CASCADE = 0.04;
+export const CASCADE_MAX = 8;
+/** Délai d'entrée d'un élément de liste selon son rang (plafonné). */
+export const delaiCascade = (rang: number): number => Math.min(rang, CASCADE_MAX) * DECALAGE_CASCADE;
 
 /** Courbes cubic-bezier (identiques à --ease-sortie / --ease-entree / --ease-doux). */
 export const COURBE = {
@@ -72,4 +80,36 @@ export const VARIANTES_LISTE: Variants = {
 export const VARIANTES_ELEMENT: Variants = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0, transition: TR_BASE },
+};
+
+/** Carte de liste (Veille, Réponses) : entrée en cascade via `custom` = rang. */
+export const VARIANTES_CARTE: Variants = {
+  initial: { opacity: 0, y: 10 },
+  animate: (rang: number = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { ...TR_BASE, delay: delaiCascade(rang) },
+  }),
+  exit: { opacity: 0, transition: TR_SORTIE },
+};
+
+/** Panneau de détail en maître-détail : glisse depuis la droite. */
+export const VARIANTES_PANNEAU: Variants = {
+  initial: { opacity: 0, x: 28 },
+  animate: { opacity: 1, x: 0, transition: RESSORT.doux },
+  exit: { opacity: 0, x: 12, transition: TR_SORTIE },
+};
+
+/** Badge qui apparaît (À vérifier, Hors profil, statut de validation). */
+export const VARIANTES_BADGE: Variants = {
+  initial: { opacity: 0, scale: 0.8 },
+  animate: { opacity: 1, scale: 1, transition: RESSORT.pastille },
+  exit: { opacity: 0, scale: 0.9, transition: TR_SORTIE },
+};
+
+/** Nouvelle entrée de journal : glisse en tête depuis le haut. */
+export const VARIANTES_ENTREE_JOURNAL: Variants = {
+  initial: { opacity: 0, y: -12 },
+  animate: { opacity: 1, y: 0, transition: TR_BASE },
+  exit: { opacity: 0, transition: TR_SORTIE },
 };

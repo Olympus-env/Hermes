@@ -4,8 +4,8 @@ import { COURBE } from "../lib/motion";
 import { GreekKey } from "./GreekKey";
 import { HermesMark } from "./HermesMark";
 
-/** Durée d'affichage avant fondu de sortie (ms) — total < 1,2 s avec le fondu. */
-const DUREE_MS = 950;
+/** Durée d'affichage avant fondu de sortie (ms) — total ≈ 1,1 s avec le fondu (< 1,2 s). */
+export const DUREE_OUVERTURE_MS = 850;
 
 /**
  * Animation d'ouverture HERMES : logo et clé grecque se tracent en or sur fond
@@ -14,7 +14,7 @@ const DUREE_MS = 950;
  */
 export function Ouverture({ onFin }: { onFin: () => void }) {
   useEffect(() => {
-    const t = setTimeout(onFin, DUREE_MS);
+    const t = setTimeout(onFin, DUREE_OUVERTURE_MS);
     const touche = () => onFin();
     window.addEventListener("keydown", touche);
     return () => {
