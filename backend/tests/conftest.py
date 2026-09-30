@@ -82,4 +82,5 @@ def _laya_isole(monkeypatch, tmp_path):
     monkeypatch.setattr(laya, "_moteur", None)
     monkeypatch.setattr(laya_modele, "_transport", httpx.MockTransport(refuser))
     monkeypatch.setattr(laya_modele, "_etat", laya_modele.EtatTelechargement())
+    laya_modele.oublier_verifications()  # cache d'empreintes et état « altéré » du process
     yield requetes

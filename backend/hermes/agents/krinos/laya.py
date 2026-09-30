@@ -41,13 +41,14 @@ from hermes.agents.krinos import laya_modele, laya_moteur
 from hermes.agents.krinos.laya_moteur import (
     ErreurLaya,
     ModeleLayaAbsent,
+    ModeleLayaAltere,
     MoteurLaya,
     QuestionLaya,
     SortieLaya,
 )
 from hermes.agents.krinos.ponderation import Ponderation, calculer_score_final
 from hermes.config import settings
-from hermes.db.models import Parametre
+from hermes.db.models import LogAgent, NiveauLog, Parametre
 
 __all__ = ["ErreurLaya", "ModeleLayaAbsent"]
 
@@ -452,6 +453,27 @@ def _fabrique_moteur(session: Session) -> Callable[[], MoteurLaya]:
     return lambda: laya_moteur.moteur_onnx(dossier, p, max_tokens)
 
 
+_altere_journalise: set[tuple[str, ...]] = set()
+
+
+def _journaliser_altere(session: Session, exc: ModeleLayaAltere) -> None:
+    """Trace KRINOS de l'intégrité échouée, une fois par ensemble de fichiers et par process
+    (un jugement par AO ne doit pas inonder le journal)."""
+    cle = tuple(exc.fichiers)
+    if cle in _altere_journalise:
+        return
+    _altere_journalise.add(cle)
+    session.add(
+        LogAgent(
+            agent="KRINOS",
+            niveau=NiveauLog.ERROR,
+            message=f"Laya : chargement refusé, {exc}",
+            contexte=json.dumps({"fichiers": exc.fichiers}),
+        )
+    )
+    session.commit()
+
+
 async def _inferer(
     session: Session, state: str, questions: dict[str, QuestionLaya]
 ) -> dict[str, SortieLaya]:
@@ -463,6 +485,9 @@ async def _inferer(
     try:
         # Thread dédié : l'inférence CPU ne doit pas bloquer la boucle asyncio.
         return await asyncio.to_thread(executer)
+    except ModeleLayaAltere as exc:
+        _journaliser_altere(session, exc)
+        raise
     except ErreurLaya:
         raise
     except Exception as exc:  # noqa: BLE001 — Laya ne doit jamais casser l'analyse
