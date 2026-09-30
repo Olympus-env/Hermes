@@ -1169,6 +1169,7 @@ button { font-family: inherit; cursor: pointer; }
   border: 1px solid var(--line);
   border-radius: 10px;
 }
+.settings-carte--ligne { flex-direction: row; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .settings-carte__tete { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .settings-carte__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .settings-carte__details { margin-top: 6px; }

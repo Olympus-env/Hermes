@@ -1534,15 +1534,21 @@ function JugeLocalReglage() {
   };
 
   return (
-    <div className="settings-row">
+    <section className="settings-carte settings-carte--ligne" aria-label="Juge local PYTHIA">
       <div>
         <div className="settings-row__label">Juge local anti-manipulation (PYTHIA)</div>
         <div className="settings-row__hint">
           Un appel PYTHIA court vérifie que le dossier ne cherche pas à manipuler l'évaluation
-          automatique (reformulations que les motifs ne voient pas). Fonctionne hors ligne, sur
-          tous les portails ; une détection place l'AO « à vérifier ».
+          automatique. Hors ligne ; une détection place l'AO « à vérifier ».
           {erreur ? ` ${erreur}` : ""}
         </div>
+        <details className="settings-carte__details">
+          <summary>En savoir plus</summary>
+          <div className="settings-row__hint">
+            Il repère les reformulations que les motifs locaux ne voient pas. Il fonctionne sur
+            tous les portails et n'envoie rien hors de la machine.
+          </div>
+        </details>
       </div>
       <button
         className={`toggle${actif ? " toggle--on" : ""}`}
@@ -1553,7 +1559,7 @@ function JugeLocalReglage() {
       >
         <div className="toggle__thumb" />
       </button>
-    </div>
+    </section>
   );
 }
 
@@ -1596,16 +1602,21 @@ function LayaPretriReglage() {
   };
 
   return (
-    <div className="settings-row">
+    <section className="settings-carte settings-carte--ligne" aria-label="Pré-tri Laya">
       <div>
         <div className="settings-row__label">Pré-tri de pertinence Laya — optionnel</div>
         <div className="settings-row__hint">
-          Avant l'analyse KRINOS, Laya juge la pertinence de chaque AO pour votre profil. Sous
-          le seuil, l'AO est marqué « hors profil (Laya) » et n'est pas analysé par PYTHIA ; il
-          reste visible et vous pouvez forcer l'analyse. Panne ou modèle absent : analyse
-          normale. Nécessite que Laya soit activé et installé.
+          Avant KRINOS, Laya juge la pertinence de chaque AO pour votre profil ; sous le seuil,
+          l'AO est marqué « hors profil (Laya) » et n'est pas analysé par PYTHIA.
           {erreur ? ` ${erreur}` : ""}
         </div>
+        <details className="settings-carte__details">
+          <summary>En savoir plus</summary>
+          <div className="settings-row__hint">
+            L'AO reste visible et vous pouvez forcer l'analyse. Panne ou modèle absent : analyse
+            normale. Nécessite que Laya soit activé et installé.
+          </div>
+        </details>
         <label className="settings-row__hint">
           Seuil de pertinence : {seuil} %{" "}
           <input
@@ -1630,7 +1641,7 @@ function LayaPretriReglage() {
       >
         <div className="toggle__thumb" />
       </button>
-    </div>
+    </section>
   );
 }
 
