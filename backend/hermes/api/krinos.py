@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from hermes.agents.krinos import jev
+from hermes.agents.krinos import jev, juge_local
 from hermes.agents.krinos.analyzer import ErreurAnalyseKrinos, analyser_ao
 from hermes.agents.krinos.downloader import (
     ErreurTelechargementDocument,
@@ -352,6 +352,23 @@ def lire_config_jev(session: SessionDep) -> JevConfigIO:
 def ecrire_config_jev(payload: JevConfigUpdate, session: SessionDep) -> JevConfigIO:
     jev.enregistrer_actif(session, payload.actif)
     return _jev_config_io(session)
+
+
+class JugeLocalConfigIO(BaseModel):
+    actif: bool
+
+
+@router.get("/juge-local", response_model=JugeLocalConfigIO)
+def lire_config_juge_local(session: SessionDep) -> JugeLocalConfigIO:
+    return JugeLocalConfigIO(actif=juge_local.reglage_actif(session))
+
+
+@router.put("/juge-local", response_model=JugeLocalConfigIO)
+def ecrire_config_juge_local(
+    payload: JugeLocalConfigIO, session: SessionDep
+) -> JugeLocalConfigIO:
+    juge_local.enregistrer_actif(session, payload.actif)
+    return JugeLocalConfigIO(actif=juge_local.reglage_actif(session))
 
 
 @router.get("/ponderation", response_model=PonderationIO)

@@ -1323,6 +1323,65 @@ function JevReglage() {
   );
 }
 
+/** Juge local PYTHIA anti-manipulation : actif par défaut, 100 % hors ligne. */
+function JugeLocalReglage() {
+  const [actif, setActif] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .lireConfigJugeLocal()
+      .then((c) => {
+        if (!cancelled) setActif(c.actif);
+      })
+      .catch((e) => {
+        if (!cancelled) setErreur(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (actif === null) return erreur ? <div className="settings-row__hint">{erreur}</div> : null;
+
+  const basculer = async () => {
+    setBusy(true);
+    setErreur(null);
+    try {
+      setActif((await api.ecrireConfigJugeLocal(!actif)).actif);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-row">
+      <div>
+        <div className="settings-row__label">Juge local anti-manipulation (PYTHIA)</div>
+        <div className="settings-row__hint">
+          Un appel PYTHIA court vérifie que le dossier ne cherche pas à manipuler l'évaluation
+          automatique (reformulations que les motifs ne voient pas). Fonctionne hors ligne, sur
+          tous les portails ; une détection place l'AO « à vérifier ».
+          {erreur ? ` ${erreur}` : ""}
+        </div>
+      </div>
+      <button
+        className={`toggle${actif ? " toggle--on" : ""}`}
+        onClick={basculer}
+        disabled={busy}
+        role="switch"
+        aria-checked={actif}
+      >
+        <div className="toggle__thumb" />
+      </button>
+    </div>
+  );
+}
+
 function OrchestrationSection() {
   const [cfg, setCfg] = useState<ConfigOrchestration>(CFG_DEFAUT);
   const [saved, setSaved] = useState<ConfigOrchestration>(CFG_DEFAUT);
@@ -1481,6 +1540,7 @@ function OrchestrationSection() {
           </div>
 
           <JevReglage />
+          <JugeLocalReglage />
 
           <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center" }}>
             <button

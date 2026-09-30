@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from hermes.agents import pythia
-from hermes.agents.krinos import jev
+from hermes.agents.krinos import jev, juge_local
 from hermes.agents.krinos.garde_fous import (
     detecter_injection,
     passages_suspects,
@@ -147,6 +147,14 @@ async def analyser_ao(
     drapeaux = [f"injection:{c}" for c in codes_injection]
     drapeaux += verifier_coherence(champs["scores_dimensions"], score_final)
 
+    # Juge local PYTHIA (2e couche, hors ligne, tous portails) : pas de promotion auto.
+    verdict_local = await _consulter_juge_local(session, contexte)
+    if verdict_local is not None and verdict_local.manipulation:
+        drapeaux.append("pythia:manipulation")
+        if verdict_local.passage:
+            drapeaux.append(f"pythia:passage={verdict_local.passage}")
+        codes_injection.append("pythia")
+
     # Juge Jev optionnel : second avis, jamais bloquant.
     resultat_jev = await _consulter_jev(session, appel_offre, contexte, ponderation)
     if resultat_jev is not None:
@@ -232,6 +240,17 @@ def _profil_metier(session: Session) -> str:
 
     texte = composer_texte(charger_profil(session), charger_filtre(session).inclus)
     return texte or "(profil métier non renseigné)"
+
+
+async def _consulter_juge_local(
+    session: Session, contexte: dict[str, Any]
+) -> juge_local.VerdictJuge | None:
+    """Verdict du juge local PYTHIA si activé ; toute panne est transparente."""
+    if not juge_local.reglage_actif(session):
+        return None
+    return await juge_local.juger(
+        contexte["titre"], contexte["objet"], contexte["texte_documents"]
+    )
 
 
 async def _consulter_jev(
