@@ -15,6 +15,7 @@ import { COURBE, VARIANTES_ELEMENT, VARIANTES_LISTE, VARIANTES_VUE } from "./lib
 import { installerComportementsNatifs } from "./lib/natif";
 import { type AgentKey, type AgentState } from "./lib/data";
 import type { ToastInput } from "./lib/toast";
+import { useIntegrationBureau } from "./lib/useIntegrationBureau";
 import {
   isOnboardingDone,
   loadUserProfile,
@@ -198,6 +199,9 @@ function Coque() {
       });
     }
   }, [rafraichirScheduler]);
+
+  // Intégration système (Tauri) : notifications, menu du tray. Inerte en mode web.
+  useIntegrationBureau({ naviguer: setActive, lancerVeille: triggerCycle });
 
   return (
     <div className="app">
