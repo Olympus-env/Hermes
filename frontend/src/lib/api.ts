@@ -48,6 +48,9 @@ export type AppelOffre = {
   documents_detectes: number;
   documents_telecharges: number;
   documents_manquants: number;
+  // Pré-tri Jev : AO jugé « hors profil », non analysé par PYTHIA (analyse forçable).
+  hors_profil_jev?: boolean;
+  pertinence_jev?: number | null;
 };
 
 // Analyse concurrentielle DECP (GET /appels-offre/{id}/concurrence).
@@ -230,6 +233,9 @@ export type AnalyseKrinos = {
     manipulation?: number | null;
     tokens?: number;
   } | null;
+  /** Go/no-go composite (PYTHIA + Jev + pertinence), recalculé sans ré-inférence. */
+  composite?: number | null;
+  verdict_composite?: "go" | "no_go" | "a_verifier" | "indetermine" | null;
   tags: string[];
   criteres_extraits: string | null;
   duree_analyse_ms: number | null;
@@ -243,6 +249,10 @@ export type ConfigJev = {
   cle_configuree: boolean;
   budget_tokens_mois: number;
   tokens_consommes: number;
+  /** Pré-tri de pertinence avant KRINOS (désactivé par défaut). */
+  pretri_actif?: boolean;
+  /** Probabilité 0-1 sous laquelle un AO est marqué « hors profil (Jev) ». */
+  pretri_seuil?: number;
 };
 
 /** Profil métier structuré (sans aucune donnée d'identité : nom, email, SIRET…). */
@@ -256,6 +266,45 @@ export type ProfilMetier = {
   certifications: string[];
   types_marches: string[];
   references_types: string[];
+};
+
+export type SeuilsJev = {
+  divergence: number;
+  manipulation: number;
+  pertinence: number;
+  confiance: number;
+};
+
+export type ConfigComposite = {
+  poids_pythia: number;
+  poids_jev: number;
+  poids_pertinence: number;
+  seuil_go: number;
+};
+
+export type MatriceSeuil = {
+  seuil: number;
+  vrais_positifs: number;
+  faux_positifs: number;
+  vrais_negatifs: number;
+  faux_negatifs: number;
+  taux_accord: number | null;
+};
+
+export type SourceCalibration = {
+  n: number;
+  taux_accord: number | null;
+  score_moyen_accepte: number | null;
+  score_moyen_rejete: number | null;
+  matrice: MatriceSeuil[];
+};
+
+export type Calibration = {
+  echantillon: { total: number; acceptes: number; rejetes: number; avec_jev: number };
+  ecart_moyen_jev_pythia: number | null;
+  seuil_go: number;
+  sources: Record<"pythia" | "jev" | "composite", SourceCalibration>;
+  heuristique: string;
 };
 
 export type ProgressionModele = {
@@ -621,6 +670,24 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ actif }),
     }),
+  ecrireConfigPretriJev: (pretri_actif: boolean, pretri_seuil: number) =>
+    fetchJson<ConfigJev>("/krinos/jev/pretri", {
+      method: "PUT",
+      body: JSON.stringify({ pretri_actif, pretri_seuil }),
+    }),
+  lireSeuilsJev: () => fetchJson<SeuilsJev>("/krinos/jev/seuils"),
+  ecrireSeuilsJev: (seuils: SeuilsJev) =>
+    fetchJson<SeuilsJev>("/krinos/jev/seuils", {
+      method: "PUT",
+      body: JSON.stringify(seuils),
+    }),
+  lireComposite: () => fetchJson<ConfigComposite>("/krinos/composite"),
+  ecrireComposite: (c: ConfigComposite) =>
+    fetchJson<ConfigComposite>("/krinos/composite", {
+      method: "PUT",
+      body: JSON.stringify(c),
+    }),
+  lireCalibration: () => fetchJson<Calibration>("/krinos/calibration"),
   lireConfigOrchestration: () =>
     fetchJson<ConfigOrchestration>("/orchestration/config"),
   ecrireConfigOrchestration: (c: ConfigOrchestration) =>

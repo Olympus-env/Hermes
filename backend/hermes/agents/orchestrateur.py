@@ -30,8 +30,10 @@ from hermes.agents.hermion import ErreurRedactionHermion, rediger_reponse
 from hermes.agents.krinos import (
     ErreurAnalyseKrinos,
     analyser_ao,
+    jev,
     telecharger_documents_ao,
 )
+from hermes.agents.krinos.analyzer import _profil_metier
 from hermes.agents.krinos.extractor import extraire_documents_appel_offre_async
 from hermes.db.models import (
     AnalyseKrinos,
@@ -39,8 +41,10 @@ from hermes.db.models import (
     LogAgent,
     NiveauLog,
     Parametre,
+    Portail,
     ReponseHermion,
     StatutAO,
+    TypePortail,
 )
 
 CLE_PARAMETRE = "orchestration.config"
@@ -260,19 +264,29 @@ async def _phase_analyse(
     rapport: RapportOrchestration,
 ) -> None:
     """AO BRUT → docs (best-effort) → analyse KRINOS."""
-    bruts = session.exec(
-        select(AppelOffre)
-        .where(AppelOffre.statut == StatutAO.BRUT)
-        .order_by(AppelOffre.cree_le)
-        .limit(plafond)
-    ).all()
+    requete = select(AppelOffre).where(AppelOffre.statut == StatutAO.BRUT)
+    # Le marquage « hors profil (Jev) » n'écarte de PYTHIA que tant que le pré-tri
+    # est actif : sinon (réglage coupé, clé retirée) l'AO redevient analysable
+    # et ne reste jamais BRUT en silence.
+    if jev.pretri_actif(session):
+        requete = requete.where(AppelOffre.hors_profil_jev == False)  # noqa: E712
+    bruts = session.exec(requete.order_by(AppelOffre.cree_le).limit(plafond)).all()
 
     for ao in bruts:
         ao_id = ao.id
         try:
+            if await _pretri_jev(session, ao):
+                rapport.details.append({"ao_id": ao_id, "action": "hors_profil_jev"})
+                continue
             await _documents_best_effort(session, ao)
             resultat = await analyser_ao(session, ao)
             rapport.ao_analyses += 1
+            # Analysé : le badge « Hors profil (Jev) » n'a plus lieu d'être (pré-tri
+            # coupé depuis le marquage, par exemple).
+            if ao.hors_profil_jev:
+                ao.hors_profil_jev = False
+                session.add(ao)
+                session.commit()
             rapport.details.append(
                 {
                     "ao_id": ao_id,
@@ -298,6 +312,67 @@ async def _phase_analyse(
                 message=f"Pipeline : erreur inattendue AO {ao_id} — {exc}",
                 appel_offre_id=ao_id,
             )
+
+
+async def _pretri_jev(session: Session, ao: AppelOffre) -> bool:
+    """Pré-tri Jev (opt-in) : True si l'AO est jugé hors profil (donc non analysé).
+
+    Portails publics uniquement. Toute panne / budget épuisé / portail non public
+    → False (analyse normale). L'AO n'est jamais supprimé ni rejeté : il reste
+    BRUT, marqué, et l'utilisateur peut forcer l'analyse.
+    """
+    if not jev.pretri_actif(session):
+        return False
+    # Déjà évalué (jugé pertinent puis analyse échouée, ou analyse forcée par
+    # l'utilisateur) : ne pas consommer de budget Jev à chaque cycle.
+    if ao.pertinence_jev is not None:
+        return False
+    portail = session.get(Portail, ao.portail_id) if ao.portail_id else None
+    if portail is None or portail.type != TypePortail.PUBLIC:
+        return False
+    ao_id = ao.id
+    state = jev.construire_state(
+        titre=ao.titre or "",
+        objet=ao.objet or "",
+        acheteur=ao.emetteur or "",
+        type_marche=ao.type_marche or "",
+        budget=f"{ao.budget_estime} {ao.devise}" if ao.budget_estime else "",
+        date_limite=ao.date_limite.isoformat() if ao.date_limite else "",
+        profil_metier=_profil_metier(session),
+        extrait_documents="",
+    )
+    try:
+        pertinence = await jev.evaluer_pertinence(session, state)
+    except jev.ErreurJev as exc:
+        _journaliser(
+            session,
+            niveau=NiveauLog.INFO,
+            message=f"Pré-tri Jev ignoré pour AO {ao_id} (analyse normale) : {exc}",
+            appel_offre_id=ao_id,
+        )
+        return False
+    except Exception as exc:  # noqa: BLE001 — le pré-tri ne doit jamais bloquer le pipeline
+        logger.warning("Pré-tri Jev : erreur inattendue AO {} — {}", ao_id, type(exc).__name__)
+        return False
+    seuil = jev.pretri_seuil(session)
+    ao.pertinence_jev = pertinence
+    if pertinence >= seuil:
+        session.add(ao)
+        session.commit()
+        return False
+    ao.hors_profil_jev = True
+    session.add(ao)
+    session.commit()
+    _journaliser(
+        session,
+        niveau=NiveauLog.INFO,
+        message=(
+            f"AO {ao_id} hors profil (Jev) : pertinence {pertinence:.2f} < seuil "
+            f"{seuil:.2f} — non analysé par PYTHIA, analyse forçable"
+        ),
+        appel_offre_id=ao_id,
+    )
+    return True
 
 
 async def _phase_redaction(

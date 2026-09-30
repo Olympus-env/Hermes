@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { HermesMark } from "./HermesMark";
 import { Icon } from "./Icon";
+import { ModaleFond, ModalePanneau } from "./Modale";
 import { WorkflowEditor, type WorkflowDraft } from "./WorkflowEditor";
 import { api } from "../lib/api";
 import { saveUserProfile, markOnboardingDone, type UserProfile } from "../lib/userProfile";
@@ -142,8 +143,8 @@ export function OnboardingWizard({ onDone }: Props) {
   };
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal" style={{ width: "min(640px, 94vw)" }}>
+    <ModaleFond>
+      <ModalePanneau style={{ width: "min(640px, 94vw)" }}>
         <div className="modal__head">
           <div className="modal__eyebrow">
             <HermesMark size={14} />
@@ -245,8 +246,8 @@ export function OnboardingWizard({ onDone }: Props) {
             </button>
           )}
         </div>
-      </div>
-    </div>
+      </ModalePanneau>
+    </ModaleFond>
   );
 }
 

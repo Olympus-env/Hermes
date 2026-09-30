@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import Session
@@ -90,6 +91,15 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def _erreur_validation(_: Request, exc: RequestValidationError) -> JSONResponse:
+    """422 sans l'écho de l'entrée : un NaN/Infinity reçu ne serait pas sérialisable
+    en JSON (l'écho par défaut provoquerait alors un 500)."""
+    detail = [{k: v for k, v in e.items() if k not in ("input", "ctx")} for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": detail})
+
 
 # Ordre des middlewares : le dernier ajouté est le plus externe. CORS est donc
 # outermost (il répond aux preflights OPTIONS), puis le contrôle du Host, puis

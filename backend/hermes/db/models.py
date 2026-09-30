@@ -143,6 +143,11 @@ class AppelOffre(SQLModel, table=True):
 
     statut: StatutAO = Field(default=StatutAO.BRUT, index=True)
 
+    # Pré-tri de pertinence Jev (opt-in) : AO jugé « hors profil », laissé BRUT et
+    # non analysé par PYTHIA tant que l'utilisateur ne force pas l'analyse.
+    hors_profil_jev: bool = Field(default=False, sa_column_kwargs={"server_default": "0"})
+    pertinence_jev: Optional[float] = None
+
     cree_le: datetime = Field(default_factory=_utcnow, index=True)
     maj_le: datetime = Field(default_factory=_utcnow, sa_column_kwargs={"onupdate": _utcnow})
 

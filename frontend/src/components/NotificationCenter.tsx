@@ -1,3 +1,5 @@
+import { AnimatePresence, motion } from "motion/react";
+import { RESSORT, VARIANTES_FOND, VARIANTES_POPOVER } from "../lib/motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { api, type LogAgentEntry, type NiveauLog } from "../lib/api";
@@ -74,6 +76,14 @@ export function NotificationCenter({ onOpenJournal }: Props) {
     };
   }, [charger]);
 
+  // Échap ferme le panneau.
+  useEffect(() => {
+    if (!open) return;
+    const surTouche = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", surTouche);
+    return () => window.removeEventListener("keydown", surTouche);
+  }, [open]);
+
   const nonLus = useMemo(
     () => logs.filter((l) => Date.parse(l.cree_le) > lastSeen).length,
     [logs, lastSeen],
@@ -93,8 +103,10 @@ export function NotificationCenter({ onOpenJournal }: Props) {
 
   return (
     <div style={{ position: "relative" }}>
-      <button
+      <motion.button
         className="btn btn--ghost btn--sm"
+        whileTap={{ scale: 0.94 }}
+        transition={RESSORT.net}
         onClick={ouvrir}
         title="Notifications"
         style={{ position: "relative" }}
@@ -102,7 +114,11 @@ export function NotificationCenter({ onOpenJournal }: Props) {
       >
         <Icon.bell size={14} />
         {nonLus > 0 && (
-          <span
+          <motion.span
+            key={nonLus}
+            initial={{ scale: 0.4, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={RESSORT.pastille}
             style={{
               position: "absolute",
               top: -4,
@@ -120,18 +136,28 @@ export function NotificationCenter({ onOpenJournal }: Props) {
             }}
           >
             {nonLus > 9 ? "9+" : nonLus}
-          </span>
+          </motion.span>
         )}
-      </button>
+      </motion.button>
 
-      {open && (
+      <AnimatePresence>
+        {open && (
         <>
-          <div
+          <motion.div
+            variants={VARIANTES_FOND}
+            initial="initial"
+            animate="animate"
+            exit="exit"
             onClick={() => setOpen(false)}
             style={{ position: "fixed", inset: 0, zIndex: 40 }}
           />
-          <div
+          <motion.div
+            variants={VARIANTES_POPOVER}
+            initial="initial"
+            animate="animate"
+            exit="exit"
             style={{
+              transformOrigin: "top right",
               position: "absolute",
               top: 32,
               right: 0,
@@ -223,9 +249,10 @@ export function NotificationCenter({ onOpenJournal }: Props) {
                 Voir le journal complet
               </button>
             )}
-          </div>
+          </motion.div>
         </>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ToastInput } from "../lib/toast";
 import { HermesMark } from "./HermesMark";
 import { Icon } from "./Icon";
+import { ModaleFond, ModalePanneau } from "./Modale";
 
 type Props = {
   onClose: () => void;
@@ -28,6 +29,13 @@ export function PortalLoginModal({ onClose, onToast }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
+  // Échap ferme la modale.
+  useEffect(() => {
+    const surTouche = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", surTouche);
+    return () => window.removeEventListener("keydown", surTouche);
+  }, [onClose]);
+
   const steps = [
     { n: 1, label: "Identifier le portail" },
     { n: 2, label: "Connexion interactive" },
@@ -35,8 +43,8 @@ export function PortalLoginModal({ onClose, onToast }: Props) {
   ];
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <ModaleFond onClick={onClose}>
+      <ModalePanneau onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
           <button className="modal__close" onClick={onClose}>
             <Icon.close />
@@ -268,7 +276,7 @@ export function PortalLoginModal({ onClose, onToast }: Props) {
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </ModalePanneau>
+    </ModaleFond>
   );
 }

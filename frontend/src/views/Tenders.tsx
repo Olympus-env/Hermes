@@ -213,6 +213,7 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
                       <Tag key={tg.label} label={tg.label} tone={tg.tone} />
                     ))}
                     <DocumentsBadge tender={t} />
+                    <HorsProfilBadge tender={t} />
                   </div>
                 </div>
                 <div className="tender-card__right">
@@ -294,7 +295,29 @@ function mapAppelOffre(ao: AppelOffre): Tender {
     status: statutLabel(ao.statut),
     documentsDetectes: ao.documents_detectes,
     documentsTelecharges: ao.documents_telecharges,
+    horsProfilJev: ao.hors_profil_jev === true,
   };
+}
+
+/** Badge « hors profil (Jev) » : AO non analysé par PYTHIA, analyse forçable. */
+function HorsProfilBadge({ tender }: { tender: Tender }) {
+  if (!tender.horsProfilJev) return null;
+  return (
+    <span
+      style={{
+        fontSize: 10.5,
+        fontFamily: "var(--font-mono)",
+        color: "var(--fg-3)",
+        border: "1px dashed var(--line)",
+        borderRadius: 4,
+        padding: "2px 6px",
+        whiteSpace: "nowrap",
+      }}
+      title="Jev juge cet AO hors de votre profil : il n'a pas été analysé par PYTHIA. Ouvrez-le pour forcer l'analyse."
+    >
+      Hors profil (Jev)
+    </span>
+  );
 }
 
 /** Badge synthétique de l'état documents d'un AO (détectés / téléchargés). */
@@ -645,6 +668,15 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
                 ? `, pertinence ${Math.round(analyse.details_jev.pertinence * 100)} %`
                 : ""}
               . Score PYTHIA (local) : {Math.round(analyse.score)} / 100.
+              {analyse.composite != null
+                ? ` Composite go/no-go : ${Math.round(analyse.composite)} / 100 (${
+                    analyse.verdict_composite === "go"
+                      ? "go"
+                      : analyse.verdict_composite === "no_go"
+                        ? "no-go"
+                        : "à vérifier par un humain"
+                  }, indicatif).`
+                : ""}
             </p>
           )}
         </div>
@@ -769,7 +801,11 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
             title="Lance une analyse KRINOS complète (PYTHIA) : résumé, ventilation et score"
           >
             <Icon.refresh size={13} />
-            {relanceEnCours ? "Analyse…" : "Lancer l'analyse"}
+            {relanceEnCours
+              ? "Analyse…"
+              : tender.horsProfilJev
+                ? "Forcer l'analyse"
+                : "Lancer l'analyse"}
           </button>
         )}
         <button
