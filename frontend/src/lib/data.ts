@@ -14,7 +14,8 @@ export type Tender = {
   title: string;
   issuer: string;
   portal: string;
-  deadline: string;
+  /** Date limite ISO ; null si l'AO n'en publie pas (jamais d'échéance inventée). */
+  deadline: string | null;
   budget: string;
   reference: string;
   score: number;
@@ -25,6 +26,8 @@ export type Tender = {
   summary: string;
   keypoints: string[];
   status: string;
+  /** Valeur brute de StatutAO (brut, analyse, a_repondre…), pour les règles métier. */
+  statutApi?: string;
   // État documents (Boucle 3/4) : liens détectés par ARGOS vs téléchargés.
   documentsDetectes?: number;
   documentsTelecharges?: number;
@@ -58,15 +61,26 @@ export const RESPONSE_STATUS: Record<
   "exportee":   { label: "Exportée",                 color: "#7A8190", bg: "rgba(122,129,144,0.14)" },
 };
 
-export function deadlineInfo(dateStr: string) {
+const JOUR_MS = 86_400_000;
+/** StatutAO « vivants » : mêmes règles que GET /tableau-de-bord. */
+export const STATUTS_ACTIFS = ["brut", "analyse", "a_repondre", "en_redaction"];
+
+/**
+ * Échéance d'un AO. `urgent` = échéance dans [maintenant, +7 j] (règle du backend) ;
+ * `echu` = date passée ; `precisee` = false quand l'AO n'a pas de date limite.
+ */
+export function deadlineInfo(dateStr: string | null) {
+  if (!dateStr) {
+    return { formatted: "Échéance non précisée", days: 0, urgent: false, echu: false, precisee: false };
+  }
   const d = new Date(dateStr);
   const ms = d.getTime() - Date.now();
-  const days = Math.ceil(ms / 86_400_000);
+  const days = Math.ceil(ms / JOUR_MS);
   const formatted = d.toLocaleDateString("fr-FR", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
-  const urgent = days < 7;
-  return { formatted, days, urgent };
+  const urgent = ms >= 0 && ms <= 7 * JOUR_MS;
+  return { formatted, days, urgent, echu: ms < 0, precisee: true };
 }

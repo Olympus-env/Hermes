@@ -507,6 +507,12 @@ button { font-family: inherit; cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 .deadline--urgent { color: var(--hermion); }
+.deadline__echu {
+  color: var(--fg-4);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  margin-left: 2px;
+}
 .deadline__days {
   background: rgba(216,90,48,0.18);
   color: var(--hermion);

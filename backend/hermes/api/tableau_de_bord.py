@@ -14,8 +14,8 @@ from pydantic import BaseModel
 from sqlmodel import Session, func, select
 
 from hermes.api._dates import DatetimeUTC
-from hermes.api.appels_offre import _scores_recents
 from hermes.db.models import (
+    AnalyseKrinos,
     AppelOffre,
     LogAgent,
     NiveauLog,
@@ -78,12 +78,11 @@ def lire_tableau_de_bord(
         par_statut[StatutAO(statut).value] = int(n)
     total = sum(n for s, n in par_statut.items() if s != StatutAO.HORS_FILTRE.value)
 
-    actifs = session.exec(
-        select(AppelOffre.id, AppelOffre.date_limite).where(AppelOffre.statut.in_(_STATUTS_ACTIFS))
+    echeances = session.exec(
+        select(AppelOffre.date_limite).where(AppelOffre.statut.in_(_STATUTS_ACTIFS))
     ).all()
-    urgents = sum(1 for _, d in actifs if _est_urgent(d, maintenant))
-    scores = _scores_recents(session, [ao_id for ao_id, _ in actifs])
-    score_eleve = sum(1 for s in scores.values() if s >= _SEUIL_SCORE_ELEVE)
+    urgents = sum(1 for d in echeances if _est_urgent(d, maintenant))
+    score_eleve = _compter_scores_eleves(session)
 
     return TableauDeBord(
         genere_le=maintenant,
@@ -104,6 +103,23 @@ def _est_urgent(date_limite: datetime | None, maintenant: datetime) -> bool:
     if date_limite.tzinfo is None:  # SQLite renvoie des datetimes naïfs (UTC)
         date_limite = date_limite.replace(tzinfo=maintenant.tzinfo)
     return maintenant <= date_limite <= maintenant + _HORIZON_URGENT
+
+
+def _compter_scores_eleves(session: Session) -> int:
+    """AO actifs dont la dernière analyse KRINOS atteint le seuil.
+
+    Jointure (pas de liste d'ids en `IN`, qui dépasserait la limite de variables SQLite).
+    """
+    lignes = session.exec(
+        select(AnalyseKrinos.appel_offre_id, AnalyseKrinos.score)
+        .join(AppelOffre, AppelOffre.id == AnalyseKrinos.appel_offre_id)
+        .where(AppelOffre.statut.in_(_STATUTS_ACTIFS))
+        .order_by(AnalyseKrinos.cree_le.desc(), AnalyseKrinos.id.desc())
+    ).all()
+    dernier: dict[int, float] = {}
+    for ao_id, score in lignes:
+        dernier.setdefault(ao_id, score)  # premier = le plus récent
+    return sum(1 for sc in dernier.values() if sc >= _SEUIL_SCORE_ELEVE)
 
 
 def _reponses_par_statut(session: Session) -> dict[str, int]:

@@ -114,3 +114,25 @@ def test_activite_agents_ordre_inverse_et_filtre():
         tous = client.get("/tableau-de-bord").json()["activite"]
         assert [x["agent"] for x in tous] == ["HERMION", "KRINOS", "ARGOS"]
         assert client.get("/tableau-de-bord?limite_activite=0").status_code == 422
+
+
+def test_beaucoup_d_ao_actifs_et_sans_echeance():
+    """Plus de 32 000 ids ne doivent pas casser la requête ; sans date_limite = non urgent."""
+    from hermes.main import app
+
+    with Session(get_engine()) as s:
+        s.add_all(
+            AppelOffre(url_source=f"https://example.test/{i}", reference_externe=f"B{i}",
+                       titre=f"AO {i}", statut=StatutAO.ANALYSE)
+            for i in range(33_000)
+        )
+        s.commit()
+        ao = _ao(s, 999_999, StatutAO.BRUT)  # sans échéance
+        s.add(AnalyseKrinos(appel_offre_id=ao.id, resume="r", score=90, justification_score="j"))
+        s.commit()
+
+    with TestClient(app) as client:
+        d = client.get("/tableau-de-bord").json()
+    assert d["total_ao"] == 33_001
+    assert d["urgents"] == 0
+    assert d["score_eleve"] == 1
