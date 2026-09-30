@@ -1,3 +1,5 @@
+import { AnimatePresence, motion } from "motion/react";
+import { RESSORT, TR_RAPIDE, TR_SORTIE } from "../lib/motion";
 import { AGENTS, type AgentKey, type AgentState } from "../lib/data";
 import {
   getProfileAvatarLetter,
@@ -41,10 +43,18 @@ export function Topbar({
   return (
     <header className="topbar app__topbar">
       <div className="topbar__inner">
-        <div className="topbar__title">
-          <span className="topbar__title-main">{t.main}</span>
-          <span className="topbar__title-sub">— {t.sub}</span>
-        </div>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={active}
+            className="topbar__title"
+            initial={{ opacity: 0, x: -6 }}
+            animate={{ opacity: 1, x: 0, transition: TR_RAPIDE }}
+            exit={{ opacity: 0, x: 4, transition: TR_SORTIE }}
+          >
+            <span className="topbar__title-main">{t.main}</span>
+            <span className="topbar__title-sub">— {t.sub}</span>
+          </motion.div>
+        </AnimatePresence>
 
         <div className="topbar__spacer" />
 
@@ -60,16 +70,19 @@ export function Topbar({
             Prochain cycle dans <strong>{nextCycle}</strong>
           </span>
           {onLaunchArgos && (
-            <button
+            <motion.button
               className="btn btn--gold btn--sm"
               style={{ marginLeft: 8 }}
+              whileHover={isLoading ? undefined : { y: -1 }}
+              whileTap={isLoading ? undefined : { scale: 0.96 }}
+              transition={RESSORT.net}
               onClick={onLaunchArgos}
               disabled={isLoading}
               title="Déclenche immédiatement une collecte ARGOS (sans attendre le cycle)"
             >
               <Icon.refresh size={11} />
               {isLoading ? "Collecte…" : "Lancer ARGOS"}
-            </button>
+            </motion.button>
           )}
         </div>
 

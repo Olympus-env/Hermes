@@ -1,9 +1,19 @@
+import { motion } from "motion/react";
+
 type Props = {
   width?: number;
   color?: string;
   opacity?: number;
   strokeWidth?: number;
+  /** Trace la clé en or (ouverture) : le filet puis chaque méandre se dessinent. */
+  trace?: boolean;
+  /** Retard avant le début du tracé, en secondes (avec `trace`). */
+  retard?: number;
 };
+
+const MEANDRES = [2, 22, 42, 62].map(
+  (x) => `M${x} 15 L${x} 3 L${x + 11} 3 L${x + 11} 12 L${x + 4} 12 L${x + 4} 6 L${x + 8} 6 L${x + 8} 9`,
+);
 
 // Motif greek key fixe (4 unités) — pour l'état vide.
 export function GreekKey({
@@ -11,6 +21,8 @@ export function GreekKey({
   color = "#C8A951",
   opacity = 0.65,
   strokeWidth = 1.6,
+  trace = false,
+  retard = 0,
 }: Props) {
   const height = width * (16 / 80);
   return (
@@ -26,11 +38,35 @@ export function GreekKey({
       opacity={opacity}
       style={{ display: "block" }}
     >
-      <line x1="0" y1="15" x2="80" y2="15" />
-      <path d="M2 15 L2 3 L13 3 L13 12 L6 12 L6 6 L10 6 L10 9" />
-      <path d="M22 15 L22 3 L33 3 L33 12 L26 12 L26 6 L30 6 L30 9" />
-      <path d="M42 15 L42 3 L53 3 L53 12 L46 12 L46 6 L50 6 L50 9" />
-      <path d="M62 15 L62 3 L73 3 L73 12 L66 12 L66 6 L70 6 L70 9" />
+      {trace ? (
+        <>
+          <motion.line
+            x1="0"
+            y1="15"
+            x2="80"
+            y2="15"
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 0.5, delay: retard, ease: "easeOut" }}
+          />
+          {MEANDRES.map((d, i) => (
+            <motion.path
+              key={d}
+              d={d}
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 0.35, delay: retard + 0.12 + i * 0.1, ease: "easeOut" }}
+            />
+          ))}
+        </>
+      ) : (
+        <>
+          <line x1="0" y1="15" x2="80" y2="15" />
+          {MEANDRES.map((d) => (
+            <path key={d} d={d} />
+          ))}
+        </>
+      )}
     </svg>
   );
 }

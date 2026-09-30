@@ -1,4 +1,6 @@
-import { AGENTS, type AgentKey, type AgentState } from "../lib/data";
+import { motion } from "motion/react";
+import { RESSORT } from "../lib/motion";
+import { AGENTS,type AgentKey, type AgentState } from "../lib/data";
 import { AgentChip } from "./AgentChip";
 import { GreekFrieze } from "./GreekFrieze";
 import { HermesMark } from "./HermesMark";
@@ -63,17 +65,34 @@ export function Sidebar({
         {items.map((it) => {
           const ActIcon = it.icon;
           return (
-            <button
+            <motion.button
               key={it.id}
               className={`nav-item${active === it.id ? " nav-item--active" : ""}`}
               onClick={() => onChange(it.id)}
+              whileTap={{ scale: 0.98 }}
+              transition={RESSORT.net}
             >
+              {active === it.id && (
+                <motion.span
+                  layoutId="nav-indicateur"
+                  className="nav-item__indicator"
+                  transition={RESSORT.doux}
+                />
+              )}
               <ActIcon size={15} />
               <span>{it.label}</span>
               {it.count != null && it.count > 0 && (
-                <span className="nav-item__count">{it.count}</span>
+                <motion.span
+                  key={it.count}
+                  className="nav-item__count"
+                  initial={{ scale: 1.35, opacity: 0.6 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={RESSORT.pastille}
+                >
+                  {it.count}
+                </motion.span>
               )}
-            </button>
+            </motion.button>
           );
         })}
       </nav>

@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { GreekFrieze } from "./components/GreekFrieze";
 import { GreekKey } from "./components/GreekKey";
 import { HermesMark } from "./components/HermesMark";
 import { Icon } from "./components/Icon";
 import { ModelDownloader } from "./components/ModelDownloader";
 import { OnboardingWizard } from "./components/OnboardingWizard";
+import { Ouverture } from "./components/Ouverture";
 import { Sidebar, type ViewKey } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
 import { Topbar } from "./components/Topbar";
 import { api } from "./lib/api";
+import { COURBE, VARIANTES_ELEMENT, VARIANTES_LISTE, VARIANTES_VUE } from "./lib/motion";
+import { installerComportementsNatifs } from "./lib/natif";
 import { type AgentKey, type AgentState } from "./lib/data";
 import type { ToastInput } from "./lib/toast";
 import {
@@ -17,11 +21,15 @@ import {
   saveUserProfile,
   type UserProfile,
 } from "./lib/userProfile";
-import { Accueil } from "./views/Accueil";
-import { Journal } from "./views/Journal";
-import { Responses } from "./views/Responses";
-import { Settings } from "./views/Settings";
-import { Tenders } from "./views/Tenders";
+// Vues chargées à la demande : le squelette sert de repli pendant le chargement.
+const Accueil = lazy(() => import("./views/Accueil").then((m) => ({ default: m.Accueil })));
+const Journal = lazy(() => import("./views/Journal").then((m) => ({ default: m.Journal })));
+const Responses = lazy(() => import("./views/Responses").then((m) => ({ default: m.Responses })));
+const Settings = lazy(() => import("./views/Settings").then((m) => ({ default: m.Settings })));
+const Tenders = lazy(() => import("./views/Tenders").then((m) => ({ default: m.Tenders })));
+
+// L'animation d'ouverture n'est jouée qu'une fois par lancement de l'app.
+let ouvertureDejaJouee = false;
 
 /** « mm:ss » (ou « h:mm:ss ») avant l'échéance ; « — » si aucun cycle n'est programmé. */
 function formaterCompteARebours(cibleMs: number | null, maintenantMs: number): string {
@@ -36,6 +44,20 @@ function formaterCompteARebours(cibleMs: number | null, maintenantMs: number): s
 }
 
 export default function App() {
+  return (
+    <MotionConfig reducedMotion="user">
+      <Coque />
+    </MotionConfig>
+  );
+}
+
+function Coque() {
+  const reduire = useReducedMotion();
+  const [ouverture, setOuverture] = useState(!ouvertureDejaJouee && !reduire);
+  const finOuverture = useCallback(() => {
+    ouvertureDejaJouee = true;
+    setOuverture(false);
+  }, []);
   const [active, setActive] = useState<ViewKey>("tenders");
   const [toast, setToast] = useState<ToastInput | null>(null);
   const [emptyState, setEmptyState] = useState(false);
@@ -55,6 +77,9 @@ export default function App() {
   const [tenderCount, setTenderCount] = useState(0);
   const [responseCount, setResponseCount] = useState(0);
   const [pendingValidationCount, setPendingValidationCount] = useState(0);
+
+  // Comportements natifs (menu contextuel, raccourcis…) et raccourcis d'app.
+  useEffect(() => installerComportementsNatifs({ onNaviguer: setActive }), []);
 
   // Recharge périodique des compteurs sidebar (réponses HERMION)
   useEffect(() => {
@@ -176,8 +201,18 @@ export default function App() {
 
   return (
     <div className="app">
+      <AnimatePresence>{ouverture && <Ouverture onFin={finOuverture} />}</AnimatePresence>
+
       <div className="app__frieze">
-        <GreekFrieze height={20} color="#C8A951" opacity={0.55} strokeWidth={1.3} />
+        {/* La frise se révèle de gauche à droite (transform seulement) */}
+        <motion.div
+          className="app__frieze-inner"
+          initial={{ scaleX: 0 }}
+          animate={{ scaleX: 1 }}
+          transition={{ duration: 0.7, delay: ouverture ? 0.9 : 0, ease: [...COURBE.sortie] }}
+        >
+          <GreekFrieze height={20} color="#C8A951" opacity={0.55} strokeWidth={1.3} />
+        </motion.div>
       </div>
 
       <Sidebar
@@ -201,66 +236,90 @@ export default function App() {
       )}
 
       <main className="app__main">
-        {backendUp === false && (
-          <div className="loading-banner" role="status">
-            <span className="loading-banner__icon" />
-            <span>
-              <strong style={{ color: "var(--argos)", letterSpacing: "0.08em" }}>HERMES</strong>{" "}
-              Le backend démarre ou est injoignable — nouvelle tentative en cours…
-            </span>
-          </div>
-        )}
-        {emptyState ? (
-          <EmptyView
-            onConfigure={() => {
-              setEmptyState(false);
-              setActive("settings");
-            }}
-            onStart={() => {
-              setEmptyState(false);
-              triggerCycle();
-            }}
-          />
-        ) : (
-          <>
-            {active === "accueil" && (
-              <Accueil
-                onNavigate={setActive}
-                agents={agents}
-                isLoading={isLoading}
-                onTriggerCycle={triggerCycle}
-              />
-            )}
-            {active === "tenders" && (
-              <Tenders
-                isLoading={isLoading}
-                refreshKey={tendersRefreshKey}
-                onCountChange={setTenderCount}
-                onToast={setToast}
-              />
-            )}
-            {active === "responses" && <Responses onToast={setToast} externalRefreshKey={tendersRefreshKey} />}
-            {active === "journal" && <Journal refreshKey={tendersRefreshKey} />}
-            {active === "settings" && (
-              <Settings
-                profile={profile}
-                onSaveProfile={(nextProfile) => {
-                  setProfile(saveUserProfile(nextProfile));
-                  setToast({
-                    title: "HERMION",
-                    app: "Profil utilisateur",
-                    msg: "Identité enregistrée. HERMION utilisera ces informations dans les réponses générées.",
-                    agent: "hermion",
-                  });
-                }}
-              />
-            )}
-          </>
-        )}
+        <AnimatePresence>
+          {backendUp === false && (
+            <motion.div
+              className="loading-banner"
+              role="status"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+            >
+              <span className="loading-banner__icon" />
+              <span>
+                <strong style={{ color: "var(--argos)", letterSpacing: "0.08em" }}>HERMES</strong>{" "}
+                Le backend démarre ou est injoignable — nouvelle tentative en cours…
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={emptyState ? "vide" : active}
+            className="view-transition"
+            variants={VARIANTES_VUE}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            <Suspense fallback={<SqueletteVue />}>
+              {emptyState ? (
+                <EmptyView
+                  onConfigure={() => {
+                    setEmptyState(false);
+                    setActive("settings");
+                  }}
+                  onStart={() => {
+                    setEmptyState(false);
+                    triggerCycle();
+                  }}
+                />
+              ) : (
+                <>
+                  {active === "accueil" && (
+                    <Accueil
+                      onNavigate={setActive}
+                      agents={agents}
+                      isLoading={isLoading}
+                      onTriggerCycle={triggerCycle}
+                    />
+                  )}
+                  {active === "tenders" && (
+                    <Tenders
+                      isLoading={isLoading}
+                      refreshKey={tendersRefreshKey}
+                      onCountChange={setTenderCount}
+                      onToast={setToast}
+                    />
+                  )}
+                  {active === "responses" && (
+                    <Responses onToast={setToast} externalRefreshKey={tendersRefreshKey} />
+                  )}
+                  {active === "journal" && <Journal refreshKey={tendersRefreshKey} />}
+                  {active === "settings" && (
+                    <Settings
+                      profile={profile}
+                      onSaveProfile={(nextProfile) => {
+                        setProfile(saveUserProfile(nextProfile));
+                        setToast({
+                          title: "HERMION",
+                          app: "Profil utilisateur",
+                          msg: "Identité enregistrée. HERMION utilisera ces informations dans les réponses générées.",
+                          agent: "hermion",
+                        });
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </Suspense>
+          </motion.div>
+        </AnimatePresence>
       </main>
 
       <Toast toast={toast} onClose={() => setToast(null)} />
 
+      <AnimatePresence>
       {(!profile || !onboardingDone) && modeleReady && (
         <OnboardingWizard
           onDone={(nextProfile) => {
@@ -276,6 +335,8 @@ export default function App() {
         />
       )}
 
+      </AnimatePresence>
+
       {!modeleReady && <ModelDownloader onReady={() => setModeleReady(true)} />}
     </div>
   );
@@ -289,29 +350,51 @@ function EmptyView({
   onStart: () => void;
 }) {
   return (
-    <div className="empty">
-      <div className="empty__art">
+    <motion.div
+      className="empty"
+      variants={VARIANTES_LISTE}
+      initial="initial"
+      animate="animate"
+    >
+      <motion.div className="empty__art" variants={VARIANTES_ELEMENT}>
         <div className="empty__art-ring" />
         <div className="empty__art-ring empty__art-ring--inner" />
         <HermesMark size={56} color="#C8A951" />
-      </div>
-      <h2 className="empty__title">Aucun appel d'offre collecté</h2>
-      <p className="empty__desc">
+      </motion.div>
+      <motion.h2 className="empty__title" variants={VARIANTES_ELEMENT}>
+        Aucun appel d'offre collecté
+      </motion.h2>
+      <motion.p className="empty__desc" variants={VARIANTES_ELEMENT}>
         HERMES est prêt. Configurez au moins un portail dans les paramètres puis lancez
         votre premier cycle ARGOS — les AO pertinents apparaîtront ici.
-      </p>
-      <div style={{ display: "flex", gap: 10 }}>
+      </motion.p>
+      <motion.div style={{ display: "flex", gap: 10 }} variants={VARIANTES_ELEMENT}>
         <button className="btn btn--gold" onClick={onStart}>
           <Icon.refresh size={13} /> Lancer un premier cycle ARGOS
         </button>
         <button className="btn btn--ghost" onClick={onConfigure}>
           <Icon.settings size={13} /> Configurer les portails
         </button>
-      </div>
+      </motion.div>
 
-      <div style={{ marginTop: 36, opacity: 0.6 }}>
+      <motion.div style={{ marginTop: 36, opacity: 0.6 }} variants={VARIANTES_ELEMENT}>
         <GreekKey width={180} color="#C8A951" opacity={0.55} strokeWidth={1.4} />
-      </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/** Squelette affiché pendant le chargement d'une vue (plutôt qu'un écran vide). */
+function SqueletteVue() {
+  return (
+    <div className="squelette-vue" aria-busy="true" aria-label="Chargement">
+      <span className="skel" style={{ width: 220, height: 16, marginBottom: 22 }} />
+      {[0, 1, 2, 3].map((i) => (
+        <div className="skeleton-card" key={i}>
+          <span className="skel" style={{ width: `${70 - i * 8}%`, marginBottom: 10 }} />
+          <span className="skel" style={{ width: "40%" }} />
+        </div>
+      ))}
     </div>
   );
 }

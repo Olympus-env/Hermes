@@ -1,3 +1,5 @@
+import { motion } from "motion/react";
+import { RESSORT } from "../lib/motion";
 import { AGENTS, type AgentKey, type AgentState } from "../lib/data";
 
 type DotProps = { agent: AgentKey; state?: AgentState; size?: number };
@@ -31,8 +33,13 @@ export function AgentChip({ agent, state, compact = false }: ChipProps) {
     state === "active" ? a.color : state === "running" ? "#E0A93B" : "#5A6070";
   return (
     <div className="agent-chip" data-state={state}>
-      <span
+      {/* key=state : la pastille « rebondit » légèrement à chaque changement d'état */}
+      <motion.span
+        key={state}
         className="agent-chip__dot"
+        initial={{ scale: 0.6 }}
+        animate={{ scale: 1 }}
+        transition={RESSORT.pastille}
         style={{
           background: stateColor,
           boxShadow: state === "active" ? `0 0 0 3px ${a.color}22` : "none",
@@ -41,7 +48,7 @@ export function AgentChip({ agent, state, compact = false }: ChipProps) {
         {state === "running" && (
           <span className="agent-chip__pulse" style={{ background: stateColor }} />
         )}
-      </span>
+      </motion.span>
       <span className="agent-chip__name">{a.name}</span>
       {!compact && (
         <>
