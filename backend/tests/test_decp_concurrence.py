@@ -62,6 +62,81 @@ def test_extraire_identifiants(donnees, attendu):
     assert extraire_identifiants(donnees) == attendu
 
 
+def _eforms(company, cpv=None):
+    """Avis eForms minimal : ContractingParty -> ORG-0001, `company` = efac:Company."""
+    return {"EFORMS": {"ContractNotice": {
+        "ext:UBLExtensions": {"efac:Organizations": {"efac:Organization": [
+            {"efac:Company": {
+                "cac:PartyIdentification": {"cbc:ID": {"#text": "ORG-0000"}},
+                "cac:PartyLegalEntity": {"cbc:CompanyID": "45072478600030"}}},
+            {"efac:Company": company},
+        ]}},
+        "cac:ContractingParty": {"cac:Party": {
+            "cac:PartyIdentification": {"cbc:ID": "ORG-0001"}}},
+        "cac:ProcurementProject": {"cbc:ItemClassificationCode": cpv or {
+            "@listName": "cpv", "#text": "22113000"}},
+    }}}
+
+
+ID_ACHETEUR = {"cbc:ID": {"#text": "ORG-0001"}}
+
+
+def test_eforms_partylegalentity_en_liste():
+    # Le premier CompanyID n'est pas un SIRET (identifiant TVA) : on prend le suivant.
+    donnees = _eforms({"cac:PartyIdentification": ID_ACHETEUR, "cac:PartyLegalEntity": [
+        {"cbc:CompanyID": "FR12345678901"},
+        {"cbc:CompanyID": {"#text": "200 017 846 00045"}},
+    ]})
+    assert extraire_identifiants(donnees) == ("20001784600045", "22113000")
+
+
+def test_eforms_company_et_partyidentification_en_liste():
+    donnees = _eforms([
+        {"cac:PartyIdentification": [{"cbc:ID": "ORG-0009"}, ID_ACHETEUR],
+         "cac:PartyLegalEntity": [{"cbc:CompanyID": "20001784600045"}]},
+    ])
+    assert extraire_identifiants(donnees) == ("20001784600045", "22113000")
+
+
+def test_eforms_contractingparty_et_cpv_en_liste():
+    donnees = _eforms({"cac:PartyIdentification": ID_ACHETEUR,
+                       "cac:PartyLegalEntity": {"cbc:CompanyID": "20001784600045"}},
+                      cpv=[{"@listName": "cpv", "#text": "22113000"}])
+    notice = donnees["EFORMS"]["ContractNotice"]
+    notice["cac:ContractingParty"] = [
+        {"cac:Party": [{"cac:PartyIdentification": [ID_ACHETEUR]}]}]
+    assert extraire_identifiants(donnees) == ("20001784600045", "22113000")
+
+
+def test_eforms_sans_siret_valide():
+    donnees = _eforms({"cac:PartyIdentification": ID_ACHETEUR,
+                       "cac:PartyLegalEntity": [{"cbc:CompanyID": "FR123"}]})
+    assert extraire_identifiants(donnees) == (None, "22113000")
+
+
+def test_extraire_identifiants_ne_leve_jamais(monkeypatch, caplog):
+    from hermes.agents.argos import boamp
+
+    def boum(_):
+        raise AttributeError("'list' object has no attribute 'get'")
+
+    monkeypatch.setattr(boamp, "_siret_eforms", boum)
+    messages: list[str] = []
+    id_log = boamp.logger.add(lambda m: messages.append(str(m)), level="WARNING")
+    try:
+        assert extraire_identifiants(EFORMS) == (None, None)
+    finally:
+        boamp.logger.remove(id_log)
+    assert any("ARGOS/BOAMP" in m and "AttributeError" in m for m in messages)
+
+
+def test_record_boamp_eforms_liste_ne_perd_pas_l_avis():
+    donnees = _eforms({"cac:PartyIdentification": [ID_ACHETEUR], "cac:PartyLegalEntity": [
+        {"cbc:CompanyID": "20001784600045"}]})
+    ao = _record_vers_ao({"idweb": "26-2", "objet": "x", "donnees": json.dumps(donnees)})
+    assert (ao.emetteur_siret, ao.code_cpv) == ("20001784600045", "22113000")
+
+
 def test_record_boamp_porte_siret_et_cpv():
     ao = _record_vers_ao({"idweb": "26-1", "objet": "x", "donnees": json.dumps(FNSIMPLE)})
     assert (ao.emetteur_siret, ao.code_cpv) == ("20006973000055", "45223000")

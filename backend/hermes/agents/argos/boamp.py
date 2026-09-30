@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+from loguru import logger
 
 from hermes.agents.argos.base import (
     MAX_PAGES,
@@ -343,21 +344,59 @@ def _texte_ubl(v: Any) -> str | None:
     return str(v).strip() if v is not None else None
 
 
+def _dicts(v: Any) -> list[dict[str, Any]]:
+    """Normalise un nœud UBL : eForms autorise dict ou liste de dicts pour une même clé."""
+    if isinstance(v, dict):
+        return [v]
+    if isinstance(v, list):
+        return [x for x in v if isinstance(x, dict)]
+    return []
+
+
+def _textes_ubl(v: Any) -> list[str]:
+    """Toutes les valeurs texte d'un nœud (dict, str ou liste de ces types)."""
+    valeurs = v if isinstance(v, list) else [v]
+    textes = (_texte_ubl(x) for x in valeurs if isinstance(x, dict | str | int))
+    return [t for t in textes if t]
+
+
 def _siret_eforms(donnees: dict[str, Any]) -> str | None:
-    """SIRET de l'acheteur d'un avis eForms (organisation liée au ContractingParty)."""
-    partie = _chercher(donnees, "cac:ContractingParty")
-    id_acheteur = None
-    if isinstance(partie, dict):
-        identification = (partie.get("cac:Party") or {}).get("cac:PartyIdentification") or {}
-        id_acheteur = _texte_ubl(identification.get("cbc:ID"))
-    orgs = _chercher(donnees, "efac:Organization")
-    if isinstance(orgs, dict):
-        orgs = [orgs]
-    for org in orgs or []:
-        societe = org.get("efac:Company") or {}
-        ident = _texte_ubl((societe.get("cac:PartyIdentification") or {}).get("cbc:ID"))
-        if id_acheteur and ident == id_acheteur:
-            return _texte_ubl((societe.get("cac:PartyLegalEntity") or {}).get("cbc:CompanyID"))
+    """SIRET de l'acheteur d'un avis eForms (organisation liée au ContractingParty).
+
+    Chaque niveau UBL (ContractingParty, Party, PartyIdentification, Company,
+    PartyLegalEntity) peut être un dict ou une liste : on normalise partout et on
+    retient le premier CompanyID qui ressemble à un SIRET valide.
+    """
+    ids_acheteur: set[str] = set()
+    for partie in _dicts(_chercher(donnees, "cac:ContractingParty")):
+        for party in _dicts(partie.get("cac:Party")):
+            for identification in _dicts(party.get("cac:PartyIdentification")):
+                ids_acheteur.update(_textes_ubl(identification.get("cbc:ID")))
+    if not ids_acheteur:
+        return None
+    for org in _dicts(_chercher(donnees, "efac:Organization")):
+        for societe in _dicts(org.get("efac:Company")):
+            idents = {
+                i
+                for ident in _dicts(societe.get("cac:PartyIdentification"))
+                for i in _textes_ubl(ident.get("cbc:ID"))
+            }
+            if not idents & ids_acheteur:
+                continue
+            for entite in _dicts(societe.get("cac:PartyLegalEntity")):
+                for cid in _textes_ubl(entite.get("cbc:CompanyID")):
+                    cid = re.sub(r"\s", "", cid)
+                    if _RE_SIRET.fullmatch(cid):
+                        return cid
+    return None
+
+
+def _cpv_eforms(donnees: dict[str, Any]) -> str | None:
+    """Premier code CPV d'un avis eForms (le nœud peut être une liste)."""
+    noeud = _chercher(donnees, "cbc:ItemClassificationCode")
+    for n in _dicts(noeud):
+        if n.get("@listName") == "cpv":
+            return _texte_ubl(n)
     return None
 
 
@@ -366,8 +405,21 @@ def extraire_identifiants(donnees: Any) -> tuple[str | None, str | None]:
 
     Trois formats coexistent : eForms (depuis 2024), FNSimple (MAPA récents) et
     l'ancien format (IDENTITE/OBJET). Best-effort : (None, None) si absent ou
-    illisible — jamais d'exception.
+    illisible — jamais d'exception (un avis inattendu ne doit pas faire perdre
+    la collecte ; l'anomalie est journalisée en avertissement).
     """
+    try:
+        return _extraire_identifiants(donnees)
+    except Exception as exc:  # noqa: BLE001 — filet volontaire, cf. docstring
+        logger.warning(
+            "ARGOS/BOAMP : identifiants (SIRET/CPV) illisibles, avis conservé sans eux — {}: {}",
+            type(exc).__name__,
+            exc,
+        )
+        return None, None
+
+
+def _extraire_identifiants(donnees: Any) -> tuple[str | None, str | None]:
     if isinstance(donnees, str):
         try:
             donnees = json.loads(donnees)
@@ -380,9 +432,7 @@ def extraire_identifiants(donnees: Any) -> tuple[str | None, str | None]:
     cpv: str | None = None
     if "EFORMS" in donnees:
         siret = _siret_eforms(donnees)
-        noeud = _chercher(donnees, "cbc:ItemClassificationCode")
-        if isinstance(noeud, dict) and noeud.get("@listName") == "cpv":
-            cpv = _texte_ubl(noeud)
+        cpv = _cpv_eforms(donnees)
     else:
         siret = _texte_ubl(
             _chercher(donnees, "codeIdentificationNational")
