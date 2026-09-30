@@ -29,6 +29,7 @@ from hermes.api import (
     krinos,
     logs,
     orchestration,
+    profil,
     pythia,
 )
 from hermes.api import pythia as pythia_api
@@ -139,6 +140,7 @@ app.include_router(hermion.router)
 app.include_router(orchestration.router)
 app.include_router(logs.router)
 app.include_router(pythia.router)
+app.include_router(profil.router)
 
 
 @app.get("/")

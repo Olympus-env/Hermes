@@ -7,6 +7,7 @@ import {
   type UserProfile,
 } from "../lib/userProfile";
 import { Icon } from "../components/Icon";
+import { ProfilMetierSection } from "../components/ProfilMetierSection";
 import { WorkflowEditor, type WorkflowDraft } from "../components/WorkflowEditor";
 import {
   api,
@@ -32,6 +33,7 @@ type Props = {
 
 type SectionId =
   | "profil"
+  | "metier"
   | "portails"
   | "filtrage"
   | "scoring"
@@ -40,6 +42,7 @@ type SectionId =
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "profil",    label: "Profil utilisateur" },
+  { id: "metier",    label: "Profil métier" },
   { id: "portails",  label: "Portails" },
   { id: "filtrage",  label: "Critères de filtrage" },
   { id: "scoring",   label: "Pondération du scoring" },
@@ -74,6 +77,7 @@ export function Settings({ profile, onSaveProfile }: Props) {
           {section === "profil" && (
             <UserProfileSection profile={profile} onSave={onSaveProfile} />
           )}
+          {section === "metier" && <ProfilMetierSection legacy={profile} />}
           {section === "portails" && <PortalsSection />}
           {section === "filtrage" && <FilteringSection />}
           {section === "scoring" && <ScoringSection />}
