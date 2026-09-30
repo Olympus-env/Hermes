@@ -1,4 +1,10 @@
-import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "motion/react";
+import {
+  AnimatePresence,
+  MotionConfig,
+  MotionGlobalConfig,
+  motion,
+  useReducedMotion,
+} from "motion/react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { GreekFrieze } from "./components/GreekFrieze";
 import { GreekKey } from "./components/GreekKey";
@@ -6,7 +12,7 @@ import { HermesMark } from "./components/HermesMark";
 import { Icon } from "./components/Icon";
 import { ModelDownloader } from "./components/ModelDownloader";
 import { OnboardingWizard } from "./components/OnboardingWizard";
-import { Ouverture } from "./components/Ouverture";
+import { DUREE_OUVERTURE_MS, Ouverture } from "./components/Ouverture";
 import { Sidebar, type ViewKey } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
 import { Topbar } from "./components/Topbar";
@@ -41,6 +47,21 @@ function formaterCompteARebours(cibleMs: number | null, maintenantMs: number): s
     .padStart(2, "0");
   const s = (total % 60).toString().padStart(2, "0");
   return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+}
+
+/**
+ * `reducedMotion="user"` ne coupe que les transformations : les fondus d'opacité
+ * subsistent. Sous `prefers-reduced-motion`, on coupe donc toutes les animations
+ * Motion (les vues apparaissent d'un coup, sans fondu) ; réversible à chaud.
+ */
+const REDUIRE_MOUVEMENT = "(prefers-reduced-motion: reduce)";
+function appliquerReducedMotion(reduit: boolean) {
+  MotionGlobalConfig.skipAnimations = reduit;
+}
+if (typeof window !== "undefined" && window.matchMedia) {
+  const mq = window.matchMedia(REDUIRE_MOUVEMENT);
+  appliquerReducedMotion(mq.matches);
+  mq.addEventListener("change", (e) => appliquerReducedMotion(e.matches));
 }
 
 export default function App() {
@@ -209,7 +230,7 @@ function Coque() {
           className="app__frieze-inner"
           initial={{ scaleX: 0 }}
           animate={{ scaleX: 1 }}
-          transition={{ duration: 0.7, delay: ouverture ? 0.9 : 0, ease: [...COURBE.sortie] }}
+          transition={{ duration: 0.7, delay: ouverture ? DUREE_OUVERTURE_MS / 1000 : 0, ease: [...COURBE.sortie] }}
         >
           <GreekFrieze height={20} color="#C8A951" opacity={0.55} strokeWidth={1.3} />
         </motion.div>

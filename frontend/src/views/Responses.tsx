@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentChip } from "../components/AgentChip";
 import { Icon } from "../components/Icon";
@@ -10,6 +11,7 @@ import {
   type StatutReponseHermion,
 } from "../lib/api";
 import { type ResponseStatus } from "../lib/data";
+import { VARIANTES_BADGE, VARIANTES_CARTE, VARIANTES_PANNEAU } from "../lib/motion";
 import type { ToastInput } from "../lib/toast";
 import { loadUserProfile } from "../lib/userProfile";
 
@@ -23,6 +25,34 @@ const STATUS_FILTERS: { id: StatutReponseHermion | "all"; label: string }[] = [
   { id: "rejetee",      label: "Rejetées" },
   { id: "exportee",     label: "Exportées" },
 ];
+
+/** Bandeau de validation humaine : la soumission au portail reste exclusivement humaine. */
+const MESSAGES_VALIDATION: Record<StatutReponseHermion, { titre: string; detail: string }> = {
+  en_generation: {
+    titre: "Génération en cours",
+    detail: "HERMION rédige. Rien n'est validé ni soumis : relecture humaine à venir.",
+  },
+  en_attente: {
+    titre: "Validation humaine requise",
+    detail: "HERMION ne soumet jamais. Relisez, puis validez ou demandez une révision.",
+  },
+  a_modifier: {
+    titre: "Révision demandée",
+    detail: "Corrigez le contenu puis validez : la décision reste humaine.",
+  },
+  validee: {
+    titre: "Validée par un humain",
+    detail: "La soumission au portail reste manuelle : exportez le PDF puis déposez-le vous-même.",
+  },
+  rejetee: {
+    titre: "Rejetée par un humain",
+    detail: "Cette réponse ne sera pas utilisée.",
+  },
+  exportee: {
+    titre: "PDF exporté",
+    detail: "Le dépôt sur le portail reste à faire, manuellement, par vous.",
+  },
+};
 
 /** Mapping du statut backend vers le code utilisé par StatusPill (data.ts). */
 function toUiStatus(s: StatutReponseHermion): ResponseStatus {
@@ -294,12 +324,19 @@ export function Responses({ onToast, externalRefreshKey = 0 }: Props) {
                 : "Aucune réponse dans ce statut."}
             </div>
           ) : (
-            filtered.map((r) => {
+            <AnimatePresence mode="popLayout">
+            {filtered.map((r, rang) => {
               const uiStatus = toUiStatus(r.statut);
               const isSel = r.id === selectedId;
               return (
-                <article
+                <motion.article
                   key={r.id}
+                  layout="position"
+                  variants={VARIANTES_CARTE}
+                  custom={rang}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
                   className={`response-card${isSel ? " response-card--selected" : ""}`}
                   onClick={() => setSelectedId(r.id)}
                 >
@@ -315,9 +352,10 @@ export function Responses({ onToast, externalRefreshKey = 0 }: Props) {
                       {formatDate(r.cree_le).split(" ")[1] || formatDate(r.cree_le)}
                     </span>
                   </div>
-                </article>
+                </motion.article>
               );
-            })
+            })}
+            </AnimatePresence>
           )}
         </div>
 
@@ -397,7 +435,13 @@ function ResponseDetail({
     : "Utilisateur non configuré";
 
   return (
-    <div className="response-detail">
+    // Changement de réponse/version (key=detail.id côté parent) : le détail glisse.
+    <motion.div
+      className="response-detail"
+      variants={VARIANTES_PANNEAU}
+      initial="initial"
+      animate="animate"
+    >
       <aside className="response-actions">
         <div
           style={{
@@ -428,6 +472,24 @@ function ResponseDetail({
         <div style={{ marginBottom: 18 }}>
           <StatusPill status={uiStatus} />
         </div>
+
+        {/* Validation humaine mise en avant : HERMION rédige, seul l'humain valide et soumet. */}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={detail.statut}
+            className="validation-humaine"
+            data-etat={detail.statut}
+            role="status"
+            variants={VARIANTES_BADGE}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            style={{ transformOrigin: "left center" }}
+          >
+            <strong>{MESSAGES_VALIDATION[detail.statut].titre}</strong>
+            {MESSAGES_VALIDATION[detail.statut].detail}
+          </motion.div>
+        </AnimatePresence>
 
         <dl className="kv" style={{ marginBottom: 22 }}>
           <dt>Version</dt>
@@ -603,7 +665,7 @@ function ResponseDetail({
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

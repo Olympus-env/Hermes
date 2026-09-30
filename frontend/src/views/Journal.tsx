@@ -1,5 +1,7 @@
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../components/Icon";
+import { VARIANTES_ENTREE_JOURNAL } from "../lib/motion";
 import { api, type LogAgentEntry, type NiveauLog } from "../lib/api";
 
 const AGENTS: { id: string | "all"; label: string }[] = [
@@ -140,6 +142,7 @@ export function Journal({ refreshKey = 0 }: { refreshKey?: number }) {
 
       <div
         style={{
+          position: "relative",
           marginTop: 12,
           border: "1px solid var(--line)",
           borderRadius: 8,
@@ -151,9 +154,17 @@ export function Journal({ refreshKey = 0 }: { refreshKey?: number }) {
             Aucune entrée de journal pour ce filtre.
           </div>
         ) : (
-          items.map((log) => (
-            <div
+          // initial={false} : le premier chargement s'affiche d'un bloc ; ensuite les
+          // nouvelles entrées glissent en tête et le filtrage retire/insère en douceur.
+          <AnimatePresence initial={false} mode="popLayout">
+          {items.map((log) => (
+            <motion.div
               key={log.id}
+              layout="position"
+              variants={VARIANTES_ENTREE_JOURNAL}
+              initial="initial"
+              animate="animate"
+              exit="exit"
               style={{
                 display: "flex",
                 gap: 12,
@@ -205,8 +216,9 @@ export function Journal({ refreshKey = 0 }: { refreshKey?: number }) {
                   </span>
                 )}
               </span>
-            </div>
-          ))
+            </motion.div>
+          ))}
+          </AnimatePresence>
         )}
       </div>
 

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   type AnalyseKrinos,
@@ -8,6 +9,15 @@ import {
 } from "../lib/api";
 import { ConcurrenceDecp } from "../components/ConcurrenceDecp";
 import { useApi } from "../lib/useApi";
+import {
+  COURBE,
+  DUREE,
+  VARIANTES_BADGE,
+  VARIANTES_CARTE,
+  VARIANTES_PANNEAU,
+  delaiCascade,
+} from "../lib/motion";
+import { EVT_RECHERCHE, consommerDemandeRecherche } from "../lib/natif";
 import { deadlineInfo, type Tender, type TenderTag } from "../lib/data";
 import { AgentChip } from "../components/AgentChip";
 import { Deadline } from "../components/Deadline";
@@ -33,6 +43,30 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
   // Vue « Hors filtre » : AO écartés par les filtres métier ou non-appels TED
   // (masqués par défaut côté API), réintégrables via « Marquer à répondre ».
   const [horsFiltre, setHorsFiltre] = useState(false);
+  const champRecherche = useRef<HTMLInputElement>(null);
+
+  // Ctrl/Cmd+K : focus (et sélection) du champ de recherche, y compris quand le
+  // raccourci a été pressé depuis une autre vue, avant le montage de celle-ci.
+  useEffect(() => {
+    const focaliser = () => {
+      consommerDemandeRecherche();
+      champRecherche.current?.focus();
+      champRecherche.current?.select();
+    };
+    if (consommerDemandeRecherche()) focaliser();
+    window.addEventListener(EVT_RECHERCHE, focaliser);
+    return () => window.removeEventListener(EVT_RECHERCHE, focaliser);
+  }, []);
+
+  // Échap ferme le panneau de détail (sauf si un autre composant a déjà géré la touche).
+  useEffect(() => {
+    if (selectedId === null) return;
+    const surTouche = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) setSelectedId(null);
+    };
+    document.addEventListener("keydown", surTouche);
+    return () => document.removeEventListener("keydown", surTouche);
+  }, [selectedId]);
   const {
     data: page,
     error: apiError,
@@ -100,6 +134,7 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
         <div className="filter-input">
           <Icon.search />
           <input
+            ref={champRecherche}
             type="text"
             placeholder="Rechercher un appel d'offre, un émetteur…"
             value={search}
@@ -186,11 +221,18 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
               </div>
             ))}
 
-          {filtered.map((t) => {
+          <AnimatePresence mode="popLayout">
+          {filtered.map((t, rang) => {
             const isSel = t.id === selectedId;
             return (
-              <article
+              <motion.article
                 key={t.id}
+                layout="position"
+                variants={VARIANTES_CARTE}
+                custom={rang}
+                initial="initial"
+                animate="animate"
+                exit="exit"
                 className={`tender-card${isSel ? " tender-card--selected" : ""}`}
                 onClick={() => setSelectedId(isSel ? null : t.id)}
               >
@@ -220,9 +262,10 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
                   {t.analyzed ? <Score value={t.score} /> : <NonAnalyse />}
                   <Deadline date={t.deadline} />
                 </div>
-              </article>
+              </motion.article>
             );
           })}
+          </AnimatePresence>
 
           {!loading && filtered.length === 0 && (
             <div style={{ padding: "60px 20px", textAlign: "center", color: "var(--fg-3)" }}>
@@ -246,18 +289,28 @@ export function Tenders({ isLoading, refreshKey, onCountChange, onToast }: Props
           )}
         </div>
 
-        {selected && (
-          <TenderPanel
-            key={selected.id}
-            tender={selected}
-            onClose={() => setSelectedId(null)}
-            onChanged={() => {
-              setSelectedId(null);
-              void reload();
-            }}
-            onToast={onToast}
-          />
-        )}
+        <AnimatePresence mode="popLayout" initial={false}>
+          {selected && (
+            <motion.div
+              key={selected.id}
+              className="tender-panel-wrap"
+              variants={VARIANTES_PANNEAU}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <TenderPanel
+                tender={selected}
+                onClose={() => setSelectedId(null)}
+                onChanged={() => {
+                  setSelectedId(null);
+                  void reload();
+                }}
+                onToast={onToast}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -303,7 +356,10 @@ function mapAppelOffre(ao: AppelOffre): Tender {
 function HorsProfilBadge({ tender }: { tender: Tender }) {
   if (!tender.horsProfilJev) return null;
   return (
-    <span
+    <motion.span
+      variants={VARIANTES_BADGE}
+      initial="initial"
+      animate="animate"
       style={{
         fontSize: 10.5,
         fontFamily: "var(--font-mono)",
@@ -316,7 +372,7 @@ function HorsProfilBadge({ tender }: { tender: Tender }) {
       title="Jev juge cet AO hors de votre profil : il n'a pas été analysé par PYTHIA. Ouvrez-le pour forcer l'analyse."
     >
       Hors profil (Jev)
-    </span>
+    </motion.span>
   );
 }
 
@@ -644,7 +700,14 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
             </p>
           )}
           {analyse?.a_verifier && (
-            <p className="tender-panel__summary" role="alert">
+            <motion.p
+              className="tender-panel__summary"
+              role="alert"
+              variants={VARIANTES_BADGE}
+              initial="initial"
+              animate="animate"
+              style={{ transformOrigin: "left center" }}
+            >
               <strong>À vérifier</strong> :{" "}
               {analyse.suspect_injection
                 ? "le texte de cet AO contient des consignes suspectes visant à influencer l'évaluation automatique. "
@@ -654,7 +717,7 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
                 ? ` (${analyse.drapeaux.join(", ")})`
                 : ""}
               .
-            </p>
+            </motion.p>
           )}
           <p className="tender-panel__summary">{analyse?.resume ?? tender.summary}</p>
           {analyse?.score_jev != null && (
@@ -861,6 +924,7 @@ function ScoreBreakdown({
         const ratio = (value ?? 0) / 100;
         const color =
           ratio > 0.7 ? "var(--argos)" : ratio > 0.4 ? "var(--warn)" : "var(--err)";
+        const rang = SCORE_DIMENSIONS.indexOf(d);
         return (
           <div
             key={d.label}
@@ -882,11 +946,20 @@ function ScoreBreakdown({
                 border: "1px solid var(--line)",
               }}
             >
-              <div
+              {/* Jauge : se remplit en scaleX depuis la gauche */}
+              <motion.div
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: ratio }}
+                transition={{
+                  duration: DUREE.lente,
+                  delay: delaiCascade(rang),
+                  ease: [...COURBE.sortie],
+                }}
                 style={{
-                  width: `${ratio * 100}%`,
+                  width: "100%",
                   height: "100%",
                   background: color,
+                  transformOrigin: "left center",
                 }}
               />
             </div>

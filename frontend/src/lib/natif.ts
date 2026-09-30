@@ -13,6 +13,18 @@ export const VUES_RACCOURCIS: ViewKey[] = ["accueil", "tenders", "responses", "j
 /** Évènement émis par Ctrl/Cmd+K : la vue Veille peut s'y abonner pour focaliser sa recherche. */
 export const EVT_RECHERCHE = "hermes:recherche";
 
+// Demande de recherche en attente : Ctrl/Cmd+K depuis une autre vue précède le
+// montage (lazy + transition) de Veille, qui la consomme alors au démarrage.
+let rechercheEnAttente = false;
+let minuteurRecherche: number | undefined;
+
+/** Vrai (une seule fois) si Ctrl/Cmd+K a été pressé juste avant le montage de la vue. */
+export function consommerDemandeRecherche(): boolean {
+  const demande = rechercheEnAttente;
+  rechercheEnAttente = false;
+  return demande;
+}
+
 function estChampSaisie(cible: EventTarget | null): boolean {
   if (!(cible instanceof HTMLElement)) return false;
   if (cible.isContentEditable) return true;
@@ -58,8 +70,13 @@ export function installerComportementsNatifs({ onNaviguer }: Options): () => voi
     } else if (e.key.toLowerCase() === "k") {
       e.preventDefault();
       onNaviguer("tenders");
-      // Laisse la vue se monter avant de prévenir ses abonnés éventuels.
-      window.setTimeout(() => window.dispatchEvent(new Event(EVT_RECHERCHE)), 50);
+      // Vue déjà montée : l'évènement suffit ; sinon la vue lit la demande à son montage.
+      rechercheEnAttente = true;
+      window.clearTimeout(minuteurRecherche);
+      minuteurRecherche = window.setTimeout(() => {
+        rechercheEnAttente = false;
+      }, 3000);
+      window.dispatchEvent(new Event(EVT_RECHERCHE));
     }
   });
 

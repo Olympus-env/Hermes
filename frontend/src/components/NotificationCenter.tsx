@@ -240,7 +240,7 @@ export function NotificationCenter({ onOpenJournal }: Props) {
             {onOpenJournal && (
               <button
                 className="btn btn--ghost btn--sm"
-                style={{ width: "100%", borderRadius: 0, padding: "10px 0" }}
+                style={{ width: "100%", borderRadius: 0, padding: "10px 14px" }}
                 onClick={() => {
                   setOpen(false);
                   onOpenJournal();
