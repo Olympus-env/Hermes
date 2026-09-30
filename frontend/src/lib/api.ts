@@ -262,6 +262,8 @@ export type ModeleLaya = {
   precision: PrecisionLaya;
   installe: boolean;
   manquants: string[];
+  /** Fichiers présents mais altérés (SHA-256 invalide) : modèle à réinstaller. */
+  a_reinstaller: string[];
   /** Taille indicative à télécharger pour cette précision. */
   taille_octets: number;
   dossier: string;

@@ -43,6 +43,8 @@ class ModeleLayaIO(BaseModel):
     precision: str
     installe: bool
     manquants: list[str]
+    # Fichiers présents dont le SHA-256 ne correspond plus : réinstallation à confirmer.
+    a_reinstaller: list[str]
     taille_octets: int  # à télécharger pour cette précision
     dossier: str
     espace_disque_libre_octets: int
@@ -115,6 +117,7 @@ def _modele_io(precision: str, etat: laya_modele.EtatTelechargement) -> ModeleLa
         precision=statut.precision,
         installe=statut.installe or laya._moteur is not None,
         manquants=statut.manquants,
+        a_reinstaller=statut.a_reinstaller,
         taille_octets=statut.taille_octets,
         dossier=statut.dossier,
         espace_disque_libre_octets=shutil.disk_usage(parent).free,

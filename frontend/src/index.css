@@ -1157,6 +1157,35 @@ button { font-family: inherit; cursor: pointer; }
   color: var(--fg-3);
   margin-top: 2px;
 }
+/* Carte pleine largeur : bloc dense (état, actions, réglages) qui ne tient pas dans la grille
+   étiquette / contrôle de `.settings-row`. */
+.settings-carte {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 16px 18px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.settings-carte--ligne { flex-direction: row; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.settings-carte__tete { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.settings-carte__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.settings-carte__details { margin-top: 6px; }
+.settings-carte__details summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--fg-2);
+}
+.settings-carte__alerte {
+  padding: 8px 12px;
+  font-size: 11.5px;
+  color: var(--fg-2);
+  background: rgba(224,169,59,0.08);
+  border-left: 3px solid var(--warn);
+  border-radius: 4px;
+}
 
 /* Toggle */
 .toggle {

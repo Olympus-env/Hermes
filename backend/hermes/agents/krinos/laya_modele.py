@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -119,9 +120,23 @@ def _marquer_verifie(dossier: Path, fichier: FichierModele) -> None:
     tmp.replace(dossier / FICHIER_VERIFIE)
 
 
+# Empreintes déjà calculées dans ce process : (chemin, taille, mtime_ns) -> SHA-256. Un
+# fichier inchangé n'est donc haché qu'une fois ; toute modification (taille ou mtime)
+# invalide l'entrée. Volontairement non persisté : un nouveau process revérifie.
+_empreintes: dict[tuple[str, int, int], str] = {}
+# Fichiers dont l'empreinte ne correspond pas : (dossier, chemin relatif). Le modèle est
+# alors « à réinstaller » ; `fichier_valide` les refuse tant qu'ils n'ont pas été
+# re-téléchargés (avec consentement), sinon le téléchargement les croirait sains.
+_alteres: set[tuple[str, str]] = set()
+_verrou_empreintes = threading.Lock()
+
+
 def fichier_valide(dossier: Path, fichier: FichierModele) -> bool:
-    """Présent, de la bonne taille, et déjà vérifié par SHA-256 (test peu coûteux :
-    le hachage complet est fait au téléchargement, cf. `verifier_integrite`)."""
+    """Présent, de la bonne taille, déjà vérifié par SHA-256 (test peu coûteux) et pas
+    signalé altéré. Le hachage complet est refait au premier chargement du moteur du
+    process, cf. `verifier_integrite`."""
+    if (str(dossier), fichier.chemin) in _alteres:
+        return False
     chemin = dossier / fichier.chemin
     try:
         if chemin.stat().st_size != fichier.taille:
@@ -132,6 +147,7 @@ def fichier_valide(dossier: Path, fichier: FichierModele) -> bool:
 
 
 def sha256_fichier(chemin: Path) -> str:
+    """SHA-256 en streaming (blocs de 1 Mo) : jamais 650 Mo en mémoire."""
     h = hashlib.sha256()
     with chemin.open("rb") as f:
         while bloc := f.read(TAILLE_BLOC):
@@ -139,15 +155,50 @@ def sha256_fichier(chemin: Path) -> str:
     return h.hexdigest()
 
 
+def _sha256_en_cache(chemin: Path) -> str:
+    st = chemin.stat()
+    cle = (str(chemin), st.st_size, st.st_mtime_ns)
+    with _verrou_empreintes:
+        connue = _empreintes.get(cle)
+    if connue is None:
+        connue = sha256_fichier(chemin)
+        with _verrou_empreintes:
+            _empreintes[cle] = connue
+    return connue
+
+
 def verifier_integrite(precision: str, dossier: Path | None = None) -> list[str]:
-    """Hachage SHA-256 complet ; retourne les chemins invalides (liste vide = intact)."""
+    """Hachage SHA-256 complet (mis en cache par process) ; retourne les chemins invalides
+    (liste vide = intact). Met à jour l'état « à réinstaller » du dossier."""
     dossier = dossier or dossier_modele()
     invalides = []
     for f in fichiers_requis(precision):
         chemin = dossier / f.chemin
-        if not chemin.is_file() or sha256_fichier(chemin) != f.sha256:
+        try:
+            ok = chemin.is_file() and _sha256_en_cache(chemin) == f.sha256
+        except OSError:
+            ok = False
+        cle = (str(dossier), f.chemin)
+        if ok:
+            _alteres.discard(cle)
+        else:
             invalides.append(f.chemin)
+            if chemin.is_file():  # présent mais altéré ; un fichier absent est « manquant »
+                _alteres.add(cle)
     return invalides
+
+
+def alteres(precision: str, dossier: Path | None = None) -> list[str]:
+    """Fichiers signalés altérés par une vérification d'intégrité (modèle à réinstaller)."""
+    dossier = dossier or dossier_modele()
+    return [f.chemin for f in fichiers_requis(precision) if (str(dossier), f.chemin) in _alteres]
+
+
+def oublier_verifications() -> None:
+    """Remet à zéro le cache d'empreintes et l'état « altéré » (tests, réinstallation)."""
+    with _verrou_empreintes:
+        _empreintes.clear()
+        _alteres.clear()
 
 
 @dataclass(frozen=True)
@@ -155,6 +206,7 @@ class StatutModele:
     precision: str
     installe: bool
     manquants: list[str]
+    a_reinstaller: list[str]  # présents mais dont le SHA-256 ne correspond plus
     taille_octets: int  # à télécharger au total pour cette précision (indicatif)
     dossier: str
 
@@ -166,6 +218,7 @@ def statut_modele(precision: str = PRECISION_DEFAUT) -> StatutModele:
         precision=precision,
         installe=not manquants,
         manquants=manquants,
+        a_reinstaller=alteres(precision, dossier),
         taille_octets=taille_totale(precision),
         dossier=str(dossier),
     )
@@ -242,6 +295,7 @@ async def _telecharger_fichier(
         raise ErreurLaya(f"{fichier.chemin} : empreinte SHA-256 invalide (fichier rejeté)")
     partiel.replace(cible)
     _marquer_verifie(dossier, fichier)
+    _alteres.discard((str(dossier), fichier.chemin))
 
 
 async def executer_telechargement(etat: EtatTelechargement, precision: str) -> None:

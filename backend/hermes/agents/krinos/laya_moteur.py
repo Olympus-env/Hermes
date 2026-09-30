@@ -44,6 +44,19 @@ class ModeleLayaAbsent(ErreurLaya):
     """Les fichiers du modèle ne sont pas (ou plus) sur le disque."""
 
 
+class ModeleLayaAltere(ErreurLaya):
+    """Un fichier du modèle ne correspond plus à l'empreinte épinglée : chargement refusé,
+    réinstallation (avec consentement) nécessaire."""
+
+    def __init__(self, fichiers: list[str]) -> None:
+        super().__init__(
+            "modèle Laya altéré, à réinstaller (empreinte SHA-256 invalide : "
+            + ", ".join(fichiers)
+            + ")"
+        )
+        self.fichiers = fichiers
+
+
 @dataclass(frozen=True)
 class QuestionLaya:
     """Question typée. `criteres` : choice → {clé: description} ; score → liste de
@@ -259,6 +272,15 @@ def moteur_onnx(dossier: Path, precision: str, max_len: int) -> MoteurOnnx:
     with _verrou_cache:
         moteur = _moteurs.get(cle)
         if moteur is None:
+            # Premier chargement dans ce process : SHA-256 complet de chaque fichier
+            # (streaming, mis en cache par chemin + taille + mtime). Un échec refuse le
+            # chargement ; rien n'est retéléchargé sans nouveau consentement.
+            from hermes.agents.krinos.laya_modele import alteres, verifier_integrite
+
+            verifier_integrite(precision, dossier)
+            corrompus = alteres(precision, dossier)
+            if corrompus:
+                raise ModeleLayaAltere(corrompus)
             moteur = _moteurs[cle] = MoteurOnnx(dossier, precision, max_len=max_len)
         return moteur
 

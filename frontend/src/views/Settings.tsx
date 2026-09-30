@@ -1354,18 +1354,28 @@ function LayaReglage() {
     if (ok) void agir(() => api.telechargerModeleLaya(modele.precision));
   };
 
+  const aReinstaller = modele.a_reinstaller.length > 0;
+
   return (
-    <div className="settings-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+    <section className="settings-carte" aria-label="Juge Laya">
+      <div className="settings-carte__tete">
         <div>
           <div className="settings-row__label">Juge Laya (local) — optionnel</div>
           <div className="settings-row__hint">
-            Second avis sur le score KRINOS, calculé sur cette machine par le modèle open source
-            Laya (Convai Innovations, Apache 2.0) : aucune clé, aucun budget, rien ne sort de
-            l'ordinateur. Il juge tous les portails, publics ou privés. Un écart avec PYTHIA, une
-            faible confiance ou une manipulation placent l'AO « à vérifier ».
+            Second avis sur le score KRINOS, calculé sur cette machine : aucune clé, aucun budget,
+            rien ne sort de l'ordinateur. Un écart avec PYTHIA, une faible confiance ou une
+            manipulation placent l'AO « à vérifier ».
             {erreur ? ` ${erreur}` : ""}
           </div>
+          <details className="settings-carte__details">
+            <summary>En savoir plus</summary>
+            <div className="settings-row__hint">
+              Modèle open source Laya (Convai Innovations, Apache 2.0), exécuté par ONNX Runtime
+              dans le backend HERMES. Il juge tous les portails, publics ou privés. Ses fichiers
+              sont vérifiés par SHA-256 au premier chargement ; en cas d'écart, le modèle est
+              refusé et doit être réinstallé, avec votre accord.
+            </div>
+          </details>
         </div>
         <button
           className={`toggle${cfg.actif ? " toggle--on" : ""}`}
@@ -1379,17 +1389,27 @@ function LayaReglage() {
         </button>
       </div>
 
-      <div className="settings-row__hint" style={{ marginTop: 8 }}>
+      <div className="settings-row__hint">
         <strong>Modèle :</strong>{" "}
         {installe
           ? `installé (${modele.precision}, ${formatGo(modele.taille_octets)}) — ${modele.dossier}`
-          : `non installé — ${formatGo(modele.taille_octets)} à télécharger (${modele.precision})`}
+          : aReinstaller
+            ? `à réinstaller (${modele.precision}) — ${formatGo(modele.taille_octets)} à télécharger`
+            : `non installé — ${formatGo(modele.taille_octets)} à télécharger (${modele.precision})`}
         {cfg.actif && !cfg.operationnel && " — activé mais inutilisable tant que le modèle manque."}
         {cfg.operationnel && " — opérationnel."}
       </div>
 
+      {aReinstaller && (
+        <div className="settings-carte__alerte" role="alert">
+          Intégrité non vérifiée : {modele.a_reinstaller.join(", ")} ne correspond plus à
+          l'empreinte SHA-256 attendue. Laya reste désactivé ; rien n'est retéléchargé sans votre
+          accord.
+        </div>
+      )}
+
       {!installe && !prog.en_cours && (
-        <div style={{ marginTop: 8, display: "flex", gap: 12, alignItems: "center" }}>
+        <div className="settings-carte__actions">
           <label className="settings-row__hint">
             Précision{" "}
             <select
@@ -1405,13 +1425,13 @@ function LayaReglage() {
             </select>
           </label>
           <button className="btn btn--gold" disabled={busy} onClick={telecharger}>
-            Télécharger le modèle
+            {aReinstaller ? "Réinstaller le modèle" : "Télécharger le modèle"}
           </button>
         </div>
       )}
 
       {prog.en_cours && (
-        <div style={{ marginTop: 8 }}>
+        <div>
           <div
             style={{
               width: "100%",
@@ -1451,12 +1471,12 @@ function LayaReglage() {
         </div>
       )}
       {prog.erreur && !prog.en_cours && (
-        <div className="settings-row__hint" style={{ marginTop: 6, color: "var(--danger, #c0392b)" }}>
+        <div className="settings-row__hint" style={{ color: "var(--err)" }}>
           Téléchargement échoué : {prog.erreur}
         </div>
       )}
 
-      <label className="settings-row__hint" style={{ marginTop: 10 }}>
+      <label className="settings-row__hint">
         Température de calibration : {temperature.toFixed(1)}{" "}
         <input
           type="range"
@@ -1470,11 +1490,11 @@ function LayaReglage() {
           onKeyUp={() => void agir(() => api.ecrireConfigLaya({ temperature }))}
         />
         <span style={{ display: "block" }}>
-          Le modèle est livré trop confiant : au-dessus de 1, les probabilités sont aplaties (la
-          confiance baisse, plus d'AO passent « à vérifier »). 1 = sorties brutes.
+          Au-dessus de 1, les probabilités sont aplaties (la confiance baisse, plus d'AO passent
+          « à vérifier »). 1 = sorties brutes.
         </span>
       </label>
-    </div>
+    </section>
   );
 }
 
@@ -1514,15 +1534,21 @@ function JugeLocalReglage() {
   };
 
   return (
-    <div className="settings-row">
+    <section className="settings-carte settings-carte--ligne" aria-label="Juge local PYTHIA">
       <div>
         <div className="settings-row__label">Juge local anti-manipulation (PYTHIA)</div>
         <div className="settings-row__hint">
           Un appel PYTHIA court vérifie que le dossier ne cherche pas à manipuler l'évaluation
-          automatique (reformulations que les motifs ne voient pas). Fonctionne hors ligne, sur
-          tous les portails ; une détection place l'AO « à vérifier ».
+          automatique. Hors ligne ; une détection place l'AO « à vérifier ».
           {erreur ? ` ${erreur}` : ""}
         </div>
+        <details className="settings-carte__details">
+          <summary>En savoir plus</summary>
+          <div className="settings-row__hint">
+            Il repère les reformulations que les motifs locaux ne voient pas. Il fonctionne sur
+            tous les portails et n'envoie rien hors de la machine.
+          </div>
+        </details>
       </div>
       <button
         className={`toggle${actif ? " toggle--on" : ""}`}
@@ -1533,7 +1559,7 @@ function JugeLocalReglage() {
       >
         <div className="toggle__thumb" />
       </button>
-    </div>
+    </section>
   );
 }
 
@@ -1576,16 +1602,21 @@ function LayaPretriReglage() {
   };
 
   return (
-    <div className="settings-row">
+    <section className="settings-carte settings-carte--ligne" aria-label="Pré-tri Laya">
       <div>
         <div className="settings-row__label">Pré-tri de pertinence Laya — optionnel</div>
         <div className="settings-row__hint">
-          Avant l'analyse KRINOS, Laya juge la pertinence de chaque AO pour votre profil. Sous
-          le seuil, l'AO est marqué « hors profil (Laya) » et n'est pas analysé par PYTHIA ; il
-          reste visible et vous pouvez forcer l'analyse. Panne ou modèle absent : analyse
-          normale. Nécessite que Laya soit activé et installé.
+          Avant KRINOS, Laya juge la pertinence de chaque AO pour votre profil ; sous le seuil,
+          l'AO est marqué « hors profil (Laya) » et n'est pas analysé par PYTHIA.
           {erreur ? ` ${erreur}` : ""}
         </div>
+        <details className="settings-carte__details">
+          <summary>En savoir plus</summary>
+          <div className="settings-row__hint">
+            L'AO reste visible et vous pouvez forcer l'analyse. Panne ou modèle absent : analyse
+            normale. Nécessite que Laya soit activé et installé.
+          </div>
+        </details>
         <label className="settings-row__hint">
           Seuil de pertinence : {seuil} %{" "}
           <input
@@ -1610,7 +1641,7 @@ function LayaPretriReglage() {
       >
         <div className="toggle__thumb" />
       </button>
-    </div>
+    </section>
   );
 }
 

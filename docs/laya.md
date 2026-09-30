@@ -42,6 +42,14 @@ Issue #56 : Laya remplace Jev (TypeSafe) comme second avis local de KRINOS.
 - Chaque fichier est vérifié par SHA-256 avant d'être rendu visible (reprise possible sur
   `.part`, fichier corrompu rejeté). Stockage : `<dossier de données HERMES>/modeles/laya`
   (`HERMES_LAYA_DOSSIER` pour l'écraser).
+- Intégrité au chargement (#63) : au premier chargement du moteur dans le process
+  (`moteur_onnx`), `verifier_integrite` recalcule le SHA-256 complet de chaque fichier, en
+  streaming (blocs de 1 Mo, jamais 650 Mo en mémoire). Les empreintes sont mises en cache par
+  process, clé (chemin, taille, `mtime_ns`) : un fichier inchangé n'est haché qu'une fois.
+  En cas d'écart (même à taille égale), le chargement est refusé (`ModeleLayaAltere`), le
+  fichier est signalé dans `a_reinstaller` de `GET /krinos/laya/modele` (le modèle n'est plus
+  `installe`), et un log KRINOS est écrit. Rien n'est retéléchargé sans nouveau consentement ;
+  la réinstallation consentie ne remplace que les fichiers altérés.
 - Mesuré : 682 Mo (fp16) téléchargés et vérifiés en 40 s depuis cet environnement.
 
 ## Contexte retenu
