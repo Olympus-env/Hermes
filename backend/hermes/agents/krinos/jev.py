@@ -41,16 +41,22 @@ CLE_PRETRI = "krinos.jev.pretri"
 # Pré-tri : probabilité Noul « pertinent » sous laquelle l'AO est « hors profil ».
 SEUIL_PRETRI_DEFAUT = 0.3
 TOKENS_QUESTION_PRETRI = 200
+CLE_SEUILS = "krinos.jev.seuils"
 
 MAX_CARACTERES_STATE = 6000
 MAX_ESSAIS = 3
 STATUTS_REESSAI = frozenset({429, 502, 503, 504, 529})
 ATTENTE_BASE_SECONDES = 1.0
 ATTENTE_MAX_SECONDES = 10.0
+# Défauts des seuils (modifiables dans Paramètres, cf. `SeuilsJev`).
 # Divergence Jev/PYTHIA (points sur 100) au-delà de laquelle l'AO est « à vérifier ».
 SEUIL_DIVERGENCE = 25.0
 # Probabilité Noul « manipulation » à partir de laquelle on lève l'alerte.
 SEUIL_MANIPULATION = 0.5
+# Probabilité Noul « pertinence » sous laquelle l'AO est « à vérifier » (hors périmètre ?).
+SEUIL_PERTINENCE = 0.2
+# Confiance Jev (0-1) sous laquelle son avis n'est pas fiable : routage vers l'humain.
+SEUIL_CONFIANCE = 0.5
 
 # Estimation de tokens avant appel : ~3 caractères/token pour le state, plus les
 # 7 questions (~1100 tokens mesurés) et une marge pour la sortie.
@@ -157,9 +163,8 @@ class ResultatJev:
     modele: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
 
-    @property
-    def manipulation_detectee(self) -> bool:
-        return self.manipulation is not None and self.manipulation >= SEUIL_MANIPULATION
+    def manipulation_detectee(self, seuil: float = SEUIL_MANIPULATION) -> bool:
+        return self.manipulation is not None and self.manipulation >= seuil
 
     def en_dict(self) -> dict[str, Any]:
         return {
@@ -170,6 +175,55 @@ class ResultatJev:
             "manipulation": self.manipulation,
             "tokens": self.tokens,
         }
+
+
+@dataclass(frozen=True)
+class SeuilsJev:
+    """Seuils de routage de l'avis Jev (Paramètres). Défauts = constantes ci-dessus."""
+
+    divergence: float = SEUIL_DIVERGENCE  # points /100, > 0
+    manipulation: float = SEUIL_MANIPULATION  # probabilité 0-1
+    pertinence: float = SEUIL_PERTINENCE  # probabilité 0-1 (sous ce seuil : à vérifier)
+    confiance: float = SEUIL_CONFIANCE  # 0-1 (sous ce seuil : à vérifier)
+
+    def en_dict(self) -> dict[str, float]:
+        return {
+            "divergence": self.divergence,
+            "manipulation": self.manipulation,
+            "pertinence": self.pertinence,
+            "confiance": self.confiance,
+        }
+
+
+# Drapeaux issus de l'avis Jev : recalculables depuis les détails stockés.
+DRAPEAUX_JEV = frozenset(
+    {"jev:manipulation", "jev:confiance_faible", "jev:pertinence_faible", "divergence_jev_pythia"}
+)
+
+
+def drapeaux_jev(
+    *,
+    score_jev: float,
+    confiance: float | None,
+    pertinence: float | None,
+    manipulation: float | None,
+    score_pythia: float,
+    degradee: bool,
+    seuils: SeuilsJev,
+) -> list[str]:
+    """Routage par confiance : drapeaux levés par l'avis Jev. Tout drapeau = `a_verifier`
+    (décision humaine, jamais de promotion automatique). Pure : rejouable sans
+    ré-inférence à partir des valeurs stockées."""
+    drapeaux: list[str] = []
+    if manipulation is not None and manipulation >= seuils.manipulation:
+        drapeaux.append("jev:manipulation")
+    if confiance is not None and confiance < seuils.confiance:
+        drapeaux.append("jev:confiance_faible")
+    if pertinence is not None and pertinence < seuils.pertinence:
+        drapeaux.append("jev:pertinence_faible")
+    if not degradee and abs(score_jev - score_pythia) > seuils.divergence:
+        drapeaux.append("divergence_jev_pythia")
+    return drapeaux
 
 
 # --------------------------------------------------------------------------- #
@@ -223,6 +277,24 @@ def enregistrer_actif(session: Session, actif: bool) -> None:
         {"actif": bool(actif)},
         "Juge Jev (TypeSafe) — interrupteur (JSON)",
     )
+
+
+def charger_seuils(session: Session) -> SeuilsJev:
+    """Seuils depuis Paramètres ; toute valeur absente ou invalide retombe sur le défaut."""
+    data = _lire_json(session, CLE_SEUILS)
+    valeurs: dict[str, float] = {}
+    for cle, defaut in SeuilsJev().en_dict().items():
+        v = _flottant(data.get(cle))
+        borne = 100.0 if cle == "divergence" else 1.0
+        valeurs[cle] = defaut if v is None or not 0.0 <= v <= borne else v
+    if valeurs["divergence"] <= 0:
+        valeurs["divergence"] = SEUIL_DIVERGENCE
+    return SeuilsJev(**valeurs)
+
+
+def enregistrer_seuils(session: Session, seuils: SeuilsJev) -> SeuilsJev:
+    _ecrire_json(session, CLE_SEUILS, seuils.en_dict(), "Juge Jev — seuils de routage (JSON)")
+    return seuils
 
 
 def _mois_courant() -> str:

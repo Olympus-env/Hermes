@@ -281,6 +281,12 @@ async def _phase_analyse(
             await _documents_best_effort(session, ao)
             resultat = await analyser_ao(session, ao)
             rapport.ao_analyses += 1
+            # Analysé : le badge « Hors profil (Jev) » n'a plus lieu d'être (pré-tri
+            # coupé depuis le marquage, par exemple).
+            if ao.hors_profil_jev:
+                ao.hors_profil_jev = False
+                session.add(ao)
+                session.commit()
             rapport.details.append(
                 {
                     "ao_id": ao_id,

@@ -668,6 +668,15 @@ function TenderPanel({ tender, onClose, onChanged, onToast }: PanelProps) {
                 ? `, pertinence ${Math.round(analyse.details_jev.pertinence * 100)} %`
                 : ""}
               . Score PYTHIA (local) : {Math.round(analyse.score)} / 100.
+              {analyse.composite != null
+                ? ` Composite go/no-go : ${Math.round(analyse.composite)} / 100 (${
+                    analyse.verdict_composite === "go"
+                      ? "go"
+                      : analyse.verdict_composite === "no_go"
+                        ? "no-go"
+                        : "à vérifier par un humain"
+                  }, indicatif).`
+                : ""}
             </p>
           )}
         </div>

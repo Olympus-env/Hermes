@@ -158,11 +158,18 @@ async def analyser_ao(
     # Juge Jev optionnel : second avis, jamais bloquant.
     resultat_jev = await _consulter_jev(session, appel_offre, contexte, ponderation)
     if resultat_jev is not None:
-        if resultat_jev.manipulation_detectee:
-            drapeaux.append("jev:manipulation")
+        drapeaux_j = jev.drapeaux_jev(
+            score_jev=resultat_jev.score,
+            confiance=resultat_jev.confiance,
+            pertinence=resultat_jev.pertinence,
+            manipulation=resultat_jev.manipulation,
+            score_pythia=score_final,
+            degradee=degradee,
+            seuils=jev.charger_seuils(session),
+        )
+        drapeaux += drapeaux_j
+        if "jev:manipulation" in drapeaux_j:
             codes_injection.append("jev")
-        if not degradee and abs(resultat_jev.score - score_final) > jev.SEUIL_DIVERGENCE:
-            drapeaux.append("divergence_jev_pythia")
     suspect_injection = bool(codes_injection)
     a_verifier = bool(drapeaux)
 

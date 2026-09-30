@@ -149,3 +149,103 @@ def calculer_score_final(
     if somme_pond_effective == 0:
         return 0.0
     return round(somme / somme_pond_effective, 1)
+
+
+# --------------------------------------------------------------------------- #
+# Score composite go/no-go (PYTHIA + Jev + pertinence Jev) — issue #44
+# --------------------------------------------------------------------------- #
+
+CLE_COMPOSITE = "krinos.composite"
+
+
+@dataclass(frozen=True)
+class ConfigComposite:
+    """Poids (0-100) des trois composantes et seuil « go » (0-100) du composite.
+
+    Le composite est **indicatif** : il n'écrit jamais dans le statut de l'AO. Un AO
+    `a_verifier` reste en décision humaine quel que soit le score.
+    """
+
+    poids_pythia: int = 50
+    poids_jev: int = 35
+    poids_pertinence: int = 15
+    seuil_go: int = 60
+
+    def en_dict(self) -> dict[str, int]:
+        return {
+            "poids_pythia": self.poids_pythia,
+            "poids_jev": self.poids_jev,
+            "poids_pertinence": self.poids_pertinence,
+            "seuil_go": self.seuil_go,
+        }
+
+
+def charger_composite(session: Session) -> ConfigComposite:
+    entree = session.get(Parametre, CLE_COMPOSITE)
+    defaut = ConfigComposite()
+    try:
+        data = json.loads(entree.valeur) if entree is not None and entree.valeur else {}
+    except json.JSONDecodeError:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    args: dict[str, int] = {}
+    for cle, d in defaut.en_dict().items():
+        try:
+            args[cle] = max(0, min(100, int(data[cle]))) if cle in data else d
+        except (TypeError, ValueError):
+            args[cle] = d
+    return ConfigComposite(**args)
+
+
+def enregistrer_composite(session: Session, config: ConfigComposite) -> ConfigComposite:
+    payload = json.dumps(config.en_dict(), ensure_ascii=False)
+    entree = session.get(Parametre, CLE_COMPOSITE)
+    if entree is None:
+        entree = Parametre(
+            cle=CLE_COMPOSITE,
+            valeur=payload,
+            description="Score composite go/no-go — pondérations et seuil (JSON)",
+        )
+    else:
+        entree.valeur = payload
+        entree.maj_le = datetime.now(UTC)
+    session.add(entree)
+    session.commit()
+    return config
+
+
+def calculer_composite(
+    *,
+    score_pythia: float | None,
+    score_jev: float | None,
+    pertinence_jev: float | None,
+    config: ConfigComposite,
+) -> float | None:
+    """Moyenne pondérée 0-100 des composantes disponibles (poids re-normalisés).
+
+    Recalculable à tout moment depuis les valeurs stockées : aucune ré-inférence.
+    Retourne None si aucune composante n'a de poids.
+    """
+    composantes = (
+        (score_pythia, config.poids_pythia),
+        (score_jev, config.poids_jev),
+        (None if pertinence_jev is None else pertinence_jev * 100, config.poids_pertinence),
+    )
+    somme = 0.0
+    poids_total = 0
+    for valeur, poids in composantes:
+        if valeur is None or poids <= 0:
+            continue
+        somme += max(0.0, min(100.0, float(valeur))) * poids
+        poids_total += poids
+    return round(somme / poids_total, 1) if poids_total else None
+
+
+def verdict_composite(composite: float | None, config: ConfigComposite, a_verifier: bool) -> str:
+    """`a_verifier` prime toujours ; sinon `go` si composite >= seuil, `no_go` sinon."""
+    if a_verifier:
+        return "a_verifier"
+    if composite is None:
+        return "indetermine"
+    return "go" if composite >= config.seuil_go else "no_go"
