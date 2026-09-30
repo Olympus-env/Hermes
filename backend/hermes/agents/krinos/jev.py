@@ -268,7 +268,7 @@ def _ecrire_compteurs(session: Session, total_mois: int, total_jour: int) -> Non
 def estimation_eur(tokens: int) -> float | None:
     """Coût estimé en € ; None si aucun tarif n'est configuré (jamais de chiffre inventé)."""
     prix = settings.jev_prix_eur_par_mtokens
-    if prix is None or prix < 0:
+    if prix is None or not prix > 0:
         return None
     return round(tokens * prix / 1_000_000, 4)
 

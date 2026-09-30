@@ -1305,13 +1305,34 @@ function JevReglage() {
           l'avis (titre, objet, acheteur, extrait du dossier) et le profil métier général —
           jamais les réponses HERMION ni vos identifiants.{" "}
           {cfg.cle_configuree
-            ? `Budget du mois : ${cfg.tokens_consommes.toLocaleString("fr-FR")} / ${cfg.budget_tokens_mois.toLocaleString("fr-FR")} tokens (${cfg.pourcentage_budget.toLocaleString("fr-FR")} %), aujourd'hui : ${cfg.tokens_consommes_jour.toLocaleString("fr-FR")} tokens, restant : ${cfg.tokens_restants.toLocaleString("fr-FR")}. ${
-                cfg.cout_estime_mois_eur !== null
-                  ? `Coût estimé : ${cfg.cout_estime_mois_eur.toLocaleString("fr-FR")} € ce mois-ci, ${(cfg.cout_estime_jour_eur ?? 0).toLocaleString("fr-FR")} € aujourd'hui (tarif configuré : ${cfg.prix_eur_par_mtokens} €/M tokens).`
-                  : "Estimation en € indisponible : tarif non renseigné (HERMES_JEV_PRIX_EUR_PAR_MTOKENS)."
-              }`
+            ? ""
             : "Clé absente : définir HERMES_JEV_API_KEY dans l'environnement (jamais stockée ici) ; sans clé, Jev reste inactif."}
           {erreur ? ` ${erreur}` : ""}
+        </div>
+        <div
+          className="settings-row__hint"
+          style={{
+            marginTop: 8,
+            padding: "8px 12px",
+            border: "1px solid var(--border, #d4d4d8)",
+            borderRadius: 8,
+          }}
+          data-testid="jev-consommation"
+        >
+          <strong>Consommation Jev</strong>
+          {!cfg.cle_configuree ? " (clé non configurée)" : ""}
+          <div>
+            Ce mois-ci : {cfg.tokens_consommes.toLocaleString("fr-FR")} /{" "}
+            {cfg.budget_tokens_mois.toLocaleString("fr-FR")} tokens (
+            {cfg.pourcentage_budget.toLocaleString("fr-FR")} % du budget) — restant :{" "}
+            {cfg.tokens_restants.toLocaleString("fr-FR")}
+          </div>
+          <div>Aujourd'hui : {cfg.tokens_consommes_jour.toLocaleString("fr-FR")} tokens</div>
+          <div>
+            {cfg.cout_estime_mois_eur !== null
+              ? `Coût estimé : ${cfg.cout_estime_mois_eur.toLocaleString("fr-FR")} € ce mois-ci, ${(cfg.cout_estime_jour_eur ?? 0).toLocaleString("fr-FR")} € aujourd'hui (${cfg.prix_eur_par_mtokens} €/M tokens)`
+              : "Estimation en € : indisponible (tarif non renseigné, HERMES_JEV_PRIX_EUR_PAR_MTOKENS)"}
+          </div>
         </div>
       </div>
       <button

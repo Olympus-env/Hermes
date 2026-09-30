@@ -63,3 +63,22 @@ def test_api_avec_tarif_estime_en_euros(monkeypatch):
     assert data["cout_estime_mois_eur"] == 1.0
     assert data["cout_estime_jour_eur"] == 1.0
     assert data["prix_eur_par_mtokens"] == 2.5
+
+
+def test_tarif_vide_ou_invalide_ne_plante_pas(monkeypatch):
+    from hermes.config import Settings
+
+    for brut in ("", "  ", "abc", "-2", "0", "nan"):
+        monkeypatch.setenv("HERMES_JEV_PRIX_EUR_PAR_MTOKENS", brut)
+        assert Settings().jev_prix_eur_par_mtokens is None
+    monkeypatch.setenv("HERMES_JEV_PRIX_EUR_PAR_MTOKENS", "1.5")
+    assert Settings().jev_prix_eur_par_mtokens == 1.5
+
+
+def test_api_tarif_invalide_expose_none(monkeypatch):
+    monkeypatch.setattr(settings, "jev_prix_eur_par_mtokens", -2.0)
+    _remise_a_zero()
+    with TestClient(app) as client:
+        data = client.get("/krinos/jev").json()
+    assert data["prix_eur_par_mtokens"] is None
+    assert data["cout_estime_mois_eur"] is None

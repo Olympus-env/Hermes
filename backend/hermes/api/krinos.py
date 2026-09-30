@@ -353,7 +353,11 @@ def _jev_config_io(session: Session) -> JevConfigIO:
         tokens_consommes_jour=jour,
         tokens_restants=max(0, budget - mois),
         pourcentage_budget=round(100 * mois / budget, 1) if budget > 0 else 0.0,
-        prix_eur_par_mtokens=settings.jev_prix_eur_par_mtokens,
+        prix_eur_par_mtokens=(
+            settings.jev_prix_eur_par_mtokens
+            if jev.estimation_eur(1_000_000) is not None
+            else None
+        ),
         cout_estime_mois_eur=jev.estimation_eur(mois),
         cout_estime_jour_eur=jev.estimation_eur(jour),
     )

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_log = logging.getLogger("hermes.config")
 
 
 def _est_url_loopback(url: str) -> bool:
@@ -134,6 +137,21 @@ class Settings(BaseSettings):
     # (llms.txt, 30/09/2026) : pas de défaut, donc pas d'estimation en € tant que
     # l'utilisateur ne le renseigne pas (HERMES_JEV_PRIX_EUR_PAR_MTOKENS).
     jev_prix_eur_par_mtokens: float | None = None
+
+    @field_validator("jev_prix_eur_par_mtokens", mode="before")
+    @classmethod
+    def _tarif_jev_valide(cls, v: object) -> float | None:
+        """Vide, non numérique, négatif ou nul = « pas de tarif » (None), sans planter."""
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        try:
+            prix = float(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            prix = float("nan")
+        if not prix > 0 or prix == float("inf"):
+            _log.warning("HERMES_JEV_PRIX_EUR_PAR_MTOKENS invalide (%r) : tarif ignoré", v)
+            return None
+        return prix
 
     def model_post_init(self, __context: object) -> None:
         self.host = "127.0.0.1"
