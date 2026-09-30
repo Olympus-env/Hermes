@@ -12,6 +12,9 @@ import { WorkflowEditor, type WorkflowDraft } from "../components/WorkflowEditor
 import {
   api,
   type CapaciteArgos,
+  type Calibration,
+  type ConfigComposite,
+  type SeuilsJev,
   type ConfigJev,
   type ConfigOrchestration,
   type CriteresAvances,
@@ -1459,6 +1462,130 @@ function JevPretriReglage() {
   );
 }
 
+const CHAMPS_SEUILS: { id: keyof SeuilsJev; label: string; max: number; pas: number }[] = [
+  { id: "divergence", label: "Divergence Jev/PYTHIA (points)", max: 100, pas: 1 },
+  { id: "manipulation", label: "Manipulation (probabilité)", max: 1, pas: 0.05 },
+  { id: "pertinence", label: "Pertinence minimale (probabilité)", max: 1, pas: 0.05 },
+  { id: "confiance", label: "Confiance minimale de Jev", max: 1, pas: 0.05 },
+];
+
+const CHAMPS_COMPOSITE: { id: keyof ConfigComposite; label: string }[] = [
+  { id: "poids_pythia", label: "Poids PYTHIA" },
+  { id: "poids_jev", label: "Poids Jev" },
+  { id: "poids_pertinence", label: "Poids pertinence Jev" },
+  { id: "seuil_go", label: "Seuil « go » du composite" },
+];
+
+const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)} %`);
+
+/** Seuils de routage Jev, pondérations du composite go/no-go et calibration (lecture seule). */
+function JevSeuilsEtCalibration() {
+  const [seuils, setSeuils] = useState<SeuilsJev | null>(null);
+  const [composite, setComposite] = useState<ConfigComposite | null>(null);
+  const [calibration, setCalibration] = useState<Calibration | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([api.lireSeuilsJev(), api.lireComposite(), api.lireCalibration()])
+      .then(([s, c, k]) => {
+        setSeuils(s);
+        setComposite(c);
+        setCalibration(k);
+      })
+      .catch((e) => setMessage(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  if (!seuils || !composite)
+    return message ? <div className="settings-row__hint">{message}</div> : null;
+
+  const enregistrer = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      setSeuils(await api.ecrireSeuilsJev(seuils));
+      setComposite(await api.ecrireComposite(composite));
+      setCalibration(await api.lireCalibration());
+      setMessage("Réglages enregistrés (appliqués aux prochaines analyses et au recalcul).");
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="settings-row__label">Jev : seuils de routage et score composite</div>
+      <div className="settings-row__hint">
+        Sous ces seuils, l'AO passe « à vérifier » (décision humaine, jamais de promotion
+        automatique). Le composite (PYTHIA + Jev + pertinence) est indicatif et recalculé sans
+        nouvel appel à Jev.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+        {CHAMPS_SEUILS.map((c) => (
+          <label key={c.id} className="settings-row__hint">
+            {c.label}
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={c.max}
+              step={c.pas}
+              value={seuils[c.id]}
+              onChange={(e) => setSeuils({ ...seuils, [c.id]: +e.target.value })}
+            />
+          </label>
+        ))}
+        {CHAMPS_COMPOSITE.map((c) => (
+          <label key={c.id} className="settings-row__hint">
+            {c.label}
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={100}
+              step={5}
+              value={composite[c.id]}
+              onChange={(e) => setComposite({ ...composite, [c.id]: +e.target.value })}
+            />
+          </label>
+        ))}
+      </div>
+      <div style={{ marginTop: 8, display: "flex", gap: 12, alignItems: "center" }}>
+        <button className="btn btn--gold" disabled={busy} onClick={enregistrer}>
+          Enregistrer
+        </button>
+        {message && <span className="settings-row__hint">{message}</span>}
+      </div>
+
+      {calibration && (
+        <div className="settings-row__hint" style={{ marginTop: 12 }}>
+          <strong>Calibration (lecture seule)</strong> — {calibration.echantillon.total} AO
+          décidés ({calibration.echantillon.acceptes} acceptés, {calibration.echantillon.rejetes}{" "}
+          rejetés, {calibration.echantillon.avec_jev} avec avis Jev). Écart moyen Jev/PYTHIA :{" "}
+          {calibration.ecart_moyen_jev_pythia ?? "—"} pts.
+          <ul style={{ margin: "4px 0 0 16px" }}>
+            {(["pythia", "jev", "composite"] as const).map((k) => (
+              <li key={k}>
+                {k === "pythia" ? "PYTHIA" : k === "jev" ? "Jev" : "Composite"} : accord{" "}
+                {pct(calibration.sources[k].taux_accord)} au seuil {calibration.seuil_go} (n=
+                {calibration.sources[k].n})
+                {calibration.sources[k].n > 0 &&
+                  " ; par seuil : " +
+                    calibration.sources[k].matrice
+                      .map((m) => `${m.seuil}→${pct(m.taux_accord)}`)
+                      .join(", ")}
+              </li>
+            ))}
+          </ul>
+          <div style={{ marginTop: 4 }}>{calibration.heuristique}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OrchestrationSection() {
   const [cfg, setCfg] = useState<ConfigOrchestration>(CFG_DEFAUT);
   const [saved, setSaved] = useState<ConfigOrchestration>(CFG_DEFAUT);
@@ -1619,6 +1746,7 @@ function OrchestrationSection() {
           <JevReglage />
           <JugeLocalReglage />
           <JevPretriReglage />
+          <JevSeuilsEtCalibration />
 
           <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center" }}>
             <button
