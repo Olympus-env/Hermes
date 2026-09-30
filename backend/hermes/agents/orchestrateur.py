@@ -264,13 +264,13 @@ async def _phase_analyse(
     rapport: RapportOrchestration,
 ) -> None:
     """AO BRUT → docs (best-effort) → analyse KRINOS."""
-    bruts = session.exec(
-        select(AppelOffre)
-        .where(AppelOffre.statut == StatutAO.BRUT)
-        .where(AppelOffre.hors_profil_jev == False)  # noqa: E712
-        .order_by(AppelOffre.cree_le)
-        .limit(plafond)
-    ).all()
+    requete = select(AppelOffre).where(AppelOffre.statut == StatutAO.BRUT)
+    # Le marquage « hors profil (Jev) » n'écarte de PYTHIA que tant que le pré-tri
+    # est actif : sinon (réglage coupé, clé retirée) l'AO redevient analysable
+    # et ne reste jamais BRUT en silence.
+    if jev.pretri_actif(session):
+        requete = requete.where(AppelOffre.hors_profil_jev == False)  # noqa: E712
+    bruts = session.exec(requete.order_by(AppelOffre.cree_le).limit(plafond)).all()
 
     for ao in bruts:
         ao_id = ao.id
@@ -317,6 +317,10 @@ async def _pretri_jev(session: Session, ao: AppelOffre) -> bool:
     """
     if not jev.pretri_actif(session):
         return False
+    # Déjà évalué (jugé pertinent puis analyse échouée, ou analyse forcée par
+    # l'utilisateur) : ne pas consommer de budget Jev à chaque cycle.
+    if ao.pertinence_jev is not None:
+        return False
     portail = session.get(Portail, ao.portail_id) if ao.portail_id else None
     if portail is None or portail.type != TypePortail.PUBLIC:
         return False
@@ -326,8 +330,8 @@ async def _pretri_jev(session: Session, ao: AppelOffre) -> bool:
         objet=ao.objet or "",
         acheteur=ao.emetteur or "",
         type_marche=ao.type_marche or "",
-        budget="",
-        date_limite="",
+        budget=f"{ao.budget_estime} {ao.devise}" if ao.budget_estime else "",
+        date_limite=ao.date_limite.isoformat() if ao.date_limite else "",
         profil_metier=_profil_metier(session),
         extrait_documents="",
     )

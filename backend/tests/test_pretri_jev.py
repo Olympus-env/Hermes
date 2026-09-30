@@ -203,3 +203,52 @@ def test_forcer_analyse_leve_le_marquage_et_reglage_api(monkeypatch):
     monkeypatch.setattr(api_krinos, "extraire_documents_appel_offre_async", faux_extraire)
     client.post(f"/krinos/appels-offre/{ao_id}/analyser", json={"forcer": True})
     assert client.get(f"/appels-offre/{ao_id}").json()["hors_profil_jev"] is False
+
+
+def test_marquage_non_bloquant_si_pretri_desactive(monkeypatch):
+    init_db()
+    with Session(get_engine()) as s:
+        ao_id = _ao(s)
+        ao = s.get(AppelOffre, ao_id)
+        ao.hors_profil_jev = True
+        ao.pertinence_jev = 0.05
+        s.add(ao)
+        s.commit()
+    appels: list = []
+    rapport = _lancer(monkeypatch, 0.0, appels)  # pré-tri désactivé
+    assert appels == []
+    assert rapport.ao_analyses == 1
+
+
+def test_ao_deja_evalue_pas_reevalue(monkeypatch):
+    init_db()
+    _activer_pretri(0.3)
+    with Session(get_engine()) as s:
+        ao_id = _ao(s)
+        ao = s.get(AppelOffre, ao_id)
+        ao.pertinence_jev = 0.05  # p. ex. analyse forcée puis échec
+        s.add(ao)
+        s.commit()
+    appels: list = []
+    rapport = _lancer(monkeypatch, 0.0, appels)
+    assert appels == []
+    assert rapport.ao_analyses == 1
+
+
+def test_state_pretri_contient_budget_et_date_limite(monkeypatch):
+    from datetime import UTC, datetime
+
+    init_db()
+    _activer_pretri(0.3)
+    with Session(get_engine()) as s:
+        ao_id = _ao(s)
+        ao = s.get(AppelOffre, ao_id)
+        ao.budget_estime = 120000.0
+        ao.date_limite = datetime(2026, 12, 1, tzinfo=UTC)
+        s.add(ao)
+        s.commit()
+    appels: list = []
+    _lancer(monkeypatch, 0.8, appels)
+    avis = appels[0]["state"]["avis"]
+    assert "120000" in avis["budget_estime"]
+    assert avis["date_limite"].startswith("2026-12-01")
