@@ -17,7 +17,7 @@ import { Sidebar, type ViewKey } from "./components/Sidebar";
 import { Toast } from "./components/Toast";
 import { Topbar } from "./components/Topbar";
 import { api } from "./lib/api";
-import { COURBE, VARIANTES_ELEMENT, VARIANTES_LISTE, VARIANTES_VUE } from "./lib/motion";
+import { COURBE, DUREE, VARIANTES_ELEMENT, VARIANTES_LISTE, VARIANTES_VUE } from "./lib/motion";
 import { installerComportementsNatifs } from "./lib/natif";
 import { type AgentKey, type AgentState } from "./lib/data";
 import type { ToastInput } from "./lib/toast";
@@ -234,7 +234,7 @@ function Coque() {
           className="app__frieze-inner"
           initial={{ scaleX: 0 }}
           animate={{ scaleX: 1 }}
-          transition={{ duration: 0.7, delay: ouverture ? DUREE_OUVERTURE_MS / 1000 : 0, ease: [...COURBE.sortie] }}
+          transition={{ duration: DUREE.frise, delay: ouverture ? DUREE_OUVERTURE_MS / 1000 : 0, ease: [...COURBE.sortie] }}
         >
           <GreekFrieze height={20} color="#C8A951" opacity={0.55} strokeWidth={1.3} />
         </motion.div>
@@ -307,6 +307,7 @@ function Coque() {
                       agents={agents}
                       isLoading={isLoading}
                       onTriggerCycle={triggerCycle}
+                      refreshKey={tendersRefreshKey}
                     />
                   )}
                   {active === "tenders" && (
