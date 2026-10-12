@@ -349,6 +349,25 @@ def etat_scheduler() -> dict:
     return scheduler_global.etat()
 
 
+def _exiger_scheduler_demarre(ok: bool) -> None:
+    if not ok:
+        raise HTTPException(status_code=409, detail="Le planificateur ARGOS n'est pas démarré.")
+
+
+@router.post("/planificateur/pause")
+def mettre_en_pause_planificateur() -> dict:
+    """Suspend les cycles automatiques ARGOS (menu « Mettre en pause » du tray)."""
+    _exiger_scheduler_demarre(scheduler_global.mettre_en_pause())
+    return scheduler_global.etat()
+
+
+@router.post("/planificateur/reprise")
+def reprendre_planificateur() -> dict:
+    """Relance les cycles automatiques ARGOS."""
+    _exiger_scheduler_demarre(scheduler_global.reprendre())
+    return scheduler_global.etat()
+
+
 @router.post("/scheduler/sync")
 def synchroniser_scheduler() -> dict:
     scheduler_global.synchroniser_jobs()

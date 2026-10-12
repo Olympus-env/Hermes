@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.base import STATE_PAUSED
 from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
 from sqlmodel import Session, select
@@ -45,6 +46,33 @@ class ArgosScheduler:
     @property
     def en_marche(self) -> bool:
         return self._sched is not None and self._sched.running
+
+    @property
+    def en_pause(self) -> bool:
+        return self._sched is not None and self._sched.state == STATE_PAUSED
+
+    def mettre_en_pause(self) -> bool:
+        """Suspend tous les cycles planifiés (les jobs restent programmés).
+
+        Seuls les cycles automatiques s'arrêtent : une collecte lancée à la main
+        (`POST /argos/collecter`) reste possible. Renvoie faux si le scheduler
+        n'est pas démarré. Idempotent.
+        """
+        if self._sched is None or not self._sched.running:
+            return False
+        if not self.en_pause:
+            self._sched.pause()
+            logger.info("ARGOS scheduler en pause")
+        return True
+
+    def reprendre(self) -> bool:
+        """Relance les cycles planifiés. Idempotent ; faux si non démarré."""
+        if self._sched is None or not self._sched.running:
+            return False
+        if self.en_pause:
+            self._sched.resume()
+            logger.info("ARGOS scheduler repris")
+        return True
 
     def demarrer(self) -> None:
         if self.en_marche:
@@ -119,9 +147,10 @@ class ArgosScheduler:
 
     def etat(self) -> dict[str, Any]:
         if self._sched is None:
-            return {"en_marche": False, "jobs": []}
+            return {"en_marche": False, "en_pause": False, "jobs": []}
         return {
             "en_marche": self.en_marche,
+            "en_pause": self.en_pause,
             "jobs": [
                 {
                     "id": j.id,

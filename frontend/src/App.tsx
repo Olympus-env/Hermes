@@ -21,6 +21,11 @@ import { COURBE, DUREE, VARIANTES_ELEMENT, VARIANTES_LISTE, VARIANTES_VUE } from
 import { installerComportementsNatifs } from "./lib/natif";
 import { type AgentKey, type AgentState } from "./lib/data";
 import type { ToastInput } from "./lib/toast";
+import {
+  chargerPreferencesBureau,
+  enregistrerPreferencesBureau,
+  synchroniserPauseTray,
+} from "./lib/desktop";
 import { useIntegrationBureau } from "./lib/useIntegrationBureau";
 import {
   isOnboardingDone,
@@ -94,6 +99,7 @@ function Coque() {
   });
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
   const [prochainCycleMs, setProchainCycleMs] = useState<number | null>(null);
+  const [veilleEnPause, setVeilleEnPause] = useState(false);
   const [maintenant, setMaintenant] = useState(() => Date.now());
   const [tendersRefreshKey, setTendersRefreshKey] = useState(0);
   const [tenderCount, setTenderCount] = useState(0);
@@ -161,7 +167,10 @@ function Coque() {
       const echeances = etat.jobs
         .map((j) => (j.prochaine_execution ? Date.parse(j.prochaine_execution) : NaN))
         .filter((t) => !Number.isNaN(t));
-      setProchainCycleMs(etat.en_marche && echeances.length ? Math.min(...echeances) : null);
+      setProchainCycleMs(
+        etat.en_marche && !etat.en_pause && echeances.length ? Math.min(...echeances) : null,
+      );
+      setVeilleEnPause(etat.en_pause);
     } catch {
       // Pas critique — on garde l'échéance précédente
     }
@@ -177,6 +186,31 @@ function Coque() {
     const id = setInterval(() => setMaintenant(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  // Pause/reprise de la veille ARGOS (menu du tray ou bouton de la Topbar) : c'est le
+  // backend qui fait foi ; la pause coupe aussi les notifications système.
+  const basculerPause = useCallback(async () => {
+    try {
+      const etat = await (veilleEnPause ? api.reprendreArgos() : api.mettreEnPauseArgos());
+      setVeilleEnPause(etat.en_pause);
+      void rafraichirScheduler();
+    } catch (error) {
+      setToast({
+        title: "ARGOS",
+        app: "Pause impossible",
+        msg: error instanceof Error ? error.message : "Le planificateur ARGOS ne répond pas.",
+        agent: "argos",
+      });
+    }
+  }, [veilleEnPause, rafraichirScheduler]);
+
+  useEffect(() => {
+    const prefs = chargerPreferencesBureau();
+    if (prefs.pause !== veilleEnPause) {
+      enregistrerPreferencesBureau({ ...prefs, pause: veilleEnPause });
+    }
+    void synchroniserPauseTray(veilleEnPause);
+  }, [veilleEnPause]);
 
   const nextCycle = formaterCompteARebours(prochainCycleMs, maintenant);
 
@@ -222,7 +256,11 @@ function Coque() {
   }, [rafraichirScheduler]);
 
   // Intégration système (Tauri) : notifications, menu du tray. Inerte en mode web.
-  useIntegrationBureau({ naviguer: setActive, lancerVeille: triggerCycle });
+  useIntegrationBureau({
+    naviguer: setActive,
+    lancerVeille: triggerCycle,
+    basculerPause,
+  });
 
   return (
     <div className="app">
@@ -253,6 +291,8 @@ function Coque() {
           active={active}
           agents={agents}
           nextCycle={nextCycle}
+          enPause={veilleEnPause}
+          onTogglePause={basculerPause}
           profile={profile}
           isLoading={isLoading}
           onLaunchArgos={triggerCycle}

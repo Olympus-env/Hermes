@@ -26,7 +26,7 @@ export type PreferencesBureau = {
   panneArgos: boolean;
   /** Fermer la fenêtre réduit HERMES dans la zone de notification. */
   reduireDansTray: boolean;
-  /** Silence temporaire (menu « Mettre en pause » du tray). */
+  /** Reflet de la pause ARGOS (menu « Mettre en pause » du tray) : coupe aussi les notifications. */
   pause: boolean;
 };
 
@@ -68,6 +68,17 @@ export async function synchroniserReductionTray(actif: boolean): Promise<void> {
     await invoke("definir_reduire_dans_tray", { actif });
   } catch {
     // Pas critique : la fermeture de la fenêtre quitte alors normalement l'app.
+  }
+}
+
+/** Met à jour le libellé « Mettre en pause / Reprendre la veille » du menu du tray. */
+export async function synchroniserPauseTray(enPause: boolean): Promise<void> {
+  if (!estTauri()) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("definir_pause_tray", { enPause });
+  } catch {
+    // Confort uniquement : le libellé du menu reste inchangé.
   }
 }
 
@@ -147,16 +158,12 @@ export async function enregistrerPdf(blob: Blob, nomFichier: string): Promise<st
     telechargerViaNavigateur(blob, nomFichier);
     return null;
   }
-  const { save } = await import("@tauri-apps/plugin-dialog");
-  const chemin = await save({
-    defaultPath: nomFichier,
-    filters: [{ name: "Document PDF", extensions: ["pdf"] }],
-  });
-  if (!chemin) return null;
+  // Le dialogue est ouvert côté Rust, qui mémorise le chemin choisi : `enregistrer_fichier`
+  // n'écrit qu'à cet emplacement, une seule fois (la webview ne choisit jamais le chemin).
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("enregistrer_fichier", new Uint8Array(await blob.arrayBuffer()), {
-    headers: { chemin: encodeURIComponent(chemin) },
-  });
+  const chemin = await invoke<string | null>("choisir_destination_pdf", { nomDefaut: nomFichier });
+  if (!chemin) return null;
+  await invoke("enregistrer_fichier", new Uint8Array(await blob.arrayBuffer()));
   return chemin;
 }
 

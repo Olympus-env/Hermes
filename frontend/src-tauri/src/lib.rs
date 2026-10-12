@@ -471,6 +471,28 @@ struct ReglageTray {
     reduire_a_la_fermeture: AtomicBool,
 }
 
+/// Destination du dernier dialogue « Enregistrer sous » : seul chemin que
+/// `enregistrer_fichier` accepte, et une seule fois (le frontend ne choisit jamais le chemin).
+#[derive(Default)]
+struct DestinationExport(Mutex<Option<PathBuf>>);
+
+impl DestinationExport {
+    fn memoriser(&self, chemin: PathBuf) {
+        if let Ok(mut guard) = self.0.lock() {
+            *guard = Some(chemin);
+        }
+    }
+
+    /// Retire la destination mémorisée : un second appel sans nouveau dialogue échoue.
+    fn consommer(&self) -> Option<PathBuf> {
+        self.0.lock().ok().and_then(|mut guard| guard.take())
+    }
+}
+
+/// Entrée « pause » du menu du tray, gardée pour en changer le libellé.
+#[derive(Default)]
+struct ItemPauseTray(Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>);
+
 /// Événements émis vers le frontend par le menu du tray.
 const EVENT_TRAY_VEILLE: &str = "hermes-tray-veille";
 const EVENT_TRAY_PAUSE: &str = "hermes-tray-pause";
@@ -495,15 +517,26 @@ fn afficher_fenetre(app: &tauri::AppHandle) {
     }
 }
 
+const LIBELLE_PAUSE: &str = "Mettre la veille en pause";
+const LIBELLE_REPRISE: &str = "Reprendre la veille";
+
 fn construire_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-    use tauri::Emitter;
+    use tauri::{Emitter, Manager};
 
+    // « pause » : le frontend appelle POST /argos/planificateur/pause|reprise selon l'état
+    // réel du backend, puis renvoie le libellé adapté via `definir_pause_tray`.
+    let item_pause = MenuItemBuilder::with_id("pause", LIBELLE_PAUSE).build(app)?;
+    if let Some(garde) = app.try_state::<ItemPauseTray>() {
+        if let Ok(mut guard) = garde.0.lock() {
+            *guard = Some(item_pause.clone());
+        }
+    }
     let menu = MenuBuilder::new(app)
         .item(&MenuItemBuilder::with_id("ouvrir", "Ouvrir HERMES").build(app)?)
         .item(&MenuItemBuilder::with_id("veille", "Lancer une veille maintenant").build(app)?)
-        .item(&MenuItemBuilder::with_id("pause", "Mettre en pause / reprendre").build(app)?)
+        .item(&item_pause)
         .separator()
         .item(&MenuItemBuilder::with_id("quitter", "Quitter").build(app)?)
         .build()?;
@@ -549,49 +582,112 @@ fn definir_reduire_dans_tray(actif: bool, reglage: tauri::State<'_, ReglageTray>
         .store(actif, Ordering::Relaxed);
 }
 
-/// Écrit un export PDF à l'emplacement choisi via le dialogue natif « Enregistrer sous ».
-/// Corps brut = octets du fichier ; chemin en en-tête `chemin` (encodeURIComponent).
+/// Libellé de l'entrée « pause » du tray selon l'état réel de la veille ARGOS.
 #[tauri::command]
-fn enregistrer_fichier(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+fn definir_pause_tray(en_pause: bool, item: tauri::State<'_, ItemPauseTray>) {
+    if let Ok(guard) = item.0.lock() {
+        if let Some(entree) = guard.as_ref() {
+            let _ = entree.set_text(if en_pause {
+                LIBELLE_REPRISE
+            } else {
+                LIBELLE_PAUSE
+            });
+        }
+    }
+}
+
+/// Ouvre le dialogue natif « Enregistrer sous » pour un export PDF et mémorise le
+/// chemin choisi (à usage unique, consommé par `enregistrer_fichier`).
+/// Renvoie le chemin, ou `None` si l'utilisateur annule.
+#[tauri::command]
+async fn choisir_destination_pdf(
+    app: tauri::AppHandle,
+    nom_defaut: String,
+    destination: tauri::State<'_, DestinationExport>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let choix = app
+        .dialog()
+        .file()
+        .set_file_name(nom_defaut)
+        .add_filter("Document PDF", &["pdf"])
+        .blocking_save_file();
+    let Some(choix) = choix else {
+        return Ok(None);
+    };
+    let chemin = choix
+        .into_path()
+        .map_err(|e| format!("Chemin de destination invalide : {e}"))?;
+    let chemin = normaliser_extension_pdf(chemin)?;
+    let affichage = chemin.display().to_string();
+    destination.memoriser(chemin);
+    Ok(Some(affichage))
+}
+
+/// Un export est toujours un `.pdf` : extension absente → ajoutée, autre → refus.
+fn normaliser_extension_pdf(chemin: PathBuf) -> Result<PathBuf, String> {
+    match chemin
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("pdf") => Ok(chemin),
+        None => Ok(chemin.with_extension("pdf")),
+        Some(_) => Err("Seuls les exports PDF peuvent être enregistrés.".into()),
+    }
+}
+
+/// Écrit l'export PDF (corps brut de la requête = octets du fichier) à l'emplacement
+/// choisi par le dernier `choisir_destination_pdf`. La destination est consommée :
+/// sans nouveau dialogue, tout appel suivant échoue.
+#[tauri::command]
+fn enregistrer_fichier(
+    request: tauri::ipc::Request<'_>,
+    destination: tauri::State<'_, DestinationExport>,
+) -> Result<(), String> {
+    let chemin = destination.consommer().ok_or_else(|| {
+        "Aucune destination choisie : ouvrez d'abord « Enregistrer sous ».".to_string()
+    })?;
     let tauri::ipc::InvokeBody::Raw(octets) = request.body() else {
         return Err("Contenu du fichier manquant.".into());
     };
-    let brut = request
-        .headers()
-        .get("chemin")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| "Chemin de destination manquant.".to_string())?;
-    let chemin = PathBuf::from(decoder_url(brut));
-    let extension = chemin
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase);
-    if extension.as_deref() != Some("pdf") {
-        return Err("Seuls les exports PDF peuvent être enregistrés.".into());
-    }
     fs::write(&chemin, octets).map_err(|e| format!("Écriture de {} : {e}", chemin.display()))
 }
 
-/// Décodage « percent-encoding » minimal (en-tête produit par encodeURIComponent).
-fn decoder_url(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Some(v) = s
-                .get(i + 1..i + 3)
-                .and_then(|h| u8::from_str_radix(h, 16).ok())
-            {
-                out.push(v);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn destination_a_usage_unique() {
+        let destination = DestinationExport::default();
+        assert!(destination.consommer().is_none(), "rien sans dialogue");
+        destination.memoriser(PathBuf::from("export.pdf"));
+        assert_eq!(destination.consommer(), Some(PathBuf::from("export.pdf")));
+        assert!(destination.consommer().is_none(), "déjà consommée");
     }
-    String::from_utf8_lossy(&out).into_owned()
+
+    #[test]
+    fn nouvelle_selection_remplace_la_precedente() {
+        let destination = DestinationExport::default();
+        destination.memoriser(PathBuf::from("a.pdf"));
+        destination.memoriser(PathBuf::from("b.pdf"));
+        assert_eq!(destination.consommer(), Some(PathBuf::from("b.pdf")));
+    }
+
+    #[test]
+    fn extension_pdf_imposee() {
+        assert_eq!(
+            normaliser_extension_pdf(PathBuf::from("x.PDF")),
+            Ok(PathBuf::from("x.PDF"))
+        );
+        assert_eq!(
+            normaliser_extension_pdf(PathBuf::from("x")),
+            Ok(PathBuf::from("x.pdf"))
+        );
+        assert!(normaliser_extension_pdf(PathBuf::from("x.exe")).is_err());
+    }
 }
 
 // --------------------------------------------------------------------------- //
@@ -615,8 +711,12 @@ pub fn run() {
         )
         .manage(Mutex::<ServiceState>::default())
         .manage(ReglageTray::default())
+        .manage(DestinationExport::default())
+        .manage(ItemPauseTray::default())
         .invoke_handler(tauri::generate_handler![
             definir_reduire_dans_tray,
+            definir_pause_tray,
+            choisir_destination_pdf,
             enregistrer_fichier
         ])
         .setup(|app| {
