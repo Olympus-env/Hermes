@@ -173,7 +173,11 @@ class Document(SQLModel, table=True):
     chemin_local: str  # chemin relatif sous storage/
     type: TypeDocument = TypeDocument.AUTRE
     taille_octets: int = 0
+    # Référence d'intégrité figée au téléchargement : jamais réécrite ensuite.
     checksum_sha256: str = Field(index=True)
+    # False dès que le fichier sur disque ne correspond plus au checksum
+    # (modification externe) : KRINOS n'extrait ni n'analyse alors le document.
+    integrite_ok: bool = Field(default=True, sa_column_kwargs={"server_default": "1"})
 
     contenu_extrait: Optional[str] = Field(default=None, sa_column=Column(Text))
 

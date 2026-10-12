@@ -154,6 +154,7 @@ def _migrer_colonnes(conn) -> None:
         ("appels_offre", "pertinence_laya", "FLOAT"),
         ("appels_offre", "archive", "BOOLEAN NOT NULL DEFAULT 0"),
         ("documents", "purge_le", "DATETIME"),
+        ("documents", "integrite_ok", "BOOLEAN NOT NULL DEFAULT 1"),
     ]
     for table, colonne, definition in migrations:
         cols = {

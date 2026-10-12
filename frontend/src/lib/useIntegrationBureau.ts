@@ -4,20 +4,24 @@ import { api } from "./api";
 import {
   chargerPreferencesBureau,
   ecouterEvenementTray,
-  enregistrerPreferencesBureau,
   estTauri,
   notifierBureau,
   synchroniserReductionTray,
 } from "./desktop";
 
 const SONDAGE_MS = 60_000;
-// Le plugin de notification ne remonte pas le clic sur desktop : on retient la vue
-// de la dernière notification et on y navigue quand la fenêtre reprend le focus.
+// Clic sur une notification : `tauri-plugin-notification` v2 n'expose `onAction` que sur
+// mobile ; sur desktop (Windows, via notify-rust) aucun callback de clic n'existe (vérifié
+// sur le plugin 2.5.0 : desktop.rs ne gère que titre, corps, icône et son ; issue #74).
+// Contournement : on retient la vue de la dernière notification et on y navigue quand la
+// fenêtre reprend le focus. À remplacer par `onAction` si le plugin le permet un jour.
 const FENETRE_CLIC_MS = 5 * 60_000;
 
 type Options = {
   naviguer: (vue: ViewKey) => void;
   lancerVeille: () => void;
+  /** Pause/reprise de la veille ARGOS (côté backend), déclenchée par le menu du tray. */
+  basculerPause: () => void;
 };
 
 /**
@@ -25,9 +29,9 @@ type Options = {
  * notifications (nouvel AO pertinent, réponse prête, panne ARGOS), événements du
  * menu du tray et synchronisation du réglage « réduire à la fermeture ».
  */
-export function useIntegrationBureau({ naviguer, lancerVeille }: Options) {
-  const rappels = useRef({ naviguer, lancerVeille });
-  rappels.current = { naviguer, lancerVeille };
+export function useIntegrationBureau({ naviguer, lancerVeille, basculerPause }: Options) {
+  const rappels = useRef({ naviguer, lancerVeille, basculerPause });
+  rappels.current = { naviguer, lancerVeille, basculerPause };
 
   useEffect(() => {
     if (!estTauri()) return;
@@ -136,10 +140,7 @@ export function useIntegrationBureau({ naviguer, lancerVeille }: Options) {
     void ecouterEvenementTray("hermes-tray-veille", () => rappels.current.lancerVeille()).then(
       (off) => (annule ? off() : desabonnements.push(off)),
     );
-    void ecouterEvenementTray("hermes-tray-pause", () => {
-      const prefs = chargerPreferencesBureau();
-      enregistrerPreferencesBureau({ ...prefs, pause: !prefs.pause });
-    }).then((off) => (annule ? off() : desabonnements.push(off)));
+    void ecouterEvenementTray("hermes-tray-pause", () => rappels.current.basculerPause()).then((off) => (annule ? off() : desabonnements.push(off)));
 
     return () => {
       annule = true;

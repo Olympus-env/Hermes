@@ -19,6 +19,7 @@ import json
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -129,6 +130,8 @@ _empreintes: dict[tuple[str, int, int], str] = {}
 # re-téléchargés (avec consentement), sinon le téléchargement les croirait sains.
 _alteres: set[tuple[str, str]] = set()
 _verrou_empreintes = threading.Lock()
+# Date (UTC) de la dernière vérification SHA-256 complète de ce process, None si aucune.
+_derniere_verification: datetime | None = None
 
 
 def fichier_valide(dossier: Path, fichier: FichierModele) -> bool:
@@ -170,6 +173,7 @@ def _sha256_en_cache(chemin: Path) -> str:
 def verifier_integrite(precision: str, dossier: Path | None = None) -> list[str]:
     """Hachage SHA-256 complet (mis en cache par process) ; retourne les chemins invalides
     (liste vide = intact). Met à jour l'état « à réinstaller » du dossier."""
+    global _derniere_verification
     dossier = dossier or dossier_modele()
     invalides = []
     for f in fichiers_requis(precision):
@@ -185,7 +189,46 @@ def verifier_integrite(precision: str, dossier: Path | None = None) -> list[str]
             invalides.append(f.chemin)
             if chemin.is_file():  # présent mais altéré ; un fichier absent est « manquant »
                 _alteres.add(cle)
+    _derniere_verification = datetime.now(UTC)
     return invalides
+
+
+def derniere_verification() -> datetime | None:
+    return _derniere_verification
+
+
+def lancer_verification_fond(precision: str) -> threading.Thread:
+    """Vérifie l'intégrité (SHA-256, **aucun appel réseau**) dans un thread daemon : le
+    démarrage du backend n'attend pas le hachage de ~650 Mo. Ne lève jamais."""
+
+    def _tache() -> None:
+        try:
+            verifier_integrite(precision)
+        except Exception:  # noqa: BLE001 — une vérification ratée ne doit rien casser
+            pass
+
+    thread = threading.Thread(target=_tache, name="laya-integrite", daemon=True)
+    thread.start()
+    return thread
+
+
+@dataclass(frozen=True)
+class FichierConcerne:
+    chemin: str
+    taille: int  # octets réellement à (re)télécharger
+    raison: str  # "manquant" ou "altere"
+
+
+def fichiers_concernes(precision: str, dossier: Path | None = None) -> list[FichierConcerne]:
+    """Fichiers qu'une (ré)installation retéléchargerait, avec leur taille réelle."""
+    dossier = dossier or dossier_modele()
+    return [
+        FichierConcerne(
+            f.chemin, f.taille, "altere" if (str(dossier), f.chemin) in _alteres else "manquant"
+        )
+        for f in fichiers_requis(precision)
+        if not fichier_valide(dossier, f)
+    ]
 
 
 def alteres(precision: str, dossier: Path | None = None) -> list[str]:
@@ -196,9 +239,11 @@ def alteres(precision: str, dossier: Path | None = None) -> list[str]:
 
 def oublier_verifications() -> None:
     """Remet à zéro le cache d'empreintes et l'état « altéré » (tests, réinstallation)."""
+    global _derniere_verification
     with _verrou_empreintes:
         _empreintes.clear()
         _alteres.clear()
+        _derniere_verification = None
 
 
 @dataclass(frozen=True)
@@ -207,18 +252,23 @@ class StatutModele:
     installe: bool
     manquants: list[str]
     a_reinstaller: list[str]  # présents mais dont le SHA-256 ne correspond plus
+    concernes: list[FichierConcerne]
+    taille_a_telecharger: int  # somme des fichiers concernés (0 si modèle installé)
     taille_octets: int  # à télécharger au total pour cette précision (indicatif)
     dossier: str
 
 
 def statut_modele(precision: str = PRECISION_DEFAUT) -> StatutModele:
     dossier = dossier_modele()
-    manquants = [f.chemin for f in fichiers_requis(precision) if not fichier_valide(dossier, f)]
+    concernes = fichiers_concernes(precision, dossier)
+    manquants = [c.chemin for c in concernes]
     return StatutModele(
         precision=precision,
         installe=not manquants,
         manquants=manquants,
         a_reinstaller=alteres(precision, dossier),
+        concernes=concernes,
+        taille_a_telecharger=sum(c.taille for c in concernes),
         taille_octets=taille_totale(precision),
         dossier=str(dossier),
     )

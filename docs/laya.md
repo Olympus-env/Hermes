@@ -50,6 +50,20 @@ Issue #56 : Laya remplace Jev (TypeSafe) comme second avis local de KRINOS.
   fichier est signalé dans `a_reinstaller` de `GET /krinos/laya/modele` (le modèle n'est plus
   `installe`), et un log KRINOS est écrit. Rien n'est retéléchargé sans nouveau consentement ;
   la réinstallation consentie ne remplace que les fichiers altérés.
+- Vérification de fond au démarrage (#68) : si Laya est activé, le lifespan lance
+  `lancer_verification_fond`, un thread daemon qui exécute `verifier_integrite`. Aucun appel
+  réseau, le démarrage n'attend pas le hachage ; l'état « à réinstaller » est donc visible
+  avant le premier chargement du moteur.
+- Vérification à la demande (#68) : `POST /krinos/laya/modele/verifier` (hachage hors boucle
+  d'événements, local, rien n'est retéléchargé) et bouton « Vérifier l'intégrité » dans
+  Paramètres (Pipeline autonome).
+- `GET /krinos/laya/modele` expose `fichiers_concernes` (chemin, `taille_octets` réelle,
+  `raison` : `manquant` ou `altere`), `taille_a_telecharger_octets` (somme de ces fichiers) et
+  `verifie_le` (dernière vérification complète de ce process, UTC, `null` si aucune). Le
+  dialogue de réinstallation liste ces fichiers et leur taille.
+- Limite du cache : la clé (chemin, taille, `mtime_ns`) ne voit pas une altération qui
+  conserve la taille et restaure le `mtime`. Un moteur ONNX déjà chargé reste en mémoire
+  après une altération ; `est_actif` bloque néanmoins les appels suivants.
 - Mesuré : 682 Mo (fp16) téléchargés et vérifiés en 40 s depuis cet environnement.
 
 ## Contexte retenu

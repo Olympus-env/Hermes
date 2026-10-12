@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 
 import pytest
@@ -336,7 +337,7 @@ def test_extraction_async_persiste(monkeypatch, tmp_path):
                 chemin_local="a.txt",
                 type=TypeDocument.AUTRE,
                 taille_octets=0,
-                checksum_sha256="",
+                checksum_sha256=hashlib.sha256(b"contenu DCE").hexdigest(),
             )
         )
         session.commit()

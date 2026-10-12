@@ -1,0 +1,167 @@
+{
+ "EFORMS": {
+  "ContractNotice": {
+   "ext:UBLExtensions": {
+    "ext:UBLExtension": {
+     "ext:ExtensionContent": {
+      "efext:EformsExtension": {
+       "efac:Organizations": {
+        "efac:Organization": [
+         {
+          "efac:Company": {
+           "cac:PartyIdentification": {
+            "cbc:ID": {
+             "@schemeName": "organization",
+             "#text": "ORG-0001"
+            }
+           },
+           "cac:PartyName": {
+            "cbc:Name": {
+             "@languageID": "FRA",
+             "#text": "COMMUNAUTE DE COMMUNES DES PAYS DE L'AIGLE"
+            }
+           },
+           "cac:PartyLegalEntity": {
+            "cbc:CompanyID": "20006846800012"
+           }
+          }
+         },
+         {
+          "efac:Company": {
+           "cac:PartyIdentification": {
+            "cbc:ID": {
+             "@schemeName": "organization",
+             "#text": "ORG-0002"
+            }
+           },
+           "cac:PartyName": {
+            "cbc:Name": {
+             "@languageID": "FRA",
+             "#text": "Tribunal  Administratif de Caen"
+            }
+           },
+           "cac:PartyLegalEntity": {
+            "cbc:CompanyID": "171 400 054 00010"
+           }
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "cbc:ID": {
+    "@schemeName": "notice-id",
+    "#text": "dcb83735-7d96-49ce-87ce-709946a50eef"
+   },
+   "cac:ContractingParty": {
+    "cbc:BuyerProfileURI": "https://demat.centraledesmarches.com/7086172",
+    "cac:ContractingPartyType": {
+     "cbc:PartyTypeCode": {
+      "@listName": "buyer-legal-type",
+      "#text": "la"
+     }
+    },
+    "cac:ContractingActivity": {
+     "cbc:ActivityTypeCode": {
+      "@listName": "authority-activity",
+      "#text": "gen-pub"
+     }
+    },
+    "cac:Party": {
+     "cac:PartyIdentification": {
+      "cbc:ID": {
+       "@schemeName": "organization",
+       "#text": "ORG-0001"
+      }
+     }
+    }
+   },
+   "cac:ProcurementProject": {
+    "cbc:ID": {
+     "@schemeName": "InternalID",
+     "#text": "2026-JUR-004"
+    },
+    "cbc:ProcurementTypeCode": {
+     "@listName": "contract-nature",
+     "#text": "services"
+    },
+    "cac:MainCommodityClassification": {
+     "cbc:ItemClassificationCode": {
+      "@listName": "cpv",
+      "#text": "66510000"
+     }
+    }
+   },
+   "cac:ProcurementProjectLot": [
+    {
+     "cbc:ID": {
+      "@schemeName": "Lot",
+      "#text": "LOT-0001"
+     },
+     "cac:ProcurementProject": {
+      "cbc:ID": {
+       "@schemeName": "InternalID",
+       "#text": "Lot 1"
+      },
+      "cbc:Name": {
+       "@languageID": "FRA",
+       "#text": "Dommages aux biens et risques annexes"
+      },
+      "cac:MainCommodityClassification": {
+       "cbc:ItemClassificationCode": {
+        "@listName": "cpv",
+        "#text": "66515200"
+       }
+      }
+     }
+    },
+    {
+     "cbc:ID": {
+      "@schemeName": "Lot",
+      "#text": "LOT-0002"
+     },
+     "cac:ProcurementProject": {
+      "cbc:ID": {
+       "@schemeName": "InternalID",
+       "#text": "Lot 2"
+      },
+      "cbc:Name": {
+       "@languageID": "FRA",
+       "#text": "Flotte automobile et risques annexes"
+      },
+      "cac:MainCommodityClassification": {
+       "cbc:ItemClassificationCode": {
+        "@listName": "cpv",
+        "#text": "66514110"
+       }
+      }
+     }
+    },
+    {
+     "cbc:ID": {
+      "@schemeName": "Lot",
+      "#text": "LOT-0003"
+     },
+     "cac:ProcurementProject": {
+      "cbc:ID": {
+       "@schemeName": "InternalID",
+       "#text": "Lot 3"
+      },
+      "cbc:Name": {
+       "@languageID": "FRA",
+       "#text": "Protection juridique des personnes physiques"
+      },
+      "cac:MainCommodityClassification": {
+       "cbc:ItemClassificationCode": {
+        "@listName": "cpv",
+        "#text": "66513100"
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}

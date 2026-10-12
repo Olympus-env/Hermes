@@ -15,6 +15,9 @@ type Props = {
   active: ViewKey;
   agents: Record<AgentKey, AgentState>;
   nextCycle: string;
+  /** Veille ARGOS suspendue (cycles automatiques à l'arrêt). */
+  enPause?: boolean;
+  onTogglePause?: () => void;
   profile: UserProfile;
   isLoading?: boolean;
   onLaunchArgos?: () => void;
@@ -33,6 +36,8 @@ export function Topbar({
   active,
   agents,
   nextCycle,
+  enPause,
+  onTogglePause,
   profile,
   isLoading,
   onLaunchArgos,
@@ -66,9 +71,24 @@ export function Topbar({
 
         <div className="topbar__cycle">
           <Icon.clock size={12} />
-          <span>
-            Prochain cycle dans <strong>{nextCycle}</strong>
-          </span>
+          {enPause ? (
+            <span role="status">
+              Veille <strong>en pause</strong>
+              {onTogglePause && (
+                <button
+                  className="btn btn--ghost btn--sm"
+                  style={{ marginLeft: 8 }}
+                  onClick={onTogglePause}
+                >
+                  Reprendre
+                </button>
+              )}
+            </span>
+          ) : (
+            <span>
+              Prochain cycle dans <strong>{nextCycle}</strong>
+            </span>
+          )}
           {onLaunchArgos && (
             <motion.button
               className="btn btn--gold btn--sm"

@@ -120,6 +120,8 @@ export type CycleCollecteArgos = {
 
 export type EtatSchedulerArgos = {
   en_marche: boolean;
+  /** Cycles automatiques suspendus (tray « Mettre en pause »). */
+  en_pause: boolean;
   jobs: { id: string; prochaine_execution: string | null }[];
 };
 
@@ -264,8 +266,13 @@ export type ModeleLaya = {
   manquants: string[];
   /** Fichiers présents mais altérés (SHA-256 invalide) : modèle à réinstaller. */
   a_reinstaller: string[];
-  /** Taille indicative à télécharger pour cette précision. */
+  /** Taille totale du modèle pour cette précision. */
   taille_octets: number;
+  /** Fichiers qu'une (ré)installation retéléchargerait, avec leur taille réelle. */
+  fichiers_concernes: { chemin: string; taille_octets: number; raison: "manquant" | "altere" }[];
+  taille_a_telecharger_octets: number;
+  /** Dernière vérification SHA-256 complète de ce process (ISO UTC), null si aucune. */
+  verifie_le: string | null;
   dossier: string;
   espace_disque_libre_octets: number;
   progression: ProgressionLaya;
@@ -620,6 +627,10 @@ export const api = {
     ),
   etatSchedulerArgos: (signal?: AbortSignal) =>
     fetchJson<EtatSchedulerArgos>("/argos/scheduler", { signal }),
+  mettreEnPauseArgos: () =>
+    fetchJson<EtatSchedulerArgos>("/argos/planificateur/pause", { method: "POST" }),
+  reprendreArgos: () =>
+    fetchJson<EtatSchedulerArgos>("/argos/planificateur/reprise", { method: "POST" }),
   tableauDeBord: (signal?: AbortSignal) =>
     fetchJson<TableauDeBord>("/tableau-de-bord", { signal }),
   detailAO: (id: number) => fetchJson<AppelOffre>(`/appels-offre/${id}`),
@@ -731,6 +742,9 @@ export const api = {
     }),
   annulerTelechargementLaya: () =>
     fetchJson<ProgressionLaya>("/krinos/laya/modele/annuler", { method: "POST" }),
+  /** Revérifie le SHA-256 des fichiers présents (local, aucun appel réseau). */
+  verifierIntegriteLaya: () =>
+    fetchJson<ModeleLaya>("/krinos/laya/modele/verifier", { method: "POST" }),
   statutModeleLaya: () => fetchJson<ModeleLaya>("/krinos/laya/modele"),
   lireConfigJugeLocal: () => fetchJson<{ actif: boolean }>("/krinos/juge-local"),
   ecrireConfigJugeLocal: (actif: boolean) =>

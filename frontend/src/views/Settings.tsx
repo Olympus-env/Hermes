@@ -1276,6 +1276,8 @@ const CFG_DEFAUT: ConfigOrchestration = {
 
 const GO = 1024 * 1024 * 1024;
 const formatGo = (octets: number) => `${(octets / GO).toFixed(2)} Go`;
+const formatTaille = (octets: number) =>
+  octets >= GO ? formatGo(octets) : octets >= 1024 * 1024 ? `${(octets / (1024 * 1024)).toFixed(1)} Mo` : `${Math.ceil(octets / 1024)} Ko`;
 
 /**
  * Juge Laya (local, ONNX) : état du modèle, téléchargement consenti avec progression,
@@ -1344,17 +1346,26 @@ function LayaReglage() {
   const prog = modele.progression;
   const installe = modele.installe;
 
+  const aReinstaller = modele.a_reinstaller.length > 0;
+
   const telecharger = () => {
+    const liste = modele.fichiers_concernes
+      .map((f) => `  - ${f.chemin} (${formatTaille(f.taille_octets)})`)
+      .join("\n");
+    const intro = aReinstaller
+      ? `Réinstaller le modèle Laya (${modele.precision}) : ${modele.fichiers_concernes.length} ` +
+        `fichier(s) à retélécharger, ${formatTaille(modele.taille_a_telecharger_octets)} au total :\n` +
+        `${liste}\n\nSeuls ces fichiers sont retéléchargés. `
+      : `Télécharger le modèle Laya (${modele.precision}) : ${modele.fichiers_concernes.length} ` +
+        `fichier(s), ${formatTaille(modele.taille_a_telecharger_octets)} au total :\n${liste}\n\n`;
     const ok = window.confirm(
-      `Télécharger le modèle Laya (${modele.precision}, environ ${formatGo(modele.taille_octets)}) ` +
-        "depuis Hugging Face (dépôt onnx-community/laya-multilingual-ONNX, version épinglée, " +
-        "empreintes SHA-256 vérifiées) ? C'est le seul appel externe de Laya : ensuite " +
+      intro +
+        "Source : Hugging Face (dépôt onnx-community/laya-multilingual-ONNX, version épinglée, " +
+        "empreintes SHA-256 vérifiées). C'est le seul appel externe de Laya : ensuite " +
         `il tourne entièrement sur cette machine. Espace libre : ${formatGo(modele.espace_disque_libre_octets)}.`,
     );
     if (ok) void agir(() => api.telechargerModeleLaya(modele.precision));
   };
-
-  const aReinstaller = modele.a_reinstaller.length > 0;
 
   return (
     <section className="settings-carte" aria-label="Juge Laya">
@@ -1372,7 +1383,8 @@ function LayaReglage() {
             <div className="settings-row__hint">
               Modèle open source Laya (Convai Innovations, Apache 2.0), exécuté par ONNX Runtime
               dans le backend HERMES. Il juge tous les portails, publics ou privés. Ses fichiers
-              sont vérifiés par SHA-256 au premier chargement ; en cas d'écart, le modèle est
+              sont vérifiés par SHA-256 au démarrage de HERMES (si Laya est activé, en tâche de fond), à la
+              demande (« Vérifier l'intégrité ») et au premier chargement ; en cas d'écart, le modèle est
               refusé et doit être réinstallé, avec votre accord.
             </div>
           </details>
@@ -1394,17 +1406,36 @@ function LayaReglage() {
         {installe
           ? `installé (${modele.precision}, ${formatGo(modele.taille_octets)}) — ${modele.dossier}`
           : aReinstaller
-            ? `à réinstaller (${modele.precision}) — ${formatGo(modele.taille_octets)} à télécharger`
+            ? `à réinstaller (${modele.precision}) — ${formatTaille(modele.taille_a_telecharger_octets)} à télécharger`
             : `non installé — ${formatGo(modele.taille_octets)} à télécharger (${modele.precision})`}
-        {cfg.actif && !cfg.operationnel && " — activé mais inutilisable tant que le modèle manque."}
+        {cfg.actif && !cfg.operationnel && aReinstaller && " — activé, mais bloqué : modèle à réinstaller."}
+        {cfg.actif && !cfg.operationnel && !aReinstaller && " — activé mais inutilisable tant que le modèle manque."}
         {cfg.operationnel && " — opérationnel."}
       </div>
 
       {aReinstaller && (
         <div className="settings-carte__alerte" role="alert">
           Intégrité non vérifiée : {modele.a_reinstaller.join(", ")} ne correspond plus à
-          l'empreinte SHA-256 attendue. Laya reste désactivé ; rien n'est retéléchargé sans votre
-          accord.
+          l'empreinte SHA-256 attendue.{" "}
+          {cfg.actif ? "Laya est activé, mais bloqué" : "Laya reste désactivé"} tant que le
+          modèle n'est pas réinstallé ; rien n'est retéléchargé sans votre accord.
+        </div>
+      )}
+
+      {(installe || aReinstaller) && !prog.en_cours && (
+        <div className="settings-carte__actions">
+          <button
+            className="btn"
+            disabled={busy}
+            onClick={() => void agir(() => api.verifierIntegriteLaya())}
+          >
+            Vérifier l'intégrité
+          </button>
+          <span className="settings-row__hint">
+            {modele.verifie_le
+              ? `Dernière vérification : ${new Date(modele.verifie_le).toLocaleString("fr-FR")}`
+              : "Pas encore vérifié depuis le démarrage."}
+          </span>
         </div>
       )}
 

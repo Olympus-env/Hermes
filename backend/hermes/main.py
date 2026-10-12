@@ -21,6 +21,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from hermes import __version__, onboarding
 from hermes.agents.argos.scheduler import scheduler_global
+from hermes.agents.krinos import laya as laya_agent
+from hermes.agents.krinos import laya_modele
 from hermes.api import (
     appels_offre,
     argos,
@@ -50,6 +52,10 @@ async def lifespan(_app: FastAPI):
     _migrer_onboarding()
     with Session(get_engine()) as session:
         pythia_api.appliquer_modele_persiste(session)
+        # Laya activé : intégrité SHA-256 vérifiée en tâche de fond (local, sans réseau,
+        # sans bloquer le démarrage) pour que « à réinstaller » soit visible d'emblée.
+        if laya_agent.reglage_actif(session):
+            laya_modele.lancer_verification_fond(laya_agent.precision(session))
     # Marqueur de session uniquement en runtime réel (pas en debug/tests/reload) :
     # garantit qu'au lancement sur le poste utilisateur le journal reçoit une
     # entrée datée de la session réelle et expose la BDD résolue (issue #8).
