@@ -152,13 +152,15 @@ def _migrer_colonnes(conn) -> None:
         ("analyses_krinos", "details_laya", "TEXT"),
         ("appels_offre", "hors_profil_laya", "BOOLEAN NOT NULL DEFAULT 0"),
         ("appels_offre", "pertinence_laya", "FLOAT"),
+        ("appels_offre", "archive", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("documents", "purge_le", "DATETIME"),
     ]
     for table, colonne, definition in migrations:
         cols = {
             row[1]
             for row in conn.exec_driver_sql(f"PRAGMA table_info('{table}')").fetchall()
         }
-        if colonne not in cols:
+        if cols and colonne not in cols:  # table absente (base partielle) : rien à migrer
             conn.exec_driver_sql(
                 f"ALTER TABLE {table} ADD COLUMN {colonne} {definition}"
             )

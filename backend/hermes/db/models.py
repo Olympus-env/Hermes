@@ -148,6 +148,10 @@ class AppelOffre(SQLModel, table=True):
     hors_profil_laya: bool = Field(default=False, sa_column_kwargs={"server_default": "0"})
     pertinence_laya: Optional[float] = None
 
+    # Rétention CDC §8.2 : un AO rejeté depuis plus de 90 jours est archivé (masqué
+    # de la liste par défaut, conservé en BDD). Réinitialisé si l'AO change de statut.
+    archive: bool = Field(default=False, sa_column_kwargs={"server_default": "0"})
+
     cree_le: datetime = Field(default_factory=_utcnow, index=True)
     maj_le: datetime = Field(default_factory=_utcnow, sa_column_kwargs={"onupdate": _utcnow})
 
@@ -172,6 +176,10 @@ class Document(SQLModel, table=True):
     checksum_sha256: str = Field(index=True)
 
     contenu_extrait: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    # Renseigné quand le fichier a été purgé du disque (purge manuelle, CDC §8.2) :
+    # la ligne, le checksum et les métadonnées restent tracés.
+    purge_le: Optional[datetime] = None
 
     cree_le: datetime = Field(default_factory=_utcnow)
 

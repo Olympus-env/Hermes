@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     storage_path: Path = Field(default=Path("./data/storage"))
     log_path: Path = Field(default=Path("./data/logs"))
     log_level: str = "INFO"
+    # MNEMOSYNE — dossier de sauvegarde quotidienne (surchargé par le paramètre
+    # `mnemosyne.dossier_sauvegarde` si Joshua l'a changé) et nombre de copies gardées.
+    backup_path: Path = Field(default=Path("./data/backups"))
+    backup_conservees: int = 7
 
     master_key: str | None = None
     master_key_path: Path = Field(default=Path("./data/master.key"))

@@ -8,6 +8,7 @@ from sqlmodel import Session, func, select
 
 from hermes.agents.krinos.downloader import liens_documents_ao
 from hermes.api._dates import DatetimeUTC
+from hermes.db import retention
 from hermes.db.models import (
     AnalyseKrinos,
     AppelOffre,
@@ -54,6 +55,7 @@ class AppelOffreRead(BaseModel):
     # Pré-tri Laya : « hors profil » (non analysé par PYTHIA, analyse forçable).
     hors_profil_laya: bool = False
     pertinence_laya: float | None = None
+    archive: bool = False
 
 
 class AppelsOffrePage(BaseModel):
@@ -83,9 +85,13 @@ def lister(
     statut: StatutAO | None = None,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    inclure_archives: bool = False,
     session: Session = Depends(get_session),
 ) -> AppelsOffrePage:
     stmt = select(AppelOffre, Portail.nom).join(Portail, isouter=True)
+    if not inclure_archives:
+        # AO rejetés depuis > 90 jours : masqués par défaut (CDC §8.2).
+        stmt = stmt.where(~AppelOffre.archive)
     if statut is not None:
         stmt = stmt.where(AppelOffre.statut == statut)
     else:
@@ -110,6 +116,24 @@ def lister(
         limit=limit,
         offset=offset,
     )
+
+
+class PurgeRead(BaseModel):
+    fichiers_supprimes: int
+    octets_liberes: int
+
+
+@router.post("/{ao_id}/purger-documents", response_model=PurgeRead)
+def purger_documents_ao(ao_id: int, session: Session = Depends(get_session)) -> PurgeRead:
+    """Purge manuelle des fichiers d'un AO non actif (checksums et métadonnées gardés)."""
+    ao = session.get(AppelOffre, ao_id)
+    if ao is None:
+        raise HTTPException(status_code=404, detail="Appel d'offre introuvable")
+    try:
+        fichiers, octets = retention.purger_documents(session, ao)
+    except retention.PurgeRefusee as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return PurgeRead(fichiers_supprimes=fichiers, octets_liberes=octets)
 
 
 @router.get("/{ao_id}")
@@ -188,6 +212,7 @@ def modifier_statut(
                 ),
             )
         ao.statut = payload.statut
+        ao.archive = False  # un AO ré-ouvert sort de l'archive
         session.add(ao)
         session.commit()
         session.refresh(ao)
@@ -248,4 +273,5 @@ def _ao_read(
         documents_manquants=max(detectes - docs_telecharges, 0),
         hors_profil_laya=ao.hors_profil_laya,
         pertinence_laya=ao.pertinence_laya,
+        archive=ao.archive,
     )
