@@ -514,3 +514,35 @@ def test_synchroniser_jobs_ne_relance_pas_les_jobs_existants():
             sched.arreter()
 
     asyncio.run(scenario())
+
+
+def test_pause_suspend_les_cycles_puis_reprise_les_relance():
+    from hermes.agents.argos.scheduler import ArgosScheduler
+
+    executions: list[int] = []
+
+    async def scenario():
+        sched = ArgosScheduler()
+        assert sched.mettre_en_pause() is False  # non démarré
+        sched.demarrer()
+        try:
+            assert sched.etat()["en_pause"] is False
+            assert sched.mettre_en_pause() is True
+            assert sched.etat()["en_pause"] is True
+            sched._sched.add_job(
+                lambda: executions.append(1),
+                trigger="interval",
+                seconds=1,
+                id="test.cycle",
+                next_run_time=datetime.now(UTC),
+            )
+            await asyncio.sleep(1.5)
+            assert executions == [], "aucun cycle ne doit partir pendant la pause"
+            assert sched.reprendre() is True
+            assert sched.etat()["en_pause"] is False
+            await asyncio.sleep(1.5)
+            assert executions, "les cycles reprennent après la reprise"
+        finally:
+            sched.arreter()
+
+    asyncio.run(scenario())

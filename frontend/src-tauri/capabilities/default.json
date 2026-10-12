@@ -9,7 +9,6 @@
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
     "notification:allow-notify",
-    "dialog:allow-save",
     "dialog:allow-open"
   ]
 }

@@ -120,6 +120,8 @@ export type CycleCollecteArgos = {
 
 export type EtatSchedulerArgos = {
   en_marche: boolean;
+  /** Cycles automatiques suspendus (tray « Mettre en pause »). */
+  en_pause: boolean;
   jobs: { id: string; prochaine_execution: string | null }[];
 };
 
@@ -620,6 +622,10 @@ export const api = {
     ),
   etatSchedulerArgos: (signal?: AbortSignal) =>
     fetchJson<EtatSchedulerArgos>("/argos/scheduler", { signal }),
+  mettreEnPauseArgos: () =>
+    fetchJson<EtatSchedulerArgos>("/argos/planificateur/pause", { method: "POST" }),
+  reprendreArgos: () =>
+    fetchJson<EtatSchedulerArgos>("/argos/planificateur/reprise", { method: "POST" }),
   tableauDeBord: (signal?: AbortSignal) =>
     fetchJson<TableauDeBord>("/tableau-de-bord", { signal }),
   detailAO: (id: number) => fetchJson<AppelOffre>(`/appels-offre/${id}`),

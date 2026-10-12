@@ -161,3 +161,33 @@ def test_endpoint_supprime_credentials():
         r = client.get("/argos/portails")
         portail = next(p for p in r.json() if p["nom"] == "portail-prive")
         assert portail["credentials_configures"] is False
+
+
+def test_planificateur_pause_reprise_api():
+    from hermes.agents.argos.scheduler import scheduler_global
+    from hermes.main import app
+
+    with TestClient(app) as client:
+        # Scheduler non démarré en test (HERMES_SCHEDULER_AUTO_START=false) : 409 net.
+        assert client.post("/argos/planificateur/pause").status_code == 409
+        assert client.post("/argos/planificateur/reprise").status_code == 409
+
+        # Démarrage dans la boucle de l'application (AsyncIOScheduler l'exige).
+        client.portal.call(scheduler_global.demarrer)
+        try:
+            assert client.get("/argos/scheduler").json()["en_pause"] is False
+
+            r = client.post("/argos/planificateur/pause")
+            assert r.status_code == 200
+            assert r.json()["en_pause"] is True
+            assert r.json()["en_marche"] is True
+            # Idempotent, et l'état est relu par GET.
+            assert client.post("/argos/planificateur/pause").json()["en_pause"] is True
+            assert client.get("/argos/scheduler").json()["en_pause"] is True
+
+            r = client.post("/argos/planificateur/reprise")
+            assert r.status_code == 200
+            assert r.json()["en_pause"] is False
+            assert client.get("/argos/scheduler").json()["en_pause"] is False
+        finally:
+            client.portal.call(scheduler_global.arreter)
