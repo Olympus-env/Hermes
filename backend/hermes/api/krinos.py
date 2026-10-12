@@ -18,8 +18,10 @@ from hermes.agents.krinos.downloader import (
 )
 from hermes.agents.krinos.extractor import (
     ErreurExtractionDocument,
+    ErreurIntegriteDocument,
     extraire_document,
     extraire_documents_appel_offre_async,
+    signaler_alteration,
 )
 from hermes.agents.krinos.ponderation import (
     ConfigComposite,
@@ -75,6 +77,7 @@ class DocumentRead(BaseModel):
     taille_octets: int
     checksum_sha256: str
     contenu_extrait: bool
+    integrite_ok: bool = True
 
 
 class TelechargementDocumentsResponse(BaseModel):
@@ -219,7 +222,14 @@ def extraire_documents_ao(
     caracteres = 0
     avertissements: list[str] = []
     for document in documents:
-        reponse = _extraire_et_persister(session, document)
+        try:
+            reponse = _extraire_et_persister(session, document)
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                raise
+            # Document altéré : écarté et signalé, les autres sont extraits.
+            avertissements.append(f"Document {document.id}: {exc.detail}")
+            continue
         caracteres += reponse.caracteres_extraits
         avertissements.extend(
             f"Document {document.id}: {a}" for a in reponse.avertissements
@@ -244,6 +254,10 @@ def _extraire_et_persister(
 ) -> ExtractionDocumentResponse:
     try:
         extraction = extraire_document(document)
+    except ErreurIntegriteDocument as exc:
+        # Altération : marquage + alerte ERR, checksum de référence conservé.
+        signaler_alteration(session, document, str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ErreurExtractionDocument as exc:
         _journaliser(
             session,
@@ -254,7 +268,7 @@ def _extraire_et_persister(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     document.contenu_extrait = extraction.texte
-    document.checksum_sha256 = extraction.checksum_sha256
+    document.integrite_ok = True
     document.taille_octets = extraction.taille_octets
     session.add(document)
     session.commit()
@@ -597,4 +611,5 @@ def _document_read(document: Document) -> DocumentRead:
         taille_octets=document.taille_octets,
         checksum_sha256=document.checksum_sha256,
         contenu_extrait=document.contenu_extrait is not None,
+        integrite_ok=document.integrite_ok,
     )

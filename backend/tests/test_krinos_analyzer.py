@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -392,7 +393,7 @@ def test_endpoint_analyser_extrait_document_deja_attache(monkeypatch):
             chemin_local="docs/cctp-sms.txt",
             type=TypeDocument.AUTRE,
             taille_octets=0,
-            checksum_sha256="pending",
+            checksum_sha256=hashlib.sha256(b"CCTP notifications SMS prioritaire").hexdigest(),
         )
         session.add(document)
         session.commit()
