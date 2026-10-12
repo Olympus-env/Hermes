@@ -18,11 +18,15 @@ from loguru import logger
 from sqlmodel import Session, select
 
 from hermes.config import settings
-from hermes.db.models import AppelOffre, Document, TypeDocument
+from hermes.db.models import AppelOffre, Document, LogAgent, NiveauLog, TypeDocument
 
 
 class ErreurExtractionDocument(RuntimeError):
     """Erreur contrôlée lors de l'extraction d'un document."""
+
+
+class ErreurIntegriteDocument(ErreurExtractionDocument):
+    """Le fichier sur disque ne correspond plus au SHA-256 enregistré au téléchargement."""
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,13 @@ def extraire_document(document: Document) -> ExtractionDocument:
             f"plafond {settings.krinos_extraction_max_octets // (1024 * 1024)} Mo)"
         )
     checksum = _checksum_fichier(chemin)
+    # Le checksum de référence est celui du téléchargement : un écart signifie une
+    # modification externe, le fichier n'est pas lu et la référence reste intacte.
+    if checksum != document.checksum_sha256:
+        raise ErreurIntegriteDocument(
+            f"Intégrité compromise : le fichier {document.nom_fichier} a été modifié "
+            "depuis son téléchargement (SHA-256 différent)"
+        )
     avertissements: list[str] = []
     texte = _extraire_texte(chemin, document.type, avertissements)
     texte = _normaliser_texte(texte)
@@ -86,14 +97,22 @@ def extraire_documents_appel_offre(
     if appel_offre.id is None:
         return RapportExtractionDocuments(documents_traites=0, caracteres_extraits=0)
 
+    erreurs: list[str] = []
+    for document in _documents_extraits(session, appel_offre):
+        _signaler_ecart(session, document, controler_integrite(document), erreurs)
     documents = _documents_a_extraire(session, appel_offre, seulement_non_extraits)
     traites = 0
     caracteres = 0
-    erreurs: list[str] = []
     avertissements: list[str] = []
     for document in documents:
         try:
             extraction = extraire_document(document)
+        except ErreurIntegriteDocument as exc:
+            signaler_alteration(session, document, str(exc))
+            if not best_effort:
+                raise
+            erreurs.append(f"Document {document.id}: {exc}")
+            continue
         except ErreurExtractionDocument as exc:
             if not best_effort:
                 raise
@@ -132,14 +151,23 @@ async def extraire_documents_appel_offre_async(
     if appel_offre.id is None:
         return RapportExtractionDocuments(documents_traites=0, caracteres_extraits=0)
 
+    erreurs: list[str] = []
+    for document in _documents_extraits(session, appel_offre):
+        etat = await asyncio.to_thread(controler_integrite, document)
+        _signaler_ecart(session, document, etat, erreurs)
     documents = _documents_a_extraire(session, appel_offre, seulement_non_extraits)
     traites = 0
     caracteres = 0
-    erreurs: list[str] = []
     avertissements: list[str] = []
     for document in documents:
         try:
             extraction = await asyncio.to_thread(extraire_document, document)
+        except ErreurIntegriteDocument as exc:
+            signaler_alteration(session, document, str(exc))
+            if not best_effort:
+                raise
+            erreurs.append(f"Document {document.id}: {exc}")
+            continue
         except ErreurExtractionDocument as exc:
             if not best_effort:
                 raise
@@ -176,11 +204,83 @@ def _documents_a_extraire(
 def _appliquer_extraction(
     session: Session, document: Document, extraction: ExtractionDocument
 ) -> int:
+    # Le checksum n'est jamais réécrit ici : il reste la référence du téléchargement.
     document.contenu_extrait = extraction.texte
-    document.checksum_sha256 = extraction.checksum_sha256
+    document.integrite_ok = True
     document.taille_octets = extraction.taille_octets
     session.add(document)
     return len(extraction.texte)
+
+
+def _documents_extraits(session: Session, appel_offre: AppelOffre) -> list[Document]:
+    """Documents déjà extraits : leur fichier est revérifié avant que KRINOS s'y fie."""
+    documents = session.exec(
+        select(Document)
+        .where(Document.appel_offre_id == appel_offre.id)
+        .order_by(Document.id)
+    ).all()
+    return [d for d in documents if d.contenu_extrait]
+
+
+def controler_integrite(document: Document) -> bool | None:
+    """Compare le SHA-256 du fichier (haché en streaming) à la référence stockée.
+
+    Renvoie None si le fichier est absent ou hors storage : ce n'est pas une
+    altération de contenu, l'extraction le signalera comme document introuvable.
+    """
+    try:
+        chemin = _chemin_document(document.chemin_local)
+    except ErreurExtractionDocument:
+        return None
+    if not chemin.is_file():
+        return None
+    return _checksum_fichier(chemin) == document.checksum_sha256
+
+
+def _signaler_ecart(
+    session: Session, document: Document, etat: bool | None, erreurs: list[str]
+) -> None:
+    """Applique le résultat d'un contrôle : alerte si altéré, rétablit si redevenu conforme."""
+    if etat is False:
+        message = (
+            f"Intégrité compromise : le fichier {document.nom_fichier} a été modifié "
+            "depuis son téléchargement (SHA-256 différent)"
+        )
+        signaler_alteration(session, document, message)
+        erreurs.append(f"Document {document.id}: {message}")
+    elif etat and not document.integrite_ok:
+        document.integrite_ok = True
+        session.add(document)
+        session.add(
+            LogAgent(
+                agent="KRINOS",
+                niveau=NiveauLog.INFO,
+                message=(
+                    f"Intégrité rétablie : {document.nom_fichier} (AO {document.appel_offre_id}) "
+                    "correspond de nouveau à son SHA-256"
+                ),
+                appel_offre_id=document.appel_offre_id,
+            )
+        )
+        session.commit()
+
+
+def signaler_alteration(session: Session, document: Document, detail: str) -> None:
+    """Marque le document altéré et journalise (sans toucher au checksum de référence)."""
+    document.integrite_ok = False
+    session.add(document)
+    session.add(
+        LogAgent(
+            agent="KRINOS",
+            niveau=NiveauLog.ERROR,
+            message=(
+                f"ALERTE intégrité document {document.id} « {document.nom_fichier} » "
+                f"(AO {document.appel_offre_id}) : {detail}. Extraction et analyse ignorées."
+            ),
+            appel_offre_id=document.appel_offre_id,
+        )
+    )
+    session.commit()
 
 
 def _chemin_document(chemin_local: str) -> Path:

@@ -36,7 +36,7 @@ def _ao_et_document(
         chemin_local=nom,
         type=type_doc,
         taille_octets=0,
-        checksum_sha256="pending",
+        checksum_sha256=hashlib.sha256(contenu).hexdigest(),
     )
     session.add(document)
     session.commit()
@@ -226,3 +226,117 @@ def test_endpoint_telechargement_dedoublonne_par_checksum(monkeypatch):
     with Session(get_engine()) as session:
         documents = session.exec(select(Document).where(Document.appel_offre_id == ao_id)).all()
         assert len(documents) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Intégrité SHA-256 (CDC §9.3, issue #91)
+# --------------------------------------------------------------------------- #
+
+
+def test_fichier_intact_extraction_normale_et_checksum_inchange():
+    from hermes.agents.krinos.extractor import extraire_documents_appel_offre
+
+    init_db()
+    contenu = b"<html><body><p>Cahier des charges</p></body></html>"
+    with Session(get_engine()) as session:
+        document = _ao_et_document(session, "docs/intact.html", contenu, TypeDocument.HTML)
+        ao = session.get(AppelOffre, document.appel_offre_id)
+        reference = document.checksum_sha256
+
+        rapport = extraire_documents_appel_offre(session, ao)
+
+        assert rapport.documents_traites == 1
+        assert not rapport.erreurs
+        session.refresh(document)
+        assert document.integrite_ok is True
+        assert document.checksum_sha256 == reference
+        assert "Cahier des charges" in (document.contenu_extrait or "")
+
+
+def test_fichier_modifie_apres_telechargement_alerte_et_checksum_conserve():
+    import pytest
+
+    from hermes.agents.krinos import extraire_document
+    from hermes.agents.krinos.extractor import (
+        ErreurIntegriteDocument,
+        extraire_documents_appel_offre,
+    )
+
+    init_db()
+    original = b"<html><body><p>Version d'origine</p></body></html>"
+    with Session(get_engine()) as session:
+        document = _ao_et_document(session, "docs/altere.html", original, TypeDocument.HTML)
+        ao = session.get(AppelOffre, document.appel_offre_id)
+        reference = document.checksum_sha256
+        (settings.storage_path / "docs/altere.html").write_bytes(
+            b"<html><body><p>Contenu substitue</p></body></html>"
+        )
+
+        with pytest.raises(ErreurIntegriteDocument):
+            extraire_document(document)
+
+        rapport = extraire_documents_appel_offre(session, ao, best_effort=True)
+
+        assert rapport.documents_traites == 0
+        assert any("Intégrité compromise" in e for e in rapport.erreurs)
+        session.refresh(document)
+        assert document.integrite_ok is False
+        assert document.checksum_sha256 == reference
+        assert document.contenu_extrait is None
+        logs = session.exec(select(LogAgent).where(LogAgent.niveau == "error")).all()
+        assert any(
+            "altere.html" in log.message and log.appel_offre_id == ao.id for log in logs
+        )
+
+
+def test_document_deja_extrait_puis_altere_est_ecarte_de_l_analyse():
+    from hermes.agents.krinos import analyzer
+    from hermes.agents.krinos.extractor import extraire_documents_appel_offre
+
+    init_db()
+    contenu = b"<html><body><p>Clause secrete</p></body></html>"
+    with Session(get_engine()) as session:
+        document = _ao_et_document(session, "docs/apres.html", contenu, TypeDocument.HTML)
+        ao = session.get(AppelOffre, document.appel_offre_id)
+        extraire_documents_appel_offre(session, ao)
+        session.refresh(document)
+        assert "Clause secrete" in analyzer._construire_contexte(session, ao)["documents"]
+
+        (settings.storage_path / "docs/apres.html").write_bytes(contenu + b"<!-- injecte -->")
+        extraire_documents_appel_offre(session, ao, best_effort=True)
+
+        session.refresh(document)
+        assert document.integrite_ok is False
+        assert "Clause secrete" not in analyzer._construire_contexte(session, ao)["documents"]
+
+
+def test_endpoint_extraction_fichier_altere_409_et_expose_integrite():
+    from fastapi.testclient import TestClient
+
+    from hermes.main import app
+
+    init_db()
+    with Session(get_engine()) as session:
+        document = _ao_et_document(session, "docs/api.html", b"<p>ok</p>", TypeDocument.HTML)
+        (settings.storage_path / "docs/api.html").write_bytes(b"<p>modifie</p>")
+        document_id, ao_id = document.id, document.appel_offre_id
+
+    with TestClient(app) as client:
+        r = client.post(f"/krinos/documents/{document_id}/extraire")
+        assert r.status_code == 409
+        detail = client.get(f"/appels-offre/{ao_id}").json()
+
+    assert detail["documents_alteres"] == ["docs/api.html"]
+    with Session(get_engine()) as session:
+        assert session.get(Document, document_id).integrite_ok is False
+
+
+def test_migration_integrite_ok_idempotente():
+    from hermes.db.session import _migrer_colonnes
+
+    init_db()
+    with get_engine().begin() as conn:
+        _migrer_colonnes(conn)
+        _migrer_colonnes(conn)
+        cols = {r[1] for r in conn.exec_driver_sql("PRAGMA table_info('documents')").fetchall()}
+    assert "integrite_ok" in cols

@@ -461,7 +461,12 @@ def _construire_contexte(session: Session, appel_offre: AppelOffre) -> dict[str,
         .order_by(Document.id)
     ).all()
 
-    contenus = [(d.nom_fichier, d.contenu_extrait) for d in documents if d.contenu_extrait]
+    # Un document altéré depuis son téléchargement (SHA-256 différent) n'est jamais lu.
+    contenus = [
+        (d.nom_fichier, d.contenu_extrait)
+        for d in documents
+        if d.contenu_extrait and d.integrite_ok
+    ]
     budgets = _repartir_budget([len(c) for _, c in contenus], budget_caracteres())
     extraits: list[str] = []
     for (nom, contenu), part in zip(contenus, budgets, strict=True):

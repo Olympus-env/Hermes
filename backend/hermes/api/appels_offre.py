@@ -54,6 +54,9 @@ class AppelOffreRead(BaseModel):
     # Pré-tri Laya : « hors profil » (non analysé par PYTHIA, analyse forçable).
     hors_profil_laya: bool = False
     pertinence_laya: float | None = None
+    # Intégrité (CDC §9.3) : noms des documents dont le fichier ne correspond plus
+    # au SHA-256 du téléchargement ; ils sont écartés de l'analyse KRINOS.
+    documents_alteres: list[str] = []
 
 
 class AppelsOffrePage(BaseModel):
@@ -101,10 +104,11 @@ def lister(
     ao_ids = [ao.id for ao, _ in rows]
     scores = _scores_recents(session, ao_ids)
     docs = _docs_telecharges(session, ao_ids)
+    alteres = _docs_alteres(session, ao_ids)
     return AppelsOffrePage(
         total=total,
         items=[
-            _ao_read(ao, portail_nom, scores.get(ao.id), docs.get(ao.id, 0))
+            _ao_read(ao, portail_nom, scores.get(ao.id), docs.get(ao.id, 0), alteres.get(ao.id, []))
             for ao, portail_nom in rows
         ],
         limit=limit,
@@ -124,7 +128,8 @@ def detail(ao_id: int, session: Session = Depends(get_session)) -> AppelOffreRea
     ao, portail_nom = row
     scores = _scores_recents(session, [ao.id])
     docs = _docs_telecharges(session, [ao.id])
-    return _ao_read(ao, portail_nom, scores.get(ao.id), docs.get(ao.id, 0))
+    alteres = _docs_alteres(session, [ao.id])
+    return _ao_read(ao, portail_nom, scores.get(ao.id), docs.get(ao.id, 0), alteres.get(ao.id, []))
 
 
 def _scores_recents(
@@ -143,6 +148,22 @@ def _scores_recents(
     for ao_id, score in lignes:
         scores.setdefault(ao_id, score)  # premier = le plus récent (tri desc)
     return scores
+
+
+def _docs_alteres(session: Session, ao_ids: list[int | None]) -> dict[int, list[str]]:
+    """Noms des documents à l'intégrité compromise, par AO."""
+    ids = [i for i in ao_ids if i is not None]
+    if not ids:
+        return {}
+    lignes = session.exec(
+        select(Document.appel_offre_id, Document.nom_fichier)
+        .where(Document.appel_offre_id.in_(ids), Document.integrite_ok == False)  # noqa: E712
+        .order_by(Document.id)
+    ).all()
+    resultat: dict[int, list[str]] = {}
+    for ao_id, nom in lignes:
+        resultat.setdefault(ao_id, []).append(nom)
+    return resultat
 
 
 def _docs_telecharges(session: Session, ao_ids: list[int | None]) -> dict[int, int]:
@@ -198,7 +219,8 @@ def modifier_statut(
         portail_nom = portail.nom if portail else None
     scores = _scores_recents(session, [ao.id])
     docs = _docs_telecharges(session, [ao.id])
-    return _ao_read(ao, portail_nom, scores.get(ao.id), docs.get(ao.id, 0))
+    alteres = _docs_alteres(session, [ao.id])
+    return _ao_read(ao, portail_nom, scores.get(ao.id), docs.get(ao.id, 0), alteres.get(ao.id, []))
 
 
 def _a_reponse_finalisee(session: Session, ao_id: int) -> bool:
@@ -220,6 +242,7 @@ def _ao_read(
     portail_nom: str | None,
     score: float | None = None,
     docs_telecharges: int = 0,
+    documents_alteres: list[str] | None = None,
 ) -> AppelOffreRead:
     detectes = len(liens_documents_ao(ao))
     return AppelOffreRead(
@@ -248,4 +271,5 @@ def _ao_read(
         documents_manquants=max(detectes - docs_telecharges, 0),
         hors_profil_laya=ao.hors_profil_laya,
         pertinence_laya=ao.pertinence_laya,
+        documents_alteres=documents_alteres or [],
     )
