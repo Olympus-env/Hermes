@@ -360,41 +360,82 @@ def _textes_ubl(v: Any) -> list[str]:
     return [t for t in textes if t]
 
 
+def _racine_avis_eforms(donnees: dict[str, Any]) -> dict[str, Any]:
+    """Nœud de l'avis eForms (`EFORMS.<TypeAvis>`), `{}` si la forme est inattendue."""
+    eforms = donnees.get("EFORMS")
+    if isinstance(eforms, dict):
+        for noeud in eforms.values():  # ContractNotice, ContractAwardNotice, …
+            if isinstance(noeud, dict):
+                return noeud
+    return {}
+
+
 def _siret_eforms(donnees: dict[str, Any]) -> str | None:
     """SIRET de l'acheteur d'un avis eForms (organisation liée au ContractingParty).
 
     Chaque niveau UBL (ContractingParty, Party, PartyIdentification, Company,
-    PartyLegalEntity) peut être un dict ou une liste : on normalise partout et on
-    retient le premier CompanyID qui ressemble à un SIRET valide.
+    PartyLegalEntity) peut être un dict ou une liste : on normalise partout. Un avis
+    peut avoir plusieurs acheteurs (`cac:ContractingParty` multiple) : on les prend
+    dans l'ordre du document et on retient le SIRET du premier qui en a un valide.
     """
-    ids_acheteur: set[str] = set()
-    for partie in _dicts(_chercher(donnees, "cac:ContractingParty")):
+    racine = _racine_avis_eforms(donnees)
+    parties = _dicts(racine.get("cac:ContractingParty")) or _dicts(
+        _chercher(donnees, "cac:ContractingParty")
+    )
+    organisations = _dicts(_chercher(donnees, "efac:Organization"))
+    for partie in parties:
+        ids_acheteur: set[str] = set()
         for party in _dicts(partie.get("cac:Party")):
             for identification in _dicts(party.get("cac:PartyIdentification")):
                 ids_acheteur.update(_textes_ubl(identification.get("cbc:ID")))
-    if not ids_acheteur:
-        return None
-    for org in _dicts(_chercher(donnees, "efac:Organization")):
-        for societe in _dicts(org.get("efac:Company")):
-            idents = {
-                i
-                for ident in _dicts(societe.get("cac:PartyIdentification"))
-                for i in _textes_ubl(ident.get("cbc:ID"))
-            }
-            if not idents & ids_acheteur:
-                continue
-            for entite in _dicts(societe.get("cac:PartyLegalEntity")):
-                for cid in _textes_ubl(entite.get("cbc:CompanyID")):
-                    cid = re.sub(r"\s", "", cid)
-                    if _RE_SIRET.fullmatch(cid):
-                        return cid
+        if not ids_acheteur:
+            continue
+        for org in organisations:
+            for societe in _dicts(org.get("efac:Company")):
+                idents = {
+                    i
+                    for ident in _dicts(societe.get("cac:PartyIdentification"))
+                    for i in _textes_ubl(ident.get("cbc:ID"))
+                }
+                if not idents & ids_acheteur:
+                    continue
+                for entite in _dicts(societe.get("cac:PartyLegalEntity")):
+                    for cid in _textes_ubl(entite.get("cbc:CompanyID")):
+                        cid = re.sub(r"\s", "", cid)
+                        if _RE_SIRET.fullmatch(cid):
+                            return cid
+    return None
+
+
+def _cpv_principal_de(projet: Any) -> str | None:
+    """Premier CPV (listName="cpv") du `cac:MainCommodityClassification` d'un projet."""
+    for p in _dicts(projet):
+        for classification in _dicts(p.get("cac:MainCommodityClassification")):
+            for noeud in _dicts(classification.get("cbc:ItemClassificationCode")):
+                if noeud.get("@listName") == "cpv":
+                    code = _texte_ubl(noeud)
+                    if code:
+                        return code
     return None
 
 
 def _cpv_eforms(donnees: dict[str, Any]) -> str | None:
-    """Premier code CPV d'un avis eForms (le nœud peut être une liste)."""
-    noeud = _chercher(donnees, "cbc:ItemClassificationCode")
-    for n in _dicts(noeud):
+    """CPV principal d'un avis eForms.
+
+    Lu dans le `cac:ProcurementProject` racine (`cac:MainCommodityClassification`) :
+    sur un avis multi-lots, le premier `ItemClassificationCode` du document peut
+    appartenir à un lot. Les CPV des lots ne servent qu'en repli (premier lot qui en
+    porte un) ; en dernier recours, ancien comportement (première occurrence).
+    """
+    racine = _racine_avis_eforms(donnees)
+    cpv = _cpv_principal_de(racine.get("cac:ProcurementProject"))
+    if cpv:
+        return cpv
+    for lot in _dicts(racine.get("cac:ProcurementProjectLot")):
+        cpv = _cpv_principal_de(lot.get("cac:ProcurementProject"))
+        if cpv:
+            return cpv
+    for n in _dicts(_chercher(donnees, "cbc:ItemClassificationCode")):
         if n.get("@listName") == "cpv":
             return _texte_ubl(n)
     return None
