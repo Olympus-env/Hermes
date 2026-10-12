@@ -35,11 +35,13 @@ from hermes.api import (
     orchestration,
     profil,
     pythia,
+    systeme,
     tableau_de_bord,
 )
 from hermes.api import pythia as pythia_api
 from hermes.config import settings
 from hermes.db.models import LogAgent, NiveauLog
+from hermes.db.planification import planificateur_mnemosyne
 from hermes.db.session import get_engine, init_db
 
 
@@ -60,7 +62,9 @@ async def lifespan(_app: FastAPI):
     if not settings.debug or settings.scheduler_auto_start:
         _journaliser_demarrage()
         scheduler_global.demarrer()
+        planificateur_mnemosyne.demarrer()
     yield
+    planificateur_mnemosyne.arreter()
     scheduler_global.arreter()
 
 
@@ -160,6 +164,7 @@ app.include_router(orchestration.router)
 app.include_router(logs.router)
 app.include_router(pythia.router)
 app.include_router(profil.router)
+app.include_router(systeme.router)
 app.include_router(tableau_de_bord.router)
 
 
