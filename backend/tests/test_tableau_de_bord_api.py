@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlalchemy import insert
+from sqlmodel import Session, select
 
 from hermes.db.models import (
     AnalyseKrinos,
@@ -136,3 +139,167 @@ def test_beaucoup_d_ao_actifs_et_sans_echeance():
     assert d["total_ao"] == 33_001
     assert d["urgents"] == 0
     assert d["score_eleve"] == 1
+
+
+# --- Parité avec l'ancienne implémentation (agrégats calculés en Python) ------------------
+
+
+def _reference_python(session: Session, maintenant: datetime) -> dict:
+    """Ancienne implémentation, conservée telle quelle comme référence de parité."""
+    actifs = (StatutAO.BRUT, StatutAO.ANALYSE, StatutAO.A_REPONDRE, StatutAO.EN_REDACTION)
+
+    def est_urgent(d: datetime | None) -> bool:
+        if d is None:
+            return False
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=maintenant.tzinfo)
+        return maintenant <= d <= maintenant + timedelta(days=7)
+
+    echeances = session.exec(select(AppelOffre.date_limite).where(AppelOffre.statut.in_(actifs)))
+    urgents = sum(1 for d in echeances.all() if est_urgent(d))
+
+    lignes = session.exec(
+        select(AnalyseKrinos.appel_offre_id, AnalyseKrinos.score)
+        .join(AppelOffre, AppelOffre.id == AnalyseKrinos.appel_offre_id)
+        .where(AppelOffre.statut.in_(actifs))
+        .order_by(AnalyseKrinos.cree_le.desc(), AnalyseKrinos.id.desc())
+    ).all()
+    dernier: dict[int, float] = {}
+    for ao_id, score in lignes:
+        dernier.setdefault(ao_id, score)
+    score_eleve = sum(1 for sc in dernier.values() if sc >= 70.0)
+
+    reponses = {s.value: 0 for s in StatutReponse}
+    derniere: dict[int, tuple[int, StatutReponse]] = {}
+    for ao_id, version, statut in session.exec(
+        select(ReponseHermion.appel_offre_id, ReponseHermion.version, ReponseHermion.statut)
+    ).all():
+        if ao_id not in derniere or version > derniere[ao_id][0]:
+            derniere[ao_id] = (version, statut)
+    for _, statut in derniere.values():
+        reponses[StatutReponse(statut).value] += 1
+    return {"urgents": urgents, "score_eleve": score_eleve, "reponses": reponses}
+
+
+def _seeder_varie(session: Session, nb_ao: int, graine: int = 76) -> None:
+    """Base variée : tous statuts, échéances autour des bornes, analyses/versions multiples."""
+    import random
+
+    alea = random.Random(graine)
+    statuts = list(StatutAO)
+    base = datetime.now(UTC)
+    for i in range(nb_ao):
+        jours = alea.choice([None, -3, -0.01, 0.5, 3, 6.99, 7.01, 30])
+        ao = AppelOffre(
+            url_source=f"https://example.test/p/{i}",
+            reference_externe=f"P{i}",
+            titre=f"AO {i}",
+            statut=alea.choice(statuts),
+            date_limite=base + timedelta(days=jours) if jours is not None else None,
+        )
+        session.add(ao)
+        session.flush()
+        for _ in range(alea.choice([0, 0, 1, 2, 3, 5])):
+            # Horodatages volontairement répétés : départage par id décroissant.
+            session.add(
+                AnalyseKrinos(
+                    appel_offre_id=ao.id,
+                    resume="r",
+                    score=alea.choice([0, 40, 69.9, 70, 70.1, 95, 100]),
+                    justification_score="j",
+                    cree_le=base + timedelta(seconds=alea.randint(0, 3)),
+                )
+            )
+        versions = alea.sample(range(1, 8), alea.choice([0, 0, 1, 2, 4]))  # ordre d'insertion mêlé
+        for v in versions:
+            session.add(
+                ReponseHermion(
+                    appel_offre_id=ao.id,
+                    version=v,
+                    contenu="x",
+                    statut=alea.choice(list(StatutReponse)),
+                )
+            )
+    session.commit()
+
+
+def test_parite_avec_implementation_python():
+    from hermes.main import app
+
+    with Session(get_engine()) as s:
+        _seeder_varie(s, 600)
+    with TestClient(app) as client:
+        d = client.get("/tableau-de-bord").json()
+    with Session(get_engine()) as s:
+        ref = _reference_python(s, datetime.fromisoformat(d["genere_le"]))
+    assert d["urgents"] == ref["urgents"] > 0
+    assert d["score_eleve"] == ref["score_eleve"] > 0
+    assert d["reponses"] == ref["reponses"]
+    assert sum(d["reponses"].values()) > 0
+
+
+@pytest.mark.skipif(not os.environ.get("HERMES_TEST_PERF"), reason="mesure manuelle (lente)")
+def test_perf_50000_ao_trois_analyses(capsys):
+    """HERMES_TEST_PERF=1 pytest -s tests/test_tableau_de_bord_api.py -k perf"""
+    import time
+
+    from hermes.main import app
+
+    n = 50_000
+    base = datetime.now(UTC)
+    with Session(get_engine()) as s:
+        s.execute(
+            insert(AppelOffre),
+            [
+                {
+                    "url_source": f"https://example.test/perf/{i}",
+                    "reference_externe": f"F{i}",
+                    "titre": f"AO {i}",
+                    "statut": StatutAO.ANALYSE if i % 5 else StatutAO.REJETE,
+                    "date_limite": base + timedelta(days=i % 20),
+                    "cree_le": base,
+                    "maj_le": base,
+                }
+                for i in range(n)
+            ],
+        )
+        s.execute(
+            insert(AnalyseKrinos),
+            [
+                {
+                    "appel_offre_id": i + 1,
+                    "resume": "r",
+                    "score": (i * 7 + k * 13) % 100,
+                    "justification_score": "j",
+                    "cree_le": base + timedelta(seconds=k),
+                }
+                for i in range(n)
+                for k in range(3)
+            ],
+        )
+        s.execute(
+            insert(ReponseHermion),
+            [
+                {
+                    "appel_offre_id": i + 1,
+                    "version": v,
+                    "contenu": "x",
+                    "statut": StatutReponse.EN_ATTENTE,
+                    "cree_le": base,
+                    "maj_le": base,
+                }
+                for i in range(0, n, 2)
+                for v in (1, 2)
+            ],
+        )
+        s.commit()
+    with TestClient(app) as client:
+        client.get("/tableau-de-bord")  # chauffe
+        durees = []
+        for _ in range(5):
+            t0 = time.perf_counter()
+            r = client.get("/tableau-de-bord")
+            durees.append(time.perf_counter() - t0)
+    assert r.status_code == 200
+    with capsys.disabled():
+        print(f"\nPERF tableau-de-bord : médiane {sorted(durees)[2] * 1000:.0f} ms")
