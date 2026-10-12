@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,13 +40,24 @@ class ProgressionLayaIO(BaseModel):
     termine_le: float | None
 
 
+class FichierConcerneIO(BaseModel):
+    chemin: str
+    taille_octets: int  # taille réelle à retélécharger
+    raison: str  # "manquant" ou "altere"
+
+
 class ModeleLayaIO(BaseModel):
     precision: str
     installe: bool
     manquants: list[str]
     # Fichiers présents dont le SHA-256 ne correspond plus : réinstallation à confirmer.
     a_reinstaller: list[str]
-    taille_octets: int  # à télécharger pour cette précision
+    taille_octets: int  # taille totale du modèle pour cette précision
+    # Fichiers qu'une (ré)installation retéléchargerait, et leur total réel.
+    fichiers_concernes: list[FichierConcerneIO]
+    taille_a_telecharger_octets: int
+    # Dernière vérification SHA-256 complète de ce process (UTC), None si jamais faite.
+    verifie_le: datetime | None
     dossier: str
     espace_disque_libre_octets: int
     progression: ProgressionLayaIO
@@ -119,6 +131,12 @@ def _modele_io(precision: str, etat: laya_modele.EtatTelechargement) -> ModeleLa
         manquants=statut.manquants,
         a_reinstaller=statut.a_reinstaller,
         taille_octets=statut.taille_octets,
+        fichiers_concernes=[
+            FichierConcerneIO(chemin=c.chemin, taille_octets=c.taille, raison=c.raison)
+            for c in statut.concernes
+        ],
+        taille_a_telecharger_octets=statut.taille_a_telecharger,
+        verifie_le=laya_modele.derniere_verification(),
         dossier=statut.dossier,
         espace_disque_libre_octets=shutil.disk_usage(parent).free,
         progression=_progression(etat),
@@ -186,6 +204,15 @@ def ecrire_seuils_laya(payload: SeuilsLayaIO, session: SessionDep) -> SeuilsLaya
 @router.get("/modele", response_model=ModeleLayaIO)
 def statut_modele_laya(session: SessionDep, etat: EtatDep) -> ModeleLayaIO:
     return _modele_io(laya.precision(session), etat)
+
+
+@router.post("/modele/verifier", response_model=ModeleLayaIO)
+async def verifier_modele_laya(session: SessionDep, etat: EtatDep) -> ModeleLayaIO:
+    """Revérifie le SHA-256 de chaque fichier présent (hors boucle d'événements). Local
+    uniquement : aucun appel réseau, rien n'est retéléchargé."""
+    p = laya.precision(session)
+    await asyncio.to_thread(laya_modele.verifier_integrite, p)
+    return _modele_io(p, etat)
 
 
 @router.post("/modele/telecharger", response_model=ProgressionLayaIO)
