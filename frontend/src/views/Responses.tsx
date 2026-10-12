@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentChip } from "../components/AgentChip";
+import { Deadline } from "../components/Deadline";
 import { Icon } from "../components/Icon";
 import { Score } from "../components/Score";
 import { StatusPill } from "../components/StatusPill";
@@ -8,6 +9,7 @@ import {
   api,
   type ReponseAvecAO,
   type ReponseHermion,
+  type ReponseVersion,
   type StatutReponseHermion,
 } from "../lib/api";
 import { type ResponseStatus } from "../lib/data";
@@ -144,14 +146,38 @@ export function Responses({ onToast, externalRefreshKey = 0 }: Props) {
     };
   }, [selectedId]);
 
+  // Une entrée par AO : sa dernière version. L'API trie déjà par échéance puis
+  // version décroissante, donc la première rencontrée est la plus récente.
+  const entrees = useMemo(() => {
+    const vues = new Set<number>();
+    return reponses.filter((r) => {
+      if (vues.has(r.appel_offre_id)) return false;
+      vues.add(r.appel_offre_id);
+      return true;
+    });
+  }, [reponses]);
+
+  const nbVersions = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const r of reponses) m.set(r.appel_offre_id, (m.get(r.appel_offre_id) ?? 0) + 1);
+    return m;
+  }, [reponses]);
+
   const filtered = useMemo(
-    () => (filter === "all" ? reponses : reponses.filter((r) => r.statut === filter)),
-    [reponses, filter],
+    () => (filter === "all" ? entrees : entrees.filter((r) => r.statut === filter)),
+    [entrees, filter],
   );
 
   const reload = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   const selectedSummary = reponses.find((r) => r.id === selectedId);
+  const derniereVersion = selectedSummary
+    ? Math.max(
+        ...reponses
+          .filter((r) => r.appel_offre_id === selectedSummary.appel_offre_id)
+          .map((r) => r.version),
+      )
+    : 0;
 
   const onStatusChange = async (
     next: StatutReponseHermion,
@@ -261,7 +287,7 @@ export function Responses({ onToast, externalRefreshKey = 0 }: Props) {
       <div className="filters">
         {STATUS_FILTERS.map((s) => {
           const count =
-            s.id === "all" ? reponses.length : reponses.filter((r) => r.statut === s.id).length;
+            s.id === "all" ? entrees.length : entrees.filter((r) => r.statut === s.id).length;
           const active = filter === s.id;
           return (
             <button
@@ -321,7 +347,8 @@ export function Responses({ onToast, externalRefreshKey = 0 }: Props) {
             <AnimatePresence mode="popLayout">
             {filtered.map((r, rang) => {
               const uiStatus = toUiStatus(r.statut);
-              const isSel = r.id === selectedId;
+              const isSel = r.appel_offre_id === selectedSummary?.appel_offre_id;
+              const versions = nbVersions.get(r.appel_offre_id) ?? 1;
               return (
                 <motion.article
                   key={r.id}
@@ -335,10 +362,14 @@ export function Responses({ onToast, externalRefreshKey = 0 }: Props) {
                   onClick={() => setSelectedId(r.id)}
                 >
                   <div className="response-card__top">
-                    <span>rep-{r.id} · v{r.version}</span>
+                    <span>
+                      rep-{r.id} · v{r.version}
+                      {versions > 1 ? ` · ${versions} versions` : ""}
+                    </span>
                     <StatusPill status={uiStatus} />
                   </div>
                   <h3 className="response-card__title">{r.appel_offre_titre}</h3>
+                  <Deadline date={r.appel_offre_date_limite} />
                   <div className="response-card__bottom">
                     <span>{r.appel_offre_emetteur || "—"}</span>
                     <span>
@@ -359,6 +390,10 @@ export function Responses({ onToast, externalRefreshKey = 0 }: Props) {
             summary={selectedSummary}
             detail={detail}
             loading={loadingDetail}
+            lectureSeule={detail.version < derniereVersion}
+            derniereVersion={derniereVersion}
+            versionsKey={refreshKey}
+            onSelectVersion={setSelectedId}
             onStatusChange={onStatusChange}
             onSaveContent={onSaveContent}
             onExport={onExport}
@@ -379,6 +414,12 @@ type DetailProps = {
   summary: ReponseAvecAO;
   detail: ReponseHermion;
   loading: boolean;
+  /** Version antérieure à la dernière de l'AO : consultable, jamais validable. */
+  lectureSeule: boolean;
+  derniereVersion: number;
+  /** Change quand la liste est rechargée : relance la lecture de l'historique. */
+  versionsKey: number;
+  onSelectVersion: (id: number) => void;
   onStatusChange: (
     next: StatutReponseHermion,
     commentaire?: string,
@@ -393,11 +434,16 @@ function ResponseDetail({
   summary,
   detail,
   loading,
+  lectureSeule,
+  derniereVersion,
+  versionsKey,
+  onSelectVersion,
   onStatusChange,
   onSaveContent,
   onExport,
   onDownload,
 }: DetailProps) {
+  const [versions, setVersions] = useState<ReponseVersion[]>([]);
   const [editing, setEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(detail.contenu);
   const [comment, setComment] = useState(detail.commentaire_humain ?? "");
@@ -418,10 +464,28 @@ function ResponseDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.contenu, detail.commentaire_humain]);
 
+  // Historique des versions de l'AO (relu quand le statut ou le commentaire change).
+  useEffect(() => {
+    let annule = false;
+    api
+      .listerVersionsAO(detail.appel_offre_id)
+      .then((v) => {
+        if (!annule) setVersions(v);
+      })
+      .catch(() => {
+        if (!annule) setVersions([]);
+      });
+    return () => {
+      annule = true;
+    };
+  }, [detail.appel_offre_id, detail.statut, detail.commentaire_humain, versionsKey]);
+
   const uiStatus = toUiStatus(detail.statut);
-  const verrouille = detail.statut === "exportee" || detail.statut === "rejetee";
-  const peutValider = detail.statut === "en_attente" || detail.statut === "a_modifier";
-  const showCommentBox = detail.statut === "a_modifier" || detail.statut === "rejetee" || editing;
+  const verrouille =
+    lectureSeule || detail.statut === "exportee" || detail.statut === "rejetee";
+  const peutValider =
+    !lectureSeule && (detail.statut === "en_attente" || detail.statut === "a_modifier");
+  const showCommentBox = !lectureSeule && (detail.statut === "a_modifier" || detail.statut === "rejetee" || editing);
 
   const profil = loadUserProfile();
   const profilLabel = profil
@@ -463,13 +527,32 @@ function ResponseDetail({
           {summary.appel_offre_emetteur || "Émetteur inconnu"}
         </div>
 
+        <div style={{ marginBottom: 10 }}>
+          <Deadline date={summary.appel_offre_date_limite} />
+        </div>
         <div style={{ marginBottom: 18 }}>
           <StatusPill status={uiStatus} />
         </div>
 
+        {versions.length > 1 && (
+          <HistoriqueVersions
+            versions={versions}
+            selectionId={detail.id}
+            derniereVersion={derniereVersion}
+            onSelect={onSelectVersion}
+          />
+        )}
+
+        {lectureSeule && (
+          <div className="validation-humaine" data-etat="rejetee" role="status">
+            <strong>Version antérieure, en lecture seule</strong>
+            La dernière version est v{derniereVersion} : seule elle peut être validée.
+          </div>
+        )}
+
         {/* Validation humaine mise en avant : HERMION rédige, seul l'humain valide et soumet. */}
         <AnimatePresence mode="wait" initial={false}>
-          <motion.div
+          {!lectureSeule && <motion.div
             key={detail.statut}
             className="validation-humaine"
             data-etat={detail.statut}
@@ -482,7 +565,7 @@ function ResponseDetail({
           >
             <strong>{MESSAGES_VALIDATION[detail.statut].titre}</strong>
             {MESSAGES_VALIDATION[detail.statut].detail}
-          </motion.div>
+          </motion.div>}
         </AnimatePresence>
 
         <dl className="kv" style={{ marginBottom: 22 }}>
@@ -660,6 +743,74 @@ function ResponseDetail({
         </div>
       </div>
     </motion.div>
+  );
+}
+
+/** Sélecteur « Historique des versions » : toutes les itérations HERMION de l'AO. */
+function HistoriqueVersions({
+  versions,
+  selectionId,
+  derniereVersion,
+  onSelect,
+}: {
+  versions: ReponseVersion[];
+  selectionId: number;
+  derniereVersion: number;
+  onSelect: (id: number) => void;
+}) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div
+        id="historique-versions"
+        style={{
+          fontSize: 11,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: "var(--fg-3)",
+          marginBottom: 8,
+        }}
+      >
+        Historique des versions
+      </div>
+      <div
+        role="radiogroup"
+        aria-labelledby="historique-versions"
+        style={{ display: "flex", flexDirection: "column", gap: 6 }}
+      >
+        {versions.map((v) => {
+          const actif = v.id === selectionId;
+          return (
+            <button
+              key={v.id}
+              type="button"
+              role="radio"
+              aria-checked={actif}
+              className={`btn ${actif ? "btn--gold" : "btn--ghost"} btn--sm`}
+              style={{ flexDirection: "column", alignItems: "stretch", height: "auto", gap: 4, textAlign: "left" }}
+              onClick={() => onSelect(v.id)}
+            >
+              <span style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <strong style={{ fontFamily: "var(--font-mono)" }}>
+                  v{v.version}
+                  {v.version === derniereVersion ? " · dernière" : ""}
+                </strong>
+                <StatusPill status={toUiStatus(v.statut)} />
+              </span>
+              <span style={{ fontSize: 10.5, opacity: 0.75 }}>
+                {formatDate(v.cree_le)} · {v.longueur_mots ?? "—"} mots
+              </span>
+              {v.commentaire_humain && (
+                <span style={{ fontSize: 10.5, opacity: 0.75, fontStyle: "italic", whiteSpace: "normal" }}>
+                  « {v.commentaire_humain.length > 80
+                    ? `${v.commentaire_humain.slice(0, 80)}…`
+                    : v.commentaire_humain} »
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
