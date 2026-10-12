@@ -395,6 +395,18 @@ export type ReponseHermion = {
   maj_le: string;
 };
 
+/** Une version dans l'historique d'un AO (`GET /hermion/appels-offre/{id}/reponses`). */
+export type ReponseVersion = {
+  id: number;
+  appel_offre_id: number;
+  version: number;
+  statut: StatutReponseHermion;
+  longueur_mots: number | null;
+  duree_generation_ms: number | null;
+  commentaire_humain: string | null;
+  cree_le: string;
+};
+
 export type ProgressionHermion = {
   appel_offre_id: number;
   etape: string;
@@ -414,6 +426,8 @@ export type ReponseAvecAO = {
   appel_offre_id: number;
   appel_offre_titre: string;
   appel_offre_emetteur: string | null;
+  /** Échéance de l'AO (UTC) : la liste globale est triée dessus. */
+  appel_offre_date_limite: string | null;
   version: number;
   statut: StatutReponseHermion;
   longueur_mots: number | null;
@@ -786,6 +800,9 @@ export const api = {
     fetchJson<ReponseAvecAO[]>(
       `/hermion/reponses${statut ? `?statut=${statut}` : ""}`,
     ),
+  /** Historique : toutes les versions HERMION d'un AO, la plus récente d'abord. */
+  listerVersionsAO: (ao_id: number) =>
+    fetchJson<ReponseVersion[]>(`/hermion/appels-offre/${ao_id}/reponses`),
   lireReponseHermion: (id: number) =>
     fetchJson<ReponseHermion>(`/hermion/reponses/${id}`),
   rediger: (ao_id: number, payload: RedactionRequest = {}) =>

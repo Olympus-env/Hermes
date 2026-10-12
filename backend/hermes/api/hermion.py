@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -36,6 +37,12 @@ SessionDep = Annotated[Session, Depends(get_session)]
 _MAX_CONSIGNES = 10_000
 _MAX_CONTENU = 200_000
 _MAX_COMMENTAIRE = 5_000
+_EPOCH = datetime.min.replace(tzinfo=UTC)
+
+
+def _en_utc(dt: datetime) -> datetime:
+    """SQLite relit des datetimes naïfs : on les interprète comme UTC pour comparer."""
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 class ProfilRequest(BaseModel):
@@ -73,6 +80,7 @@ class ReponseSummary(BaseModel):
     statut: StatutReponse
     longueur_mots: int | None
     duree_generation_ms: int | None
+    commentaire_humain: str | None = None
     cree_le: DatetimeUTC
 
 
@@ -83,6 +91,8 @@ class ReponseAvecAO(BaseModel):
     appel_offre_id: int
     appel_offre_titre: str
     appel_offre_emetteur: str | None
+    # Échéance de l'AO (UTC) : clé du tri de la liste globale ; None = non renseignée.
+    appel_offre_date_limite: DatetimeUTC | None = None
     version: int
     statut: StatutReponse
     longueur_mots: int | None
@@ -299,24 +309,34 @@ def lister_toutes_reponses(
 ) -> list[ReponseAvecAO]:
     """Liste globale des réponses HERMION (toutes AO confondues).
 
-    Joint avec AppelOffre pour fournir titre + émetteur directement
+    Joint avec AppelOffre pour fournir titre + émetteur + échéance directement
     consommables côté frontend. Filtrable par statut.
+
+    Tri (CDC §7.3) : date limite d'AO croissante, AO sans date en fin de liste ;
+    les versions d'un même AO restent groupées, la plus récente d'abord.
     """
-    stmt = (
-        select(ReponseHermion, AppelOffre)
-        .join(AppelOffre, AppelOffre.id == ReponseHermion.appel_offre_id)
-        .order_by(ReponseHermion.cree_le.desc())
+    stmt = select(ReponseHermion, AppelOffre).join(
+        AppelOffre, AppelOffre.id == ReponseHermion.appel_offre_id
     )
     if statut is not None:
         stmt = stmt.where(ReponseHermion.statut == statut)
 
-    rows = session.exec(stmt).all()
+    rows = sorted(
+        session.exec(stmt).all(),
+        key=lambda ligne: (
+            ligne[1].date_limite is None,
+            _en_utc(ligne[1].date_limite) if ligne[1].date_limite else _EPOCH,
+            ligne[1].id,
+            -ligne[0].version,
+        ),
+    )
     return [
         ReponseAvecAO(
             id=r.id,  # type: ignore[arg-type]
             appel_offre_id=r.appel_offre_id,
             appel_offre_titre=ao.titre,
             appel_offre_emetteur=ao.emetteur,
+            appel_offre_date_limite=ao.date_limite,
             version=r.version,
             statut=r.statut,
             longueur_mots=r.longueur_mots,
@@ -355,6 +375,9 @@ def modifier_statut(
                 "non autorisée"
             ),
         )
+
+    if payload.statut == StatutReponse.VALIDEE and reponse.statut != payload.statut:
+        _refuser_si_version_plus_recente(session, reponse)
 
     ancien = reponse.statut
     reponse.statut = payload.statut
@@ -475,6 +498,26 @@ def _reponse_read(reponse: ReponseHermion) -> ReponseRead:
     )
 
 
+def _refuser_si_version_plus_recente(session: Session, reponse: ReponseHermion) -> None:
+    """Règle d'historique : une ancienne version ne se valide pas si l'AO a une
+    version plus récente non rejetée (elle reste consultable en lecture seule)."""
+    plus_recente = session.exec(
+        select(ReponseHermion.version).where(
+            ReponseHermion.appel_offre_id == reponse.appel_offre_id,
+            ReponseHermion.version > reponse.version,
+            ReponseHermion.statut != StatutReponse.REJETEE,
+        )
+    ).first()
+    if plus_recente is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Validation impossible : la version v{plus_recente} de cet appel "
+                f"d'offre est plus récente que v{reponse.version}"
+            ),
+        )
+
+
 def _synchroniser_statut_ao(session: Session, reponse: ReponseHermion) -> None:
     """Aligne le statut AO sur la dernière décision humaine HERMION."""
     ao = session.get(AppelOffre, reponse.appel_offre_id)
@@ -543,5 +586,6 @@ def _reponse_summary(reponse: ReponseHermion) -> ReponseSummary:
         statut=reponse.statut,
         longueur_mots=reponse.longueur_mots,
         duree_generation_ms=reponse.duree_generation_ms,
+        commentaire_humain=reponse.commentaire_humain,
         cree_le=reponse.cree_le,
     )
