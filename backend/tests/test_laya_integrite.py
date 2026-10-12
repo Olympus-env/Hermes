@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -126,3 +127,62 @@ def test_cache_invalide_quand_mtime_ou_taille_change(modele_installe, monkeypatc
     os.utime(cible, ns=(1, 1))
     assert laya_modele.verifier_integrite("fp16") == [CIBLE]
     assert len(appels) == n + 1
+
+
+# --- #68 : détection au démarrage / à la demande, fichiers concernés ---------------------
+
+
+def test_verification_fond_detecte_sans_reseau(modele_installe):
+    _alterer_meme_taille()
+    assert laya_modele.statut_modele("fp16").installe is True  # pas encore détecté
+    n = len(modele_installe.requetes)
+    laya_modele.lancer_verification_fond("fp16").join(timeout=10)
+    statut = laya_modele.statut_modele("fp16")
+    assert statut.installe is False and statut.a_reinstaller == [CIBLE]
+    assert [(c.chemin, c.taille, c.raison) for c in statut.concernes] == [
+        (CIBLE, len(CONTENUS[CIBLE]), "altere")
+    ]
+    assert statut.taille_a_telecharger == len(CONTENUS[CIBLE])
+    assert len(modele_installe.requetes) == n  # aucun appel réseau
+
+
+def test_demarrage_lance_la_verification_si_laya_active(modele_installe):
+    _alterer_meme_taille()
+    with TestClient(app) as client:  # lifespan : réglage actif (fixture) -> tâche de fond
+        for _ in range(100):
+            if client.get("/krinos/laya/modele").json()["a_reinstaller"]:
+                break
+            time.sleep(0.05)
+        corps = client.get("/krinos/laya/modele").json()
+    assert corps["a_reinstaller"] == [CIBLE]
+    assert corps["verifie_le"] is not None
+
+
+def test_demarrage_sans_laya_ne_verifie_rien(modele_installe, monkeypatch):
+    monkeypatch.setattr(settings, "laya_actif", False)
+    _alterer_meme_taille()
+    with TestClient(app) as client:
+        corps = client.get("/krinos/laya/modele").json()
+    assert corps["a_reinstaller"] == [] and corps["verifie_le"] is None
+
+
+def test_route_verifier_integrite(modele_installe):
+    with TestClient(app) as client:
+        ok = client.post("/krinos/laya/modele/verifier").json()
+        assert ok["installe"] is True and ok["fichiers_concernes"] == []
+        _alterer_meme_taille()
+        n = len(modele_installe.requetes)
+        ko = client.post("/krinos/laya/modele/verifier").json()
+    assert ko["installe"] is False and ko["a_reinstaller"] == [CIBLE]
+    assert ko["fichiers_concernes"] == [
+        {"chemin": CIBLE, "taille_octets": len(CONTENUS[CIBLE]), "raison": "altere"}
+    ]
+    assert ko["taille_a_telecharger_octets"] == len(CONTENUS[CIBLE])
+    assert ko["verifie_le"] is not None
+    assert len(modele_installe.requetes) == n
+
+
+def test_fichier_manquant_liste_avec_sa_taille(modele_installe):
+    (laya_modele.dossier_modele() / CIBLE).unlink()
+    (concerne,) = laya_modele.statut_modele("fp16").concernes
+    assert (concerne.chemin, concerne.raison) == (CIBLE, "manquant")
